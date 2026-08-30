@@ -98,10 +98,10 @@ After each failure injection, the engine mathematically proves that:
 
 ## 6. Technology Direction
 
-- **Backend:** Java 21, Spring Boot 3.x, Spring Data JPA / Hibernate, Spring Security, Flyway, Maven.
+- **Backend:** Java 21, Spring Boot 4.x, Spring Data JPA / Hibernate, Spring Security, Flyway, Maven.
 - **Authoritative Store:** PostgreSQL (`ddl-auto=validate`).
 - **Asynchronous Messaging:** Apache Kafka.
-- **Frontend:** React, TypeScript, Vite, Material UI, TanStack Query, React Hook Form.
+- **Frontend:** React 19, TypeScript, Vite 8, Material UI 9, TanStack Query, React Hook Form.
 - **Testing:** JUnit 5, Testcontainers (PostgreSQL, Kafka), Mockito, ArchUnit.
 - **Infrastructure:** Docker, Docker Compose, Nginx, Prometheus, Grafana, OpenTelemetry.
 
@@ -109,13 +109,34 @@ After each failure injection, the engine mathematically proves that:
 
 ## 7. Current Project Status
 
-- **Current State:** Phase 0 Completed — Architecture Definition, Project Constitution, and Development Roadmap established.
-- **Next Step:** Phase 1 — Repository, Maven, Java 21, and Frontend Workspace Bootstrap.
-- **Roadmap:** Detailed progress is tracked in [docs/STATUS.md](docs/STATUS.md).
+- **Current State:** Phase 1 Completed — Multi-module Maven reactor (`ledgerguard-api`, `psp-simulator`, `notification-worker`, `failure-lab` on Spring Boot 4.1.1) and React 19/TypeScript/Vite 8/MUI 9 frontend bootstrapped.
+- **Next Step:** Phase 2 — PostgreSQL, Kafka, and Docker Development Infrastructure.
+- **Roadmap:** Detailed phase-by-phase progress is tracked in [docs/STATUS.md](docs/STATUS.md).
 
 ---
 
-## 8. Documentation Links
+## 8. Local Verification Commands
+
+### Backend Build & Test (from root)
+```bash
+# Windows
+.\mvnw.cmd clean verify
+
+# Linux / macOS
+./mvnw clean verify
+```
+
+### Frontend Build & Lint
+```bash
+cd frontend/ledgerguard-web
+npm install
+npm run lint
+npm run build
+```
+
+---
+
+## 9. Documentation Links
 
 - **Architecture Documentation:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - **Master Development Plan (Phases 0–44):** [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md)
