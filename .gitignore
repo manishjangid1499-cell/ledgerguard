@@ -1,42 +1,45 @@
-# IntelliJ IDEA
+# Target build artifacts
+target/
+*.class
+
+# Maven Wrapper binaries (if any)
+!.mvn/wrapper/maven-wrapper.properties
+!.mvn/wrapper/maven-wrapper.jar
+!mvnw
+!mvnw.cmd
+
+# Node / Frontend artifacts
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Package locks to preserve
+!package-lock.json
+
+# IDE and Editor files
 .idea/
 *.iml
+.vscode/
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
 
-# Environment / secrets
+# Environment and secrets
 .env
 .env.*
 !.env.example
 
-# Java / Maven
-target/
-*.class
-
-# Gradle
-.gradle/
-build/
-
-# Logs
-*.log
-logs/
-
-# Local databases / persistent data
-*.db
-*.sqlite
-*.sqlite3
-
-# Local infrastructure data
-postgres-data/
-kafka-data/
-redis-data/
-
-# Credentials / certificates
-*.pem
-*.key
-*.p12
-*.jks
-credentials.json
-service-account.json
-
-# OS files
+# Operating System files
 .DS_Store
 Thumbs.db
+ehthumbs.db
+[Dd]esktop.ini
+
+# Logs and temporary files
+*.log
+logs/
+tmp/
+temp/

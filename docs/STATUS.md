@@ -2,23 +2,39 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Awaiting Phase 1
-- **Status:** Phase 0 Complete (Verified)
+- **Current Phase:** Awaiting Phase 2
+- **Status:** Phase 1 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
-- **Current Work:** Architecture, project constitution, failure models, security policies, build plan, and ADRs established. Ready for workspace bootstrap.
-- **Next Phase:** Phase 1 — Repository/Maven/Java/frontend workspace bootstrap
+  - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
+- **Current Work:** Maven multi-module structure, Spring Boot application skeletons, and React 19/TypeScript frontend bootstrapped. Ready for local container infrastructure.
+- **Next Phase:** Phase 2 — PostgreSQL, Kafka and Docker local development infrastructure
 - **Last Verified:** 2026-08-30
-- **Git Branch:** Initial workspace (uninitialized / recommended `docs/phase-00-architecture`)
+- **Git Branch:** `docs/phase-00-architecture` / `main` (workspace uncommitted)
 
 ---
 
-## 2. Phase Execution Matrix
+## 2. Toolchain Verified
+- **Java:** 21.0.2 LTS (Oracle Corporation, 64-Bit Server VM)
+- **javac:** 21.0.2
+- **Maven:** 3.9.16 (and Maven Wrapper 3.9.16)
+- **Spring Boot:** 4.1.1
+- **Node.js:** v24.19.0 (Node 24 LTS)
+- **npm:** 11.17.0
+- **TypeScript:** 5.7.3
+- **Vite:** 8.1.5 (resolved 8.2.2)
+- **React:** 19.0.0 (resolved 19.2.8)
+- **Material UI:** 9.4.0
+- **Git:** 2.55.0.windows.3
+
+---
+
+## 3. Phase Execution Matrix
 
 | Phase | Title | Status | Date Completed |
 | :--- | :--- | :--- | :--- |
 | **Phase 0** | Project Constitution, Architecture & Build Plan | **Completed** | 2026-08-30 |
-| **Phase 1** | Workspace Bootstrap & Multi-Module Setup | Planned | — |
+| **Phase 1** | Workspace Bootstrap & Multi-Module Setup | **Completed** | 2026-08-30 |
 | **Phase 2** | Docker Infrastructure & Database Baseline | Planned | — |
 | **Phase 3** | LedgerGuard API Foundation & Observability | Planned | — |
 | **Phase 4** | Identity, Authentication & Security | Planned | — |
@@ -65,15 +81,16 @@
 
 ---
 
-## 3. Architecture Deviations & Changes
-- **Deviations Recorded:** None. Architecture strictly follows the locked modular monolith specification with PostgreSQL authoritative store, transactional outbox, and post-commit Kafka messaging.
+## 4. Architecture Deviations & Changes
+- **Deviations Recorded:** None. Architecture strictly adheres to the locked specification.
 
 ---
 
-## 4. Known Issues & Limitations
-- Workspace contains documentation baseline. No executable code or build toolchain is present in Phase 0.
+## 5. Known Issues & Limitations
+- None. Phase 1 bootstrap tests and builds pass cleanly across all backend modules and frontend.
 
 ---
 
-## 5. Verification Commands
-- `docs-check`: Markdown structure, internal link integrity, and architectural consistency verified across all documentation and ADRs.
+## 6. Verification Commands
+- `.\mvnw.cmd clean verify` (or `mvn clean verify`): Builds root reactor and all 4 backend modules; executes all unit and context load tests.
+- `npm run lint` & `npm run build` (in `frontend/ledgerguard-web`): Type-checks and builds production bundle.
