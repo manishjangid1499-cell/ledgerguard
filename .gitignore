@@ -1,0 +1,42 @@
+# IntelliJ IDEA
+.idea/
+*.iml
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Java / Maven
+target/
+*.class
+
+# Gradle
+.gradle/
+build/
+
+# Logs
+*.log
+logs/
+
+# Local databases / persistent data
+*.db
+*.sqlite
+*.sqlite3
+
+# Local infrastructure data
+postgres-data/
+kafka-data/
+redis-data/
+
+# Credentials / certificates
+*.pem
+*.key
+*.p12
+*.jks
+credentials.json
+service-account.json
+
+# OS files
+.DS_Store
+Thumbs.db
