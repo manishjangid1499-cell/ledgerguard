@@ -2,19 +2,37 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Awaiting Phase 2
-- **Status:** Phase 1 Complete (Verified)
+- **Current Phase:** Awaiting Phase 3
+- **Status:** Phase 2 Complete (Verified & Hardened)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
-- **Current Work:** Maven multi-module structure, Spring Boot application skeletons, and React 19/TypeScript frontend bootstrapped. Ready for local container infrastructure.
-- **Next Phase:** Phase 2 — PostgreSQL, Kafka and Docker local development infrastructure
+  - **Phase 2 — PostgreSQL, Kafka and Docker Local Development Infrastructure** (Completed: 2026-08-30)
+- **Current Work:** PostgreSQL 17.11 with 3 isolated logical databases/roles and Apache Kafka 4.3.1 KRaft broker operational and functionally verified via internal and external listeners. Ready for API foundation.
+- **Next Phase:** Phase 3 — LedgerGuard API foundation, profiles, health checks and standardized errors
 - **Last Verified:** 2026-08-30
-- **Git Branch:** `docs/phase-00-architecture` / `main` (workspace uncommitted)
+- **Git Branch:** `feat/phase-02-infrastructure` / `main` (workspace uncommitted)
 
 ---
 
-## 2. Toolchain Verified
+## 2. Toolchain & Infrastructure Verified
+- **Docker Engine:** 29.6.2 (build dfc4efb)
+- **Docker Compose:** v5.3.1
+- **PostgreSQL Container:** `postgres:17.11-alpine` (PostgreSQL 17.11 runtime)
+  - **Host Port:** `5432`
+  - **Volume:** `ledgerguard-postgres-data`
+  - **Databases & Enforced Ownership:**
+    - `ledgerguard` (Owner: `ledgerguard_app`, used by `ledgerguard-api`)
+    - `psp_simulator` (Owner: `psp_simulator_app`, used by `psp-simulator`)
+    - `notification_worker` (Owner: `notification_worker_app`, used by `notification-worker`)
+  - **Database Connection Isolation:** `PUBLIC` connect revoked; cross-database connection attempts denied at engine level.
+- **Kafka Container:** `apache/kafka:4.3.1` (Apache Kafka 4.3.1 in KRaft mode, No ZooKeeper)
+  - **Mode:** KRaft (Broker ID: 1, Controller ID: 1, Cluster ID configured)
+  - **Host Listener:** `EXTERNAL://localhost:29092` (Functionally verified via Kafka console producer/consumer)
+  - **Container Listener:** `PLAINTEXT://kafka:9092` (Functionally verified via internal produce/consume)
+  - **Volume:** `ledgerguard-kafka-data`
+  - **Topic Auto-Creation:** Disabled (`KAFKA_AUTO_CREATE_TOPICS_ENABLE=false`) for deterministic development.
+  - **Single Broker Note:** Local development topology; does not provide production HA or multi-broker replication.
 - **Java:** 21.0.2 LTS (Oracle Corporation, 64-Bit Server VM)
 - **javac:** 21.0.2
 - **Maven:** 3.9.16 (and Maven Wrapper 3.9.16)
@@ -35,7 +53,7 @@
 | :--- | :--- | :--- | :--- |
 | **Phase 0** | Project Constitution, Architecture & Build Plan | **Completed** | 2026-08-30 |
 | **Phase 1** | Workspace Bootstrap & Multi-Module Setup | **Completed** | 2026-08-30 |
-| **Phase 2** | Docker Infrastructure & Database Baseline | Planned | — |
+| **Phase 2** | Docker Infrastructure & Database Baseline | **Completed** | 2026-08-30 |
 | **Phase 3** | LedgerGuard API Foundation & Observability | Planned | — |
 | **Phase 4** | Identity, Authentication & Security | Planned | — |
 | **Phase 5** | Frontend Shell & Authentication UI | Planned | — |
@@ -87,10 +105,12 @@
 ---
 
 ## 5. Known Issues & Limitations
-- None. Phase 1 bootstrap tests and builds pass cleanly across all backend modules and frontend.
+- **Kafka Single-Broker Development Limitation:** The Phase 2 Kafka setup runs a single local broker in KRaft mode for local development. It does not demonstrate multi-broker quorum replication or high-availability failover.
 
 ---
 
 ## 6. Verification Commands
+- `docker compose config`: Validates Compose service configuration.
+- `docker compose ps`: Confirms healthy state of PostgreSQL 17.11 (`ledgerguard-postgres`) and Kafka 4.3.1 (`ledgerguard-kafka`).
 - `.\mvnw.cmd clean verify` (or `mvn clean verify`): Builds root reactor and all 4 backend modules; executes all unit and context load tests.
 - `npm run lint` & `npm run build` (in `frontend/ledgerguard-web`): Type-checks and builds production bundle.
