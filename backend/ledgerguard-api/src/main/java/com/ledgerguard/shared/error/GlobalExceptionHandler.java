@@ -312,6 +312,22 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .body(problemDetail);
     }
 
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<ProblemDetail> handleAccessDenied(org.springframework.security.access.AccessDeniedException ex, WebRequest request) {
+        log.warn("Access denied: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.FORBIDDEN,
+                "Access denied: insufficient permissions to perform this operation."
+        );
+        problemDetail.setTitle("Access denied");
+        enrichProblemDetail(problemDetail, ApiErrorCode.ACCESS_DENIED, request);
+
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetail> handleUnhandledException(Exception ex, WebRequest request) {
         log.error("Unhandled server exception: {}", ex.getMessage(), ex);

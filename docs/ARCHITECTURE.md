@@ -186,10 +186,29 @@ To maintain focus on correctness and avoid resume-driven architecture, the follo
 
 ---
 
-## 11. Architectural Invariants
+---
+
+## 11. Frontend Financial Experience Architecture
+
+- **Server-Authoritative State**: No client-side optimistic balance calculations or optimistic transfer history insertions. All balance and transaction states are invalidated and refetched from server read endpoints upon confirmed mutation success.
+- **Financial Precision Invariants**:
+  - Minor-unit amounts and balances are serialized as decimal JSON strings (`"10000"`), preventing precision truncation from JavaScript 64-bit float conversions.
+  - Client-side INR human inputs are parsed into minor units using exact string decomposition and `BigInt` (no `parseFloat`, `Math.round`, or floating multiplication).
+  - Minor units are formatted back to display INR using `BigInt` and Indian numbering notation (`₹1,23,456.78`).
+- **Idempotency Lifecycle in Browser**:
+  - Client generates `Idempotency-Key` via `crypto.randomUUID()`.
+  - For ambiguous network errors or timeouts on unchanged destination/amount payloads, the form reuses the same idempotency key to prevent double-charging.
+  - Any edit to destination or amount invalidates the key and assigns a new key.
+  - Confirmed mutation results reset the form and allocate a fresh key.
+- **Double-Submit Prevention & Mutation Configuration**:
+  - React mutations disable submit buttons with `isPending` spinners and configure `retry: false` to avoid silent automatic retries.
+
+---
+
+## 12. Architectural Invariants
 
 1. **Balance Equation**: $\text{Available Balance} = \text{Posted Balance} - \text{Active Holds}$.
 2. **Double-Entry Balance**: For every transaction $T$, $\sum_{e \in T} \text{Debit}(e) = \sum_{e \in T} \text{Credit}(e)$.
 3. **Immutability**: Once written, rows in `journal_transactions` and `journal_entries` cannot be updated or deleted.
 4. **Deterministic Lock Ordering**: When locking multiple accounts, acquire locks in ascending lexicographical or numerical order of account IDs to prevent circular-wait deadlocks between opposing transfers.
-5. **No Floating Point**: All monetary values are represented as `Money(Currency, long minorUnits)`.
+5. **No Floating Point**: All monetary values are represented as `Money(Currency, long minorUnits)` on backend, and decimal strings / `BigInt` on frontend.

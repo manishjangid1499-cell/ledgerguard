@@ -169,10 +169,10 @@ All API error responses use `application/problem+json` and follow the standard R
 - **Response (201 Created on first execution / 200 OK on idempotency replay)**:
   ```json
   {
-    "id": "1f8e1234-5678-9abc-def0-123456789abc",
-    "sourceWalletId": "6ba7b810-9dad-11d1-80b4-00c04fd430c7",
-    "destinationWalletId": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
-    "amountMinor": 250000,
+    "transferId": "1f8e1234-5678-9abc-def0-123456789abc",
+    "sourceLedgerAccountId": "6ba7b810-9dad-11d1-80b4-00c04fd430c7",
+    "destinationLedgerAccountId": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+    "amountMinor": "250000",
     "currency": "INR",
     "journalTransactionId": "550e8400-e29b-41d4-a716-446655440000",
     "createdAt": "2026-08-31T22:00:00.000Z",
@@ -188,20 +188,87 @@ All API error responses use `application/problem+json` and follow the standard R
 
 ---
 
-## 6. Planned Domain Endpoints Roadmap (Phases 11–33)
+## 6. Financial Read APIs (Implemented in Phase 12)
 
-### 6.1 Wallets & Balances (`/api/wallets`)
+### 6.1 Get Current User Wallet (`GET /api/wallets/me`)
+- **Access**: `CUSTOMER`, `MERCHANT` (`OPS` returns `403 Forbidden`)
+- **Success Response (200 OK)**:
+  ```json
+  {
+    "ledgerAccountId": "6ba7b810-9dad-11d1-80b4-00c04fd430c7",
+    "accountType": "CUSTOMER",
+    "currency": "INR",
+    "status": "ACTIVE",
+    "balanceMinor": "125000"
+  }
+  ```
+
+### 6.2 Get Transfer History (`GET /api/transfers?page=0&size=20`)
+- **Access**: `CUSTOMER`, `MERCHANT`
+- **Query Params**: `page` (default 0), `size` (default 20, max 50)
+- **Success Response (200 OK)**:
+  ```json
+  {
+    "items": [
+      {
+        "transferId": "1f8e1234-5678-9abc-def0-123456789abc",
+        "sourceLedgerAccountId": "6ba7b810-9dad-11d1-80b4-00c04fd430c7",
+        "destinationLedgerAccountId": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+        "amountMinor": "10000",
+        "currency": "INR",
+        "journalTransactionId": "550e8400-e29b-41d4-a716-446655440000",
+        "createdAt": "2026-08-31T22:00:00.000Z",
+        "direction": "OUTGOING"
+      }
+    ],
+    "page": 0,
+    "size": 20,
+    "totalElements": 1,
+    "totalPages": 1
+  }
+  ```
+
+### 6.3 Get Transfer Detail & Journal Inspector (`GET /api/transfers/{transferId}`)
+- **Access**: `CUSTOMER`, `MERCHANT` (Only source or destination wallet owner; unrelated returns `404 Not Found`)
+- **Success Response (200 OK)**:
+  ```json
+  {
+    "transferId": "1f8e1234-5678-9abc-def0-123456789abc",
+    "sourceLedgerAccountId": "6ba7b810-9dad-11d1-80b4-00c04fd430c7",
+    "destinationLedgerAccountId": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+    "amountMinor": "10000",
+    "currency": "INR",
+    "journalTransactionId": "550e8400-e29b-41d4-a716-446655440000",
+    "createdAt": "2026-08-31T22:00:00.000Z",
+    "direction": "OUTGOING",
+    "journal": {
+      "journalTransactionId": "550e8400-e29b-41d4-a716-446655440000",
+      "status": "POSTED",
+      "postedAt": "2026-08-31T22:00:00.000Z",
+      "entries": [
+        {
+          "ledgerAccountId": "6ba7b810-9dad-11d1-80b4-00c04fd430c7",
+          "direction": "DEBIT",
+          "amountMinor": "10000"
+        },
+        {
+          "ledgerAccountId": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+          "direction": "CREDIT",
+          "amountMinor": "10000"
+        }
+      ]
+    }
+  }
+  ```
+
+---
+
+## 7. Planned Domain Endpoints Roadmap (Phases 13–33)
+
+### 7.1 Wallets & Balances (`/api/wallets`)
 | Method | Endpoint | Access | Purpose |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/api/wallets/me` | Customer / Merchant | Get current user's wallet summary, posted balance, active holds, and available balance. |
 | `GET` | `/api/wallets/{walletId}/holds` | Customer / Merchant / Ops | List active and historical balance holds on the wallet. |
-
-### 6.2 Peer-to-Peer Transfers (`/api/transfers`)
-| Method | Endpoint | Access | Purpose |
-| :--- | :--- | :--- | :--- |
-| `POST` | `/api/transfers` | Customer / Merchant | Initiate an atomic internal transfer to another wallet. *Requires `Idempotency-Key`*. *(Implemented in Phase 10)* |
-| `GET` | `/api/transfers/{transferId}` | Owner / Ops | Retrieve details and status of a transfer transaction. |
-| `GET` | `/api/transfers` | Customer / Merchant / Ops | List transfer history with pagination. |
 
 ### 5.3 Merchant Payments (`/api/payments`)
 | Method | Endpoint | Access | Purpose |

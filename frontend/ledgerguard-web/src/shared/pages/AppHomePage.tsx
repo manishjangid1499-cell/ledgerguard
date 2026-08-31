@@ -6,16 +6,14 @@ import {
   Paper,
   Stack,
   Chip,
-  Divider,
-  Card,
-  CardContent,
-  Grid,
 } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
-import SecurityIcon from '@mui/icons-material/Security';
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import { useAuth } from '../../auth/hooks/useAuth';
 import { UserRole } from '../types/user.types';
+import { WalletCard } from '../../wallet/components/WalletCard';
+import { TransferForm } from '../../transfer/components/TransferForm';
+import { RecentTransfersTable } from '../../transfer/components/RecentTransfersTable';
 
 function formatRoleLabel(role: UserRole): string {
   switch (role) {
@@ -32,31 +30,33 @@ function formatRoleLabel(role: UserRole): string {
 
 export const AppHomePage: React.FC = () => {
   const { user } = useAuth();
+  const isFinancialUser = user?.role === 'CUSTOMER' || user?.role === 'MERCHANT';
 
   return (
-    <Container maxWidth="lg">
+    <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 } }}>
+      {/* Top Welcome Header */}
       <Paper
         elevation={0}
         sx={{
-          p: { xs: 3, md: 4 },
+          p: { xs: 2.5, sm: 3 },
           border: '1px solid',
           borderColor: 'divider',
           borderRadius: 2,
           bgcolor: 'background.paper',
-          mb: 4,
+          mb: 3,
         }}
       >
         <Stack
           direction={{ xs: 'column', sm: 'row' }}
           spacing={2}
-          sx={{ justifyContent: 'space-between', alignItems: { sm: 'center' }, mb: 2 }}
+          sx={{ justifyContent: 'space-between', alignItems: { sm: 'center' } }}
         >
           <Box>
             <Typography variant="h5" component="h1" sx={{ fontWeight: 700, color: 'primary.main' }}>
-              Welcome back
+              Financial Dashboard
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Authenticated as {user?.email}
+              Logged in as {user?.email}
             </Typography>
           </Box>
           <Stack direction="row" spacing={1}>
@@ -78,62 +78,43 @@ export const AppHomePage: React.FC = () => {
             />
           </Stack>
         </Stack>
-
-        <Divider sx={{ my: 2.5 }} />
-
-        <Box sx={{ mb: 1 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
-            Security & Identity Status
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-            Your session is secured using short-lived HS256 JWT access tokens and single-use refresh token rotation.
-            Access tokens are stored only in browser memory, while refresh tokens are protected in an HttpOnly cookie and
-            rotated after use.
-          </Typography>
-        </Box>
       </Paper>
 
-      <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
-        Platform Modules Roadmap
-      </Typography>
+      {/* Financial Experience for Customers & Merchants */}
+      {isFinancialUser ? (
+        <Stack spacing={3}>
+          {/* Wallet Summary Card */}
+          <WalletCard />
 
-      <Grid container spacing={3}>
-        <Grid size={{ xs: 12, md: 6 }}>
-          <Card>
-            <CardContent sx={{ p: 3 }}>
-              <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', mb: 1.5 }}>
-                <SecurityIcon color="primary" fontSize="small" />
-                <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                  Identity & Access (Phase 4–5)
-                </Typography>
-                <Chip label="Active" color="success" size="small" variant="filled" />
-              </Stack>
-              <Typography variant="body2" color="text.secondary">
-                User registration, credential authentication, stateless Bearer token authorization, and HttpOnly session
-                restoration are fully active.
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
+          {/* Transfer Creation Form */}
+          <TransferForm />
 
-        <Grid size={{ xs: 12, md: 6 }}>
-          <Card sx={{ bgcolor: 'background.default' }}>
-            <CardContent sx={{ p: 3 }}>
-              <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', mb: 1.5 }}>
-                <HourglassEmptyIcon color="disabled" fontSize="small" />
-                <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.secondary' }}>
-                  Financial Ledger Core (Phase 6+)
-                </Typography>
-                <Chip label="Coming Soon" size="small" variant="outlined" />
-              </Stack>
-              <Typography variant="body2" color="text.secondary">
-                Double-entry accounts, journal transaction posting, balance holds, peer-to-peer transfers, and merchant
-                payments will be introduced in subsequent phases.
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
+          {/* Recent Transfers & Journal History */}
+          <RecentTransfersTable />
+        </Stack>
+      ) : (
+        /* Ops Administrative Landing */
+        <Paper
+          elevation={0}
+          sx={{
+            p: 4,
+            border: '1px solid',
+            borderColor: 'divider',
+            borderRadius: 2,
+            bgcolor: 'background.paper',
+            textAlign: 'center',
+          }}
+        >
+          <AdminPanelSettingsIcon sx={{ fontSize: 48, color: 'info.main', mb: 1.5 }} />
+          <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
+            Operations & Administration Console
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 600, mx: 'auto', lineHeight: 1.6 }}>
+            You are logged in with the <strong>OPS</strong> role. Operations accounts are privileged management
+            identities and do not have customer deposit wallets or initiate end-user wallet transfers.
+          </Typography>
+        </Paper>
+      )}
     </Container>
   );
 };
