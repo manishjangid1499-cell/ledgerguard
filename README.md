@@ -109,8 +109,8 @@ After each failure injection, the engine mathematically proves that:
 
 ## 7. Current Project Status
 
-- **Current State:** Phase 2 Completed — PostgreSQL 17.11 (with 3 isolated logical databases/roles: `ledgerguard`, `psp_simulator`, `notification_worker`) and Apache Kafka 4.3.1 KRaft broker operational in Docker Compose.
-- **Next Step:** Phase 3 — LedgerGuard API foundation, profiles, health checks and standardized errors.
+- **Current State:** Phase 3 Completed — LedgerGuard API foundation established with Spring Boot 4.1.1, clean profiles (`default`, `dev`, `test`), standard application liveness/readiness health probes (`/actuator/health`), RFC 9457 Problem Details (`application/problem+json`), and centralized sanitized exception handling.
+- **Next Step:** Phase 4 — Identity, authentication and authorization.
 - **Roadmap:** Detailed phase-by-phase progress is tracked in [docs/STATUS.md](docs/STATUS.md).
 
 ---

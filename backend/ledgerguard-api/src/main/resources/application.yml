@@ -1,5 +1,25 @@
 spring:
   application:
     name: ledgerguard-api
+  mvc:
+    problemdetails:
+      enabled: true
+
 server:
   port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health,info"
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true

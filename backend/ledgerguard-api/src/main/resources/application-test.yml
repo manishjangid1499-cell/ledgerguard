@@ -1,0 +1,5 @@
+# Test profile configuration for ledgerguard-api
+logging:
+  level:
+    com.ledgerguard: INFO
+    org.springframework.web: WARN

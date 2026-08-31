@@ -2,16 +2,17 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Awaiting Phase 3
-- **Status:** Phase 2 Complete (Verified & Hardened)
+- **Current Phase:** Awaiting Phase 4
+- **Status:** Phase 3 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
   - **Phase 2 — PostgreSQL, Kafka and Docker Local Development Infrastructure** (Completed: 2026-08-30)
-- **Current Work:** PostgreSQL 17.11 with 3 isolated logical databases/roles and Apache Kafka 4.3.1 KRaft broker operational and functionally verified via internal and external listeners. Ready for API foundation.
-- **Next Phase:** Phase 3 — LedgerGuard API foundation, profiles, health checks and standardized errors
-- **Last Verified:** 2026-08-30
-- **Git Branch:** `feat/phase-02-infrastructure` / `main` (workspace uncommitted)
+  - **Phase 3 — LedgerGuard API foundation, profiles, health checks and standardized errors** (Completed: 2026-08-31)
+- **Current Work:** HTTP/API foundation established with Spring Boot 4.1.1, profiles (`default`, `dev`, `test`), standard application liveness/readiness health probes (`/actuator/health`, `/actuator/health/liveness`, `/actuator/health/readiness`), RFC 9457 Problem Details (`application/problem+json`), Jakarta Bean Validation, and centralized sanitized error handling.
+- **Next Phase:** Phase 4 — Identity, authentication and authorization
+- **Last Verified:** 2026-08-31
+- **Git Branch:** `feat/phase-03-api-foundation` (workspace uncommitted)
 
 ---
 
@@ -28,8 +29,8 @@
   - **Database Connection Isolation:** `PUBLIC` connect revoked; cross-database connection attempts denied at engine level.
 - **Kafka Container:** `apache/kafka:4.3.1` (Apache Kafka 4.3.1 in KRaft mode, No ZooKeeper)
   - **Mode:** KRaft (Broker ID: 1, Controller ID: 1, Cluster ID configured)
-  - **Host Listener:** `EXTERNAL://localhost:29092` (Functionally verified via Kafka console producer/consumer)
-  - **Container Listener:** `PLAINTEXT://kafka:9092` (Functionally verified via internal produce/consume)
+  - **Host Listener:** `EXTERNAL://localhost:29092`
+  - **Container Listener:** `PLAINTEXT://kafka:9092`
   - **Volume:** `ledgerguard-kafka-data`
   - **Topic Auto-Creation:** Disabled (`KAFKA_AUTO_CREATE_TOPICS_ENABLE=false`) for deterministic development.
   - **Single Broker Note:** Local development topology; does not provide production HA or multi-broker replication.
@@ -54,7 +55,7 @@
 | **Phase 0** | Project Constitution, Architecture & Build Plan | **Completed** | 2026-08-30 |
 | **Phase 1** | Workspace Bootstrap & Multi-Module Setup | **Completed** | 2026-08-30 |
 | **Phase 2** | Docker Infrastructure & Database Baseline | **Completed** | 2026-08-30 |
-| **Phase 3** | LedgerGuard API Foundation & Observability | Planned | — |
+| **Phase 3** | LedgerGuard API Foundation & Observability | **Completed** | 2026-08-31 |
 | **Phase 4** | Identity, Authentication & Security | Planned | — |
 | **Phase 5** | Frontend Shell & Authentication UI | Planned | — |
 | **Phase 6** | Money Value Object & Ledger Schema | Planned | — |
@@ -105,12 +106,12 @@
 ---
 
 ## 5. Known Issues & Limitations
-- **Kafka Single-Broker Development Limitation:** The Phase 2 Kafka setup runs a single local broker in KRaft mode for local development. It does not demonstrate multi-broker quorum replication or high-availability failover.
+- **Kafka Single-Broker Development Limitation:** The local Kafka setup runs a single local broker in KRaft mode for local development.
 
 ---
 
 ## 6. Verification Commands
 - `docker compose config`: Validates Compose service configuration.
 - `docker compose ps`: Confirms healthy state of PostgreSQL 17.11 (`ledgerguard-postgres`) and Kafka 4.3.1 (`ledgerguard-kafka`).
-- `.\mvnw.cmd clean verify` (or `mvn clean verify`): Builds root reactor and all 4 backend modules; executes all unit and context load tests.
+- `.\mvnw.cmd clean verify` (or `mvn clean verify`): Builds root reactor and all backend modules; executes all unit and context load tests.
 - `npm run lint` & `npm run build` (in `frontend/ledgerguard-web`): Type-checks and builds production bundle.

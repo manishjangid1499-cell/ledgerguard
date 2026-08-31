@@ -30,8 +30,8 @@ Each phase must satisfy its definition of done before advancing to the next.
 ---
 
 ### Phase 3: LedgerGuard API Foundation & Observability Baseline
-- **Purpose**: Establish Spring Boot core foundation, profiles (`dev`, `test`, `prod`), structured RFC-7807 error handling, and Actuator health endpoints.
-- **Deliverables**: `ledgerguard-api` main application class, application YAML configs, `GlobalExceptionHandler`, RFC-7807 `ProblemDetail` structures, logging configuration.
+- **Purpose**: Establish Spring Boot core foundation, profiles (`dev`, `test`, `prod`), structured RFC-9457 error handling, and Actuator health endpoints.
+- **Deliverables**: `ledgerguard-api` main application class, application YAML configs, `GlobalExceptionHandler`, RFC-9457 `ProblemDetail` structures, logging configuration.
 - **Validation**: Application boots successfully; `/actuator/health` returns `200 UP`; mock test endpoints return structured JSON errors.
 - **Git Commit Message**: `feat(api): establish spring boot foundation and structured error handling`
 
