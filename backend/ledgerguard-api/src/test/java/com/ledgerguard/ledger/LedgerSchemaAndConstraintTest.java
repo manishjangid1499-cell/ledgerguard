@@ -20,7 +20,7 @@ class LedgerSchemaAndConstraintTest extends AbstractIntegrationTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    @DisplayName("Database contains only V1 and V2 tables; no future financial tables exist")
+    @DisplayName("Database contains only authorized tables; no future financial tables exist")
     void databaseContainsOnlyAuthorizedTables() {
         List<String> tables = jdbcTemplate.queryForList(
                 "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'",
@@ -33,7 +33,8 @@ class LedgerSchemaAndConstraintTest extends AbstractIntegrationTest {
                 "flyway_schema_history",
                 "ledger_accounts",
                 "journal_transactions",
-                "journal_entries"
+                "journal_entries",
+                "ledger_balance_snapshots"
         );
 
         assertThat(tables).doesNotContain(

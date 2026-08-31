@@ -34,7 +34,10 @@ This document formalizes the domain concepts, state models, and fundamental inva
 
 ### Balances & Holds
 
-- **Account Balance Snapshot (`account_balances`)**: A high-performance read-optimized snapshot reflecting the current state of an account. Snapshots are derived directly from the immutable ledger and can be rebuilt at any time.
+- **Wallet**: An application-facing domain projection combining an owned `ledger_accounts` row and its derived `ledger_balance_snapshots` row. Each `CUSTOMER` or `MERCHANT` user possesses at most one owned wallet account (enforced via partial unique index). OPS users do not have wallets.
+- **Account Balance Snapshot (`ledger_balance_snapshots`)**: A high-performance read-optimized derived snapshot reflecting the current state of a ledger account. Maintained atomically via PostgreSQL triggers on journal posting:
+  - CREDIT-normal accounts (`CUSTOMER`, `MERCHANT`, `PLATFORM_FEES`): $\text{Balance} = \sum \text{Credits} - \sum \text{Debits}$
+  - DEBIT-normal accounts (`PSP_CLEARING`, `PLATFORM_RESERVE`): $\text{Balance} = \sum \text{Debits} - \sum \text{Credits}$
 - **Posted Balance**: The settled, historical sum of all debits and credits posted to an account up to the present moment.
 - **Balance Hold (`balance_holds`)**: A temporary reservation of funds on a specific account (e.g., for an in-flight withdrawal or pending authorization). Holds prevent double-spending without immediately mutating posted ledger balances.
   - States: `ACTIVE`, `CONSUMED`, `RELEASED`, `EXPIRED`.

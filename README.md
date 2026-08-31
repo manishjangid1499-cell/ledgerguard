@@ -110,8 +110,8 @@ After each failure injection, the engine mathematically proves that:
 
 ## 7. Current Project Status
 
-- **Current State:** Phase 7 Completed — Atomic Double-Entry Posting Engine (`LedgerPostingService`), `PostJournalCommand` with immutable `PostingLine` entries, fail-fast double-entry validation ($\ge 2$ entries, at least 1 `DEBIT`, at least 1 `CREDIT`, INR currency only, $\sum \text{debit} == \sum \text{credit}$ with checked arithmetic), batch ledger account verification, single-transaction DRAFT $\to$ entries $\to$ POSTED lifecycle, and automatic rollback on any failure.
-- **Next Step:** Phase 8 — Wallets & Balance Snapshots.
+- **Current State:** Phase 8 Completed — Wallets & Derived Balance Snapshots: User-owned ledger account projection (`Wallet`), Flyway V3 migration (`ledger_balance_snapshots`, partial unique 1-wallet-per-user index), automatic zero snapshot initialization trigger, historical journal backfill, and database-level transactional posting trigger updating derived balances deterministically with normal-balance arithmetic (CREDIT-normal: credits - debits; DEBIT-normal: debits - credits) and overflow protection.
+- **Next Step:** Phase 9 — Idempotency Infrastructure.
 - **Roadmap:** Detailed phase-by-phase progress is tracked in [docs/STATUS.md](docs/STATUS.md).
 
 ---
