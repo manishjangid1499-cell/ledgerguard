@@ -109,13 +109,54 @@ After each failure injection, the engine mathematically proves that:
 
 ## 7. Current Project Status
 
-- **Current State:** Phase 1 Completed — Multi-module Maven reactor (`ledgerguard-api`, `psp-simulator`, `notification-worker`, `failure-lab` on Spring Boot 4.1.1) and React 19/TypeScript/Vite 8/MUI 9 frontend bootstrapped.
-- **Next Step:** Phase 2 — PostgreSQL, Kafka, and Docker Development Infrastructure.
+- **Current State:** Phase 2 Completed — PostgreSQL 17.11 (with 3 isolated logical databases/roles: `ledgerguard`, `psp_simulator`, `notification_worker`) and Apache Kafka 4.3.1 KRaft broker operational in Docker Compose.
+- **Next Step:** Phase 3 — LedgerGuard API foundation, profiles, health checks and standardized errors.
 - **Roadmap:** Detailed phase-by-phase progress is tracked in [docs/STATUS.md](docs/STATUS.md).
 
 ---
 
-## 8. Local Verification Commands
+## 8. Local Development Infrastructure
+
+### Prerequisites
+- Docker Engine 29+ & Docker Compose v5+
+- Java 21 LTS & Node.js 24 LTS
+
+### 1. Configure Environment
+```bash
+# Copy example environment configuration
+# Windows:
+Copy-Item .env.example .env
+
+# Linux / macOS:
+cp .env.example .env
+```
+
+### 2. Manage Local Infrastructure (PostgreSQL & Kafka)
+```bash
+# Start infrastructure in background
+docker compose up -d
+
+# Inspect service health (both services will report healthy)
+docker compose ps
+
+# Stop infrastructure (preserves volumes)
+docker compose down
+
+# Destructive reset (WARNING: DELETES ALL LOCAL DATABASE AND KAFKA DATA)
+docker compose down -v
+```
+
+### Local Endpoints & Database Ownership
+| Service | Container Name | Host Port | Database / Scope | Owner Role | Owner Deployable |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **PostgreSQL 17.11** | `ledgerguard-postgres` | `5432` | `ledgerguard` | `ledgerguard_app` | `ledgerguard-api` |
+| **PostgreSQL 17.11** | `ledgerguard-postgres` | `5432` | `psp_simulator` | `psp_simulator_app` | `psp-simulator` |
+| **PostgreSQL 17.11** | `ledgerguard-postgres` | `5432` | `notification_worker` | `notification_worker_app` | `notification-worker` |
+| **Apache Kafka 4.3.1 (KRaft)** | `ledgerguard-kafka` | `29092` (host) / `9092` (container) | Broker ID 1 (Cluster ID configured) | — | Outbox event stream |
+
+---
+
+## 9. Build & Verification Commands
 
 ### Backend Build & Test (from root)
 ```bash
