@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Awaiting Phase 7
-- **Status:** Phase 6 Complete (Verified)
+- **Current Phase:** Awaiting Phase 8
+- **Status:** Phase 7 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -12,10 +12,11 @@
   - **Phase 4 — Identity, Authentication, Authorization, JWT and Refresh Tokens** (Completed: 2026-08-31)
   - **Phase 5 — Frontend Shell, Authentication UI, Routing & Secure API Integration** (Completed: 2026-08-31)
   - **Phase 6 — Money Value Object, Ledger Accounts & Immutable Journal Persistence** (Completed: 2026-08-31)
-- **Current Work:** Immutable double-entry ledger foundation established. Money value object represented as currency + signed 64-bit integer minor units (paise for INR) with checked arithmetic. Flyway V2 migration creates `ledger_accounts`, `journal_transactions`, and `journal_entries`. PostgreSQL database triggers enforce double-entry balance ($\sum \text{debits} = \sum \text{credits}$, minimum 2 entries, at least 1 debit and 1 credit) upon posting, and protect posted transactions and entries with complete database-level immutability against UPDATE, DELETE, and post-posting entry append. Restrictive delete foreign keys protect financial history.
-- **Next Phase:** Phase 7 — Atomic Double-Entry Posting Engine
+  - **Phase 7 — Atomic Double-Entry Posting Engine** (Completed: 2026-08-31)
+- **Current Work:** Application posting engine (`LedgerPostingService`) implemented under `@Transactional` boundary with default `REQUIRED` propagation. Accepts immutable `PostJournalCommand` with `PostingLine` entries, enforces fail-fast double-entry validation ($\ge 2$ entries, at least 1 `DEBIT`, at least 1 `CREDIT`, INR currency only, $\sum \text{debits} == \sum \text{credits}$ with `Math.addExact` overflow protection), validates all referenced ledger accounts in batch (existence, `ACTIVE` status, INR currency), creates internal temporary `DRAFT` journal, inserts all entries, and transitions to `POSTED` triggering PostgreSQL database double-entry balance verification. Failed postings roll back completely with 0 committed records and no long-lived DRAFT state.
+- **Next Phase:** Phase 8 — Wallets & Balance Snapshots
 - **Last Verified:** 2026-08-31
-- **Git Branch:** `feat/phase-06-ledger-foundation` (workspace uncommitted)
+- **Git Branch:** `feat/phase-07-posting-engine` (workspace uncommitted)
 
 ---
 
@@ -62,7 +63,7 @@
 | **Phase 4** | Identity, Authentication & Security | **Completed** | 2026-08-31 |
 | **Phase 5** | Frontend Shell & Authentication UI | **Completed** | 2026-08-31 |
 | **Phase 6** | Money Value Object & Ledger Schema | **Completed** | 2026-08-31 |
-| **Phase 7** | Atomic Balanced Journal Posting Engine | Planned | — |
+| **Phase 7** | Atomic Balanced Journal Posting Engine | **Completed** | 2026-08-31 |
 | **Phase 8** | Wallet Balance Snapshots & Reconstruction | Planned | — |
 | **Phase 9** | Idempotency Infrastructure | Planned | — |
 | **Phase 10** | Atomic Internal Transfers | Planned | — |
