@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Awaiting Phase 9
-- **Status:** Phase 8 Complete (Verified)
+- **Current Phase:** Awaiting Phase 10
+- **Status:** Phase 9 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -14,10 +14,11 @@
   - **Phase 6 — Money Value Object, Ledger Accounts & Immutable Journal Persistence** (Completed: 2026-08-31)
   - **Phase 7 — Atomic Double-Entry Posting Engine** (Completed: 2026-08-31)
   - **Phase 8 — Wallets & Derived Balance Snapshots** (Completed: 2026-08-31)
-- **Current Work:** Wallet model implemented as an application-facing projection (`Wallet`) combining user-owned `LedgerAccount` and its derived `LedgerBalanceSnapshot` (no redundant `wallets` table). Flyway V3 migration creates `ledger_balance_snapshots` (BIGINT `balance_minor`, `updated_at`), partial unique index enforcing 1 wallet account per user, automatic zero snapshot initialization trigger on account insert, historical backfill from POSTED journals, and transactional `AFTER UPDATE` posting trigger to maintain derived balances deterministically (`ORDER BY ledger_account_id ASC`) with normal-balance arithmetic (CREDIT-normal: credits - debits; DEBIT-normal: debits - credits) and overflow protection. User registration automatically provisions CUSTOMER/MERCHANT wallet accounts atomically.
-- **Next Phase:** Phase 9 — Idempotency Infrastructure
+  - **Phase 9 — PostgreSQL-Backed Idempotency Infrastructure** (Completed: 2026-08-31)
+- **Current Work:** PostgreSQL-backed idempotency coordination infrastructure implemented (`IdempotencyService`). Uses unique scope `(actor_user_id, operation, idempotency_key)`, deterministic SHA-256 request fingerprints, atomic slot claiming via `INSERT ... ON CONFLICT DO NOTHING`, pessimistic row-level coordination for concurrent requests, same-transaction execution under `@Transactional REQUIRED`, fail-safe rollback of uncommitted claims, and PostgreSQL trigger-enforced immutability on `COMPLETED` records (blocking direct `COMPLETED` inserts, metadata updates, status reversals, and deletions). Replay returns stored result reference without re-executing underlying callbacks; conflicting fingerprints on the same key are rejected with `IdempotencyConflictException`.
+- **Next Phase:** Phase 10 — Atomic Internal Transfers
 - **Last Verified:** 2026-08-31
-- **Git Branch:** `feat/phase-08-wallet-balances` (workspace uncommitted)
+- **Git Branch:** `feat/phase-09-idempotency` (workspace uncommitted)
 
 ---
 
@@ -66,7 +67,7 @@
 | **Phase 6** | Money Value Object & Ledger Schema | **Completed** | 2026-08-31 |
 | **Phase 7** | Atomic Balanced Journal Posting Engine | **Completed** | 2026-08-31 |
 | **Phase 8** | Wallet Balance Snapshots & Reconstruction | **Completed** | 2026-08-31 |
-| **Phase 9** | Idempotency Infrastructure | Planned | — |
+| **Phase 9** | Idempotency Infrastructure | **Completed** | 2026-08-31 |
 | **Phase 10** | Atomic Internal Transfers | Planned | — |
 | **Phase 11** | Concurrency Control & Deterministic Locking | Planned | — |
 | **Phase 12** | Wallet, Transfer & Ledger Frontend Experience | Planned | — |

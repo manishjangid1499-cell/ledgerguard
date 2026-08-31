@@ -58,7 +58,7 @@ This document formalizes the domain concepts, state models, and fundamental inva
 
 ### Reliability & Operational Infrastructure
 
-- **Idempotency Record (`idempotency_records`)**: An atomic persistence record mapping `(client_id, idempotency_key)` to a cryptographic request fingerprint (SHA-256) and the cached response payload.
+- **Idempotency Record (`idempotency_records`)**: An atomic persistence record mapping `(actor_user_id, operation, idempotency_key)` to a cryptographic SHA-256 request fingerprint, lifecycle status (`IN_PROGRESS`, `COMPLETED`), and committed result identifier (`result_id UUID`). Completed records are immutable.
 - **Outbox Event (`outbox_events`)**: A reliable message buffer written inside the primary business database transaction and published asynchronously to Kafka via `FOR UPDATE SKIP LOCKED`.
 - **Provider Operation (`provider_operations`)**: Tracks the state of an external call initiated to the PSP simulator, including attempt history, latency, and provider reference IDs.
 - **Provider Event (`provider_events`)**: An immutable log of inbound webhooks received from the PSP simulator, enforcing signature verification and deduplication.
