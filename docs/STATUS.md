@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Awaiting Phase 6
-- **Status:** Phase 5 Complete (Verified)
+- **Current Phase:** Awaiting Phase 7
+- **Status:** Phase 6 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -11,10 +11,11 @@
   - **Phase 3 — LedgerGuard API foundation, profiles, health checks and standardized errors** (Completed: 2026-08-31)
   - **Phase 4 — Identity, Authentication, Authorization, JWT and Refresh Tokens** (Completed: 2026-08-31)
   - **Phase 5 — Frontend Shell, Authentication UI, Routing & Secure API Integration** (Completed: 2026-08-31)
-- **Current Work:** Frontend shell and secure authentication integration implemented with React 19, Vite 8, Material UI 9, React Router 7, TanStack Query 5, and React Hook Form 7. Stateless HS256 JWT access tokens are stored strictly in JavaScript application memory, with single-use opaque refresh tokens rotated via HttpOnly/SameSite=Strict cookies. Frontend features include single-flight refresh on 401, session restoration on reload, RFC 9457 Problem Details error handling, role-aware navigation, registration limited to CUSTOMER/MERCHANT, and backend CORS configuration pinned to `http://localhost:5173`.
-- **Next Phase:** Phase 6 — Money Value Object & Ledger Schema
+  - **Phase 6 — Money Value Object, Ledger Accounts & Immutable Journal Persistence** (Completed: 2026-08-31)
+- **Current Work:** Immutable double-entry ledger foundation established. Money value object represented as currency + signed 64-bit integer minor units (paise for INR) with checked arithmetic. Flyway V2 migration creates `ledger_accounts`, `journal_transactions`, and `journal_entries`. PostgreSQL database triggers enforce double-entry balance ($\sum \text{debits} = \sum \text{credits}$, minimum 2 entries, at least 1 debit and 1 credit) upon posting, and protect posted transactions and entries with complete database-level immutability against UPDATE, DELETE, and post-posting entry append. Restrictive delete foreign keys protect financial history.
+- **Next Phase:** Phase 7 — Atomic Double-Entry Posting Engine
 - **Last Verified:** 2026-08-31
-- **Git Branch:** `feat/phase-05-frontend-auth` (workspace uncommitted)
+- **Git Branch:** `feat/phase-06-ledger-foundation` (workspace uncommitted)
 
 ---
 
@@ -60,7 +61,7 @@
 | **Phase 3** | LedgerGuard API Foundation & Observability | **Completed** | 2026-08-31 |
 | **Phase 4** | Identity, Authentication & Security | **Completed** | 2026-08-31 |
 | **Phase 5** | Frontend Shell & Authentication UI | **Completed** | 2026-08-31 |
-| **Phase 6** | Money Value Object & Ledger Schema | Planned | — |
+| **Phase 6** | Money Value Object & Ledger Schema | **Completed** | 2026-08-31 |
 | **Phase 7** | Atomic Balanced Journal Posting Engine | Planned | — |
 | **Phase 8** | Wallet Balance Snapshots & Reconstruction | Planned | — |
 | **Phase 9** | Idempotency Infrastructure | Planned | — |

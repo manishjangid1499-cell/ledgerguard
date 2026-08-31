@@ -110,8 +110,8 @@ After each failure injection, the engine mathematically proves that:
 
 ## 7. Current Project Status
 
-- **Current State:** Phase 5 Completed — Frontend Shell, Authentication UI, React Router, TanStack Query, React Hook Form, Material UI 9 theme, memory-only HS256 JWT access token management, HttpOnly refresh cookie rotation, session restoration, single-flight 401 refresh mechanism, RFC 9457 Problem Details error handling, role-aware navigation, and backend CORS configuration pinned to authorized frontend origin.
-- **Next Step:** Phase 6 — Money Value Object & Ledger Schema.
+- **Current State:** Phase 6 Completed — Money value object (immutable currency + signed 64-bit integer minor units with checked arithmetic), ledger account model (no mutable balance column), immutable journal transaction & entry entities, Flyway V2 migration (`ledger_accounts`, `journal_transactions`, `journal_entries`), PostgreSQL double-entry balance enforcement triggers ($\sum \text{debit} = \sum \text{credit}$, minimum 2 entries, at least 1 debit and 1 credit), and database-level immutability triggers protecting posted journal history from UPDATE/DELETE/entry-append.
+- **Next Step:** Phase 7 — Atomic Double-Entry Posting Engine.
 - **Roadmap:** Detailed phase-by-phase progress is tracked in [docs/STATUS.md](docs/STATUS.md).
 
 ---
