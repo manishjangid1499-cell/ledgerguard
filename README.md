@@ -58,7 +58,7 @@ LedgerGuard structures its financial core as a **Modular Monolith** (`ledgerguar
 ```
 
 ### Main Deployables (Target Architecture)
-1. **`ledgerguard-api`**: Core modular monolith managing ledger accounts, double-entry journal transactions, transfers, payments, holds, outbox events, and reconciliation.
+1. **`ledgerguard-api`**: Core modular monolith managing identity & authentication, ledger accounts, double-entry journal transactions, transfers, payments, holds, outbox events, and reconciliation.
 2. **`psp-simulator`**: Independent banking/payment service simulator with isolated database, modeling realistic network ambiguity (timeouts, delayed webhooks, duplicate callbacks, transient 500s).
 3. **`notification-worker`**: Asynchronous event consumer with inbox deduplication and dead-letter handling.
 4. **`ledgerguard-web`**: TypeScript/React frontend providing customer banking portals and administrative operations/reconciliation consoles.
@@ -87,6 +87,7 @@ After each failure injection, the engine mathematically proves that:
 
 ## 5. Major Engineering Areas
 
+- **Identity & Authentication**: Embedded Spring Security architecture, BCrypt password hashing, short-lived HS256 JWT access tokens, high-entropy opaque refresh tokens with SHA-256 hash persistence, dedicated `HttpOnly` / `SameSite=Strict` cookie strategy, and pessimistic row locking for atomic token rotation.
 - **Immutable Double-Entry Accounting**: Balanced debit/credit entries; posted transactions are permanent and corrected only through compensating entries.
 - **Concurrency Control**: Deterministic account lock ordering (lower identifier first) to prevent opposing-transfer circular-wait deadlocks and prevent double-spending under concurrent workloads.
 - **Authoritative Idempotency**: Atomic database-backed request deduplication keys with cryptographic payload fingerprinting.
@@ -109,8 +110,8 @@ After each failure injection, the engine mathematically proves that:
 
 ## 7. Current Project Status
 
-- **Current State:** Phase 3 Completed — LedgerGuard API foundation established with Spring Boot 4.1.1, clean profiles (`default`, `dev`, `test`), standard application liveness/readiness health probes (`/actuator/health`), RFC 9457 Problem Details (`application/problem+json`), and centralized sanitized exception handling.
-- **Next Step:** Phase 4 — Identity, authentication and authorization.
+- **Current State:** Phase 4 Completed — Identity, authentication, authorization, JWT access tokens, opaque refresh tokens with atomic rotation and pessimistic locking, dedicated `HttpOnly` / `SameSite=Strict` cookies, Flyway V1 schema migration (`users`, `refresh_tokens`), RFC 9457 Problem Details for security errors, anti-enumeration safeguards, and comprehensive PostgreSQL 17.11 Testcontainers integration test suite.
+- **Next Step:** Phase 5 — Frontend Shell & Authentication UI.
 - **Roadmap:** Detailed phase-by-phase progress is tracked in [docs/STATUS.md](docs/STATUS.md).
 
 ---
@@ -177,7 +178,7 @@ npm run build
 
 ---
 
-## 9. Documentation Links
+## 10. Documentation Links
 
 - **Architecture Documentation:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - **Master Development Plan (Phases 0–44):** [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md)

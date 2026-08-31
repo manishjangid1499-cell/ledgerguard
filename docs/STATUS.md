@@ -2,17 +2,18 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Awaiting Phase 4
-- **Status:** Phase 3 Complete (Verified)
+- **Current Phase:** Awaiting Phase 5
+- **Status:** Phase 4 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
   - **Phase 2 — PostgreSQL, Kafka and Docker Local Development Infrastructure** (Completed: 2026-08-30)
   - **Phase 3 — LedgerGuard API foundation, profiles, health checks and standardized errors** (Completed: 2026-08-31)
-- **Current Work:** HTTP/API foundation established with Spring Boot 4.1.1, profiles (`default`, `dev`, `test`), standard application liveness/readiness health probes (`/actuator/health`, `/actuator/health/liveness`, `/actuator/health/readiness`), RFC 9457 Problem Details (`application/problem+json`), Jakarta Bean Validation, and centralized sanitized error handling.
-- **Next Phase:** Phase 4 — Identity, authentication and authorization
+  - **Phase 4 — Identity, Authentication, Authorization, JWT and Refresh Tokens** (Completed: 2026-08-31)
+- **Current Work:** Identity and authentication architecture implemented with Spring Security 7 / Spring Boot 4.1.1, PostgreSQL persistence via Flyway V1 schema migration (`users`, `refresh_tokens`), BCrypt password hashing, short-lived HS256 JWT access tokens (15m TTL), high-entropy opaque refresh tokens with SHA-256 hash persistence and atomic pessimistic rotation, dedicated `HttpOnly`, `SameSite=Strict`, path-restricted cookies, RFC 9457 Problem Details for 401/403 errors, anti-enumeration authentication, and test suite backed by PostgreSQL 17.11 Testcontainers.
+- **Next Phase:** Phase 5 — Frontend Shell & Authentication UI
 - **Last Verified:** 2026-08-31
-- **Git Branch:** `feat/phase-03-api-foundation` (workspace uncommitted)
+- **Git Branch:** `feat/phase-04-security` (workspace uncommitted)
 
 ---
 
@@ -56,7 +57,7 @@
 | **Phase 1** | Workspace Bootstrap & Multi-Module Setup | **Completed** | 2026-08-30 |
 | **Phase 2** | Docker Infrastructure & Database Baseline | **Completed** | 2026-08-30 |
 | **Phase 3** | LedgerGuard API Foundation & Observability | **Completed** | 2026-08-31 |
-| **Phase 4** | Identity, Authentication & Security | Planned | — |
+| **Phase 4** | Identity, Authentication & Security | **Completed** | 2026-08-31 |
 | **Phase 5** | Frontend Shell & Authentication UI | Planned | — |
 | **Phase 6** | Money Value Object & Ledger Schema | Planned | — |
 | **Phase 7** | Atomic Balanced Journal Posting Engine | Planned | — |

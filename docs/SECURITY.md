@@ -5,6 +5,8 @@
 - **Authoritative Backend Security**: The backend API enforces all authentication and authorization rules. The frontend UI is treated as untrusted and client-side access controls are for user experience only.
 - **No Distributed Auth Complexity**: Authentication and authorization are embedded directly within `ledgerguard-api`. No external authentication microservice or Keycloak cluster is introduced.
 - **Defense in Depth**: Every request is authenticated, authorized against ownership boundaries, validated for payload structure, and rate-limited.
+- **Stateless Session Policy**: The API operates strictly with `SessionCreationPolicy.STATELESS`. No server-side HTTP session state is retained.
+- **Anti-Enumeration Safeguards**: Registration rejects duplicate emails with a structured problem detail, while login endpoints return identical, generic `INVALID_CREDENTIALS` error details for non-existent users, incorrect passwords, or disabled accounts.
 
 ---
 
@@ -18,31 +20,50 @@ LedgerGuard defines three principal roles:
 | **`ROLE_MERCHANT`** | Commercial accounts | Manage merchant profile; accept payments; initiate refunds on owned payments; inspect merchant settlement ledger. |
 | **`ROLE_OPS`** | Platform administrators & Operators | Access system-wide integrity metrics; execute reconciliation jobs; inspect outbox queues; trigger Money Integrity Failure Lab scenarios; view system audit logs. |
 
+### Endpoint Authorization Rules
+- `/api/auth/register`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`: Publicly accessible endpoints.
+- `/actuator/health/**`, `/actuator/info`: Publicly accessible standard application liveness/readiness health probes.
+- `/api/ops/**`: Strictly restricted to authenticated principals holding `ROLE_OPS`.
+- `/api/**`: Requires valid Bearer token authentication by default.
+
 ---
 
 ## 3. Authentication & Token Management
 
 ### Password Hashing
-- User passwords are encrypted using **BCrypt** with an adaptive work factor (default `strength = 12`). Plaintext passwords never touch logs, storage, or external systems.
+- User passwords are encrypted using **BCrypt** with an adaptive work factor (default `strength = 10` in Spring Security `BCryptPasswordEncoder`). Plaintext passwords never touch logs, storage, or external systems.
 
 ### Access & Refresh Token Design
-- **Access Tokens**: Short-lived JSON Web Tokens (JWT) signed with HMAC-SHA256 or RSA-256 containing `sub` (User ID), `roles`, `issuedAt`, and `expiration` (e.g., 15-minute validity).
-- **Refresh Tokens**: Long-lived, cryptographically random strings stored as hashed records in the PostgreSQL database (`refresh_tokens` table) with expiration timestamps and device/IP metadata.
-- **Revocation & Rotation**: Refresh tokens are rotated upon each exchange. Revoking a refresh token immediately blocks subsequent token generation.
+- **Access Tokens**: Short-lived JSON Web Tokens (JWT) signed with HMAC-SHA256 (`HS256`) using a 256-bit+ secret key configured via `LEDGERGUARD_JWT_SECRET`.
+  - Claims: `iss = ledgerguard`, `sub = <User UUID>`, `role = <CUSTOMER|MERCHANT|OPS>`, `jti = <Token UUID>`, `iat`, `exp` (default TTL: 15 minutes / 900 seconds).
+  - Access tokens never contain password hashes, raw refresh tokens, or PII.
+- **Refresh Tokens**: Long-lived, cryptographically random strings (256-bit entropy generated via `SecureRandom` encoded with Base64 URL-safe format).
+  - Storage: Stored only as SHA-256 hashes (`token_hash`) in PostgreSQL `refresh_tokens` table. Raw refresh tokens are never persisted.
+  - TTL: Default 7 days (604,800 seconds).
+  - Revocation & Rotation: Refresh tokens are single-use. Upon rotation (`POST /api/auth/refresh`), the active token is atomically marked revoked (`revoked_at = NOW()`) and a fresh token is issued.
+  - Concurrency & Double-Spend Protection: Refresh token rotation uses PostgreSQL row-level pessimistic locking (`SELECT ... FOR UPDATE` via `@Lock(LockModeType.PESSIMISTIC_WRITE)`). If two concurrent requests use the same refresh token, exactly one succeeds and the other fails safely with `401 Unauthorized`.
+  - Disabled User Enforcement & Architectural Limitation: Disabled accounts (`status = DISABLED`) are strictly prohibited from logging in (`POST /api/auth/login` -> 401) and cannot rotate or refresh tokens (`POST /api/auth/refresh` -> 401). Because LedgerGuard uses short-lived stateless access JWTs (TTL: 15 minutes) and avoids distributed token-blacklisting infrastructure (e.g. Redis), an access token issued *before* an account is disabled remains valid until its natural expiration. After expiry, the disabled user cannot refresh or obtain new tokens.
 
 ### Cookie & Storage Strategy
-- In browser clients, refresh tokens are transported via `HttpOnly`, `Secure`, `SameSite=Strict` cookies to prevent client-side JavaScript access and XSS theft.
-- Short-lived access tokens may be kept in memory or transmitted via the `Authorization: Bearer <token>` header.
-
-### CSRF Protections
-- State-changing REST endpoints enforce `SameSite=Strict` cookie policies and custom request header verification (`X-Requested-With` or custom CSRF tokens) where cookie-based authentication is utilized.
+- Refresh tokens are transmitted via a dedicated HTTP cookie:
+  - Cookie Name: `ledgerguard_refresh_token`
+  - `HttpOnly = true` (inaccessible to JavaScript)
+  - `SameSite = Strict` (mitigates CSRF)
+  - `Path = /api/auth` (scoped strictly to authentication endpoints)
+  - `Secure = true` in production (`false` configurable in local development via `ledgerguard.security.cookie.secure`).
+- Raw refresh tokens are never returned in JSON response bodies.
 
 ---
 
-## 4. Resource Ownership & Authorization Checks
+## 4. Standardized Error Handling for Security (RFC 9457)
 
-- **Owner-Only Resource Protection**: An authenticated user with `ROLE_CUSTOMER` cannot view, transfer from, or manipulate accounts or resources belonging to another user.
-- **Declarative & Programmatic Checks**: Spring Security method security (`@PreAuthorize("hasRole('OPS') or #userId == authentication.principal.id")`) combined with domain-level repository filtering ensures users query only their own data.
+All authentication and authorization failures return standardized RFC 9457 Problem Details (`application/problem+json`):
+- **401 Unauthorized (`AUTHENTICATION_REQUIRED`)**: Missing or malformed Bearer token on protected endpoints.
+- **401 Unauthorized (`INVALID_CREDENTIALS`)**: Incorrect email/password combination or inactive account. Detail: `"Invalid email or password."`.
+- **401 Unauthorized (`INVALID_REFRESH_TOKEN`)**: Expired, revoked, invalid, or missing refresh token.
+- **403 Forbidden (`ACCESS_DENIED`)**: Authenticated user lacking the necessary role (e.g. Customer accessing `/api/ops/**`).
+- **400 Bad Request (`EMAIL_ALREADY_REGISTERED`)**: Attempt to register an existing email.
+- **400 Bad Request (`VALIDATION_FAILED`)**: Invalid fields or attempted self-registration with `ROLE_OPS`.
 
 ---
 

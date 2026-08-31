@@ -4,6 +4,32 @@ spring:
   mvc:
     problemdetails:
       enabled: true
+  datasource:
+    url: ${LEDGERGUARD_DB_URL:jdbc:postgresql://localhost:5432/ledgerguard}
+    username: ${LEDGERGUARD_DB_USER:ledgerguard_app}
+    password: ${LEDGERGUARD_DB_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+ledgerguard:
+  security:
+    jwt:
+      issuer: ledgerguard
+      access-token-ttl: 900s
+      refresh-token-ttl: 604800s
+      secret: ${LEDGERGUARD_JWT_SECRET:}
+    cookie:
+      secure: true
 
 server:
   port: 8080
