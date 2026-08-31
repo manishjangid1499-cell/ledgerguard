@@ -30,6 +30,8 @@ ledgerguard:
       secret: ${LEDGERGUARD_JWT_SECRET:}
     cookie:
       secure: true
+    cors:
+      allowed-origins: ${LEDGERGUARD_CORS_ALLOWED_ORIGINS:}
 
 server:
   port: 8080

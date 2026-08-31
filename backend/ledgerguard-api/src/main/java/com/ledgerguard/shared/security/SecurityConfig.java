@@ -26,6 +26,11 @@ import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.web.SecurityFilterChain;
 
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
@@ -55,6 +60,27 @@ public class SecurityConfig {
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource(
+            @Value("${ledgerguard.security.cors.allowed-origins:}") List<String> allowedOrigins) {
+        CorsConfiguration configuration = new CorsConfiguration();
+        List<String> origins = (allowedOrigins != null)
+                ? allowedOrigins.stream().filter(s -> s != null && !s.isBlank()).toList()
+                : Collections.emptyList();
+
+        if (!origins.isEmpty()) {
+            configuration.setAllowedOrigins(origins);
+            configuration.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
+            configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept"));
+            configuration.setAllowCredentials(true);
+            configuration.setMaxAge(3600L);
+        }
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
     }
 
     @Bean

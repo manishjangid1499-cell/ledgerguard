@@ -53,6 +53,13 @@ LedgerGuard defines three principal roles:
   - `Secure = true` in production (`false` configurable in local development via `ledgerguard.security.cookie.secure`).
 - Raw refresh tokens are never returned in JSON response bodies.
 
+### Frontend Security & Access Token Lifecycle (Implemented in Phase 5)
+- **In-Memory Access Tokens Only**: The frontend application maintains access tokens strictly within JavaScript application memory (via closure/in-memory store). Access tokens are never written to `localStorage`, `sessionStorage`, `IndexedDB`, or JavaScript cookies, mitigating persistent cross-site token theft.
+- **Silent Session Restoration**: On initial application load or hard reload, the frontend calls `POST /api/auth/refresh` with `credentials: 'include'`. If a valid `ledgerguard_refresh_token` HttpOnly cookie is present, a fresh access token is loaded into memory without user interaction.
+- **Single-Flight Refresh on 401**: When a protected API request encounters an expired access token (`401 Unauthorized`), the native fetch client initiates a deduplicated single-flight token refresh, updates memory, and retries the original request once. Non-protected auth endpoints (`/login`, `/register`, `/refresh`, `/logout`) are excluded to avoid recursion loops.
+- **Strict CORS Origin Restriction**: The backend pins allowed origins to the authorized frontend URL (`http://localhost:5173`) with `allowCredentials = true`. Wildcard origins (`*`) are prohibited.
+- **Role-Aware UI vs Authoritative Server Enforcement**: Frontend route guards (`ProtectedRoute`, `PublicOnlyRoute`) provide clean UI redirection, while all financial actions and administrative operations remain strictly enforced by the Spring Security backend.
+
 ---
 
 ## 4. Standardized Error Handling for Security (RFC 9457)
