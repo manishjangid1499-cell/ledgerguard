@@ -1,7 +1,13 @@
 package com.ledgerguard.shared.error;
 
+import com.ledgerguard.identity.application.EmailAlreadyRegisteredException;
+import com.ledgerguard.identity.application.ForbiddenRegistrationException;
+import com.ledgerguard.identity.application.InvalidCredentialsException;
+import com.ledgerguard.identity.application.InvalidPasswordException;
+import com.ledgerguard.identity.application.InvalidRefreshTokenException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -110,6 +116,102 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
+    @ExceptionHandler(EmailAlreadyRegisteredException.class)
+    public ResponseEntity<ProblemDetail> handleEmailAlreadyRegistered(EmailAlreadyRegisteredException ex, WebRequest request) {
+        log.warn("Registration failed: email already registered");
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                "Email is already registered."
+        );
+        problemDetail.setTitle("Email already registered");
+        enrichProblemDetail(problemDetail, ApiErrorCode.EMAIL_ALREADY_REGISTERED, request);
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ProblemDetail> handleDataIntegrityViolation(DataIntegrityViolationException ex, WebRequest request) {
+        log.warn("Database constraint violation during request execution");
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                "Email is already registered."
+        );
+        problemDetail.setTitle("Email already registered");
+        enrichProblemDetail(problemDetail, ApiErrorCode.EMAIL_ALREADY_REGISTERED, request);
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
+    @ExceptionHandler(ForbiddenRegistrationException.class)
+    public ResponseEntity<ProblemDetail> handleForbiddenRegistration(ForbiddenRegistrationException ex, WebRequest request) {
+        log.warn("Registration rejected: attempt to register with forbidden role");
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                "Registration with OPS role is not permitted."
+        );
+        problemDetail.setTitle("Validation failed");
+        enrichProblemDetail(problemDetail, ApiErrorCode.VALIDATION_FAILED, request);
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
+    @ExceptionHandler(InvalidPasswordException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidPassword(InvalidPasswordException ex, WebRequest request) {
+        log.warn("Registration rejected: password does not meet security policy");
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                ex.getMessage()
+        );
+        problemDetail.setTitle("Validation failed");
+        enrichProblemDetail(problemDetail, ApiErrorCode.VALIDATION_FAILED, request);
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidCredentials(InvalidCredentialsException ex, WebRequest request) {
+        log.warn("Authentication failed: invalid credentials");
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.UNAUTHORIZED,
+                "Invalid email or password."
+        );
+        problemDetail.setTitle("Unauthorized");
+        enrichProblemDetail(problemDetail, ApiErrorCode.INVALID_CREDENTIALS, request);
+
+        return ResponseEntity
+                .status(HttpStatus.UNAUTHORIZED)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
+    @ExceptionHandler(InvalidRefreshTokenException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidRefreshToken(InvalidRefreshTokenException ex, WebRequest request) {
+        log.warn("Refresh failed: invalid refresh token");
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.UNAUTHORIZED,
+                "Invalid, expired, or revoked refresh token."
+        );
+        problemDetail.setTitle("Unauthorized");
+        enrichProblemDetail(problemDetail, ApiErrorCode.INVALID_REFRESH_TOKEN, request);
+
+        return ResponseEntity
+                .status(HttpStatus.UNAUTHORIZED)
                 .contentType(MediaType.APPLICATION_PROBLEM_JSON)
                 .body(problemDetail);
     }

@@ -1,5 +1,16 @@
-# Test profile configuration for ledgerguard-api
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+
+ledgerguard:
+  security:
+    cookie:
+      secure: false
+
 logging:
   level:
     com.ledgerguard: INFO
     org.springframework.web: WARN
+    org.springframework.security: WARN
