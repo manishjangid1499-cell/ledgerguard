@@ -17,15 +17,14 @@ import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
-import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtValidationException;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 
 import javax.crypto.spec.SecretKeySpec;
-import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,6 +37,9 @@ class JwtValidationTest extends AbstractIntegrationTest {
 
     @Autowired
     private JwtDecoder jwtDecoder;
+
+    @Autowired
+    private JwtEncoder jwtEncoder;
 
     @Test
     @DisplayName("Generated JWT contains subject, role, issuer, jti and valid expiration without sensitive claims")
@@ -59,6 +61,27 @@ class JwtValidationTest extends AbstractIntegrationTest {
         assertThat(decodedJwt.getHeaders().get("alg")).isEqualTo("HS256");
 
         assertThat(decodedJwt.getClaims()).doesNotContainKeys("password", "passwordHash", "refreshToken");
+    }
+
+    @Test
+    @DisplayName("JWT signed with the correct key and HS256 but with wrong issuer is rejected by JwtDecoder")
+    void tokenSignedWithCorrectKeyButWrongIssuerIsRejected() {
+        Instant now = Instant.now();
+        JwtClaimsSet claims = JwtClaimsSet.builder()
+                .issuer("unauthorized-fake-issuer")
+                .issuedAt(now)
+                .expiresAt(now.plusSeconds(900))
+                .subject(UUID.randomUUID().toString())
+                .claim("role", "CUSTOMER")
+                .id(UUID.randomUUID().toString())
+                .build();
+
+        JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();
+        String wrongIssuerToken = jwtEncoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
+
+        assertThatThrownBy(() -> jwtDecoder.decode(wrongIssuerToken))
+                .isInstanceOf(JwtValidationException.class)
+                .hasMessageContaining("iss");
     }
 
     @Test
