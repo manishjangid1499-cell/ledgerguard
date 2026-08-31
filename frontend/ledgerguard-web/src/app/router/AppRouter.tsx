@@ -7,6 +7,7 @@ import { LoginPage } from '../../auth/pages/LoginPage';
 import { RegisterPage } from '../../auth/pages/RegisterPage';
 import { AppHomePage } from '../../shared/pages/AppHomePage';
 import { ProfilePage } from '../../shared/pages/ProfilePage';
+import { TransferDetailPage } from '../../transfer/pages/TransferDetailPage';
 import { NotFoundPage } from '../../shared/pages/NotFoundPage';
 import { ProtectedRoute } from './ProtectedRoute';
 import { PublicOnlyRoute } from './PublicOnlyRoute';
@@ -32,6 +33,7 @@ export const AppRouter: React.FC = () => {
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
             <Route path="/app" element={<AppHomePage />} />
+            <Route path="/app/transfers/:transferId" element={<TransferDetailPage />} />
             <Route path="/profile" element={<ProfilePage />} />
           </Route>
         </Route>

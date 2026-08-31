@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Awaiting Phase 12
-- **Status:** Phase 11 Complete (Verified)
+- **Current Phase:** Awaiting Phase 13
+- **Status:** Phase 12 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -17,10 +17,11 @@
   - **Phase 9 — PostgreSQL-Backed Idempotency Infrastructure** (Completed: 2026-08-31)
   - **Phase 10 — Atomic Internal Transfers** (Completed: 2026-08-31)
   - **Phase 11 — Concurrency Control, Deterministic Locking & Overdraft Prevention** (Completed: 2026-08-31)
-- **Current Work:** Deterministic PostgreSQL row-level locking (`PESSIMISTIC_WRITE` on `ledger_balance_snapshots` ordered by `ledger_account_id ASC`) and atomic sufficient-funds validation implemented in `TransferService`. Prevents double-spending, circular wait deadlocks on opposing transfers (`A -> B` vs `B -> A`), and transfer-induced source wallet overdrafts. Replay requests bypass snapshot locking. Insufficient funds throws `InsufficientFundsException` (HTTP 409 Conflict, `INSUFFICIENT_FUNDS`), rolling back the transaction and leaving the idempotency key unpoisoned for safe retries after future funding. Verified under heavy multi-threaded stress tests (50+ threads, opposing transfers, race conditions) against real PostgreSQL Testcontainers.
-- **Next Phase:** Phase 12 — Wallet, Transfer & Ledger Frontend Experience
+  - **Phase 12 — Wallet, Transfer & Ledger Frontend Experience** (Completed: 2026-08-31)
+- **Current Work:** Phase 12 completed. Built authenticated backend read APIs (`GET /api/wallets/me`, `GET /api/transfers`, `GET /api/transfers/{transferId}`) with string-serialized minor units for JavaScript safe arithmetic. Implemented frontend React financial dashboard (`WalletCard`, `TransferForm`, `RecentTransfersTable`, `JournalInspector`, `TransferDetailPage`), exact BigInt INR parser/formatter (`money.ts`), and logical retry idempotency tracking without double-deduction.
+- **Next Phase:** Phase 13 — Merchant Payments Domain
 - **Last Verified:** 2026-08-31
-- **Git Branch:** `feat/phase-11-concurrency-control` (workspace uncommitted)
+- **Git Branch:** `feat/phase-12-financial-frontend` (workspace uncommitted)
 
 ---
 
@@ -72,7 +73,7 @@
 | **Phase 9** | Idempotency Infrastructure | **Completed** | 2026-08-31 |
 | **Phase 10** | Atomic Internal Transfers | **Completed** | 2026-08-31 |
 | **Phase 11** | Concurrency Control, Deterministic Locking & Overdraft Prevention | **Completed** | 2026-08-31 |
-| **Phase 12** | Wallet, Transfer & Ledger Frontend Experience | Planned | — |
+| **Phase 12** | Wallet, Transfer & Ledger Frontend Experience | **Completed** | 2026-08-31 |
 | **Phase 13** | Merchant Payments Domain | Planned | — |
 | **Phase 14** | Full & Partial Refunds | Planned | — |
 | **Phase 15** | Balance Holds & Available Balance Model | Planned | — |

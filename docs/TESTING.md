@@ -54,11 +54,15 @@ To validate correctness under real financial conditions, tests must run against 
   - **Outbox Poller with `SKIP LOCKED`**: Multiple worker instances claiming distinct pending events without duplicate processing.
   - **Kafka Consumer Inbox**: Redelivery of duplicate Kafka messages asserts zero duplicate domain side-effects.
 
-### Layer 4: Webhook & Security Integration Tests
-- **Scope**: HTTP layer security, role-based authorization, and signature validation.
+### Layer 4: Webhook, Financial API & Security Integration Tests
+- **Scope**: HTTP layer security, role-based authorization, financial read endpoints, and signature validation.
 - **Targets**:
-  - Verification that unauthenticated requests return HTTP 401.
-  - Verification that a `CUSTOMER` cannot access another customer's wallet (HTTP 403).
+  - Verification that unauthenticated requests return HTTP 401 across all financial and identity routes.
+  - Verification that an `OPS` user is forbidden (HTTP 403) from accessing user wallets (`/api/wallets/me`) and transfer endpoints (`/api/transfers`).
+  - Scoped wallet history and detail lookup: `GET /api/transfers` returns only actor-involved transfers (as source or destination); unrelated transfers are excluded.
+  - Privacy preservation: `GET /api/transfers/{id}` returns HTTP 404 Not Found (not 403) for unrelated users, preventing disclosure of another user's transfer existence.
+  - Double-entry journal inspector: verifies that transfer details expose immutable `POSTED` double-entry entries with balanced debits and credits matching the transfer amount.
+  - Serialization precision: verifies that minor-unit amounts and balances are serialized as decimal JSON strings, preserving precision even for values exceeding JavaScript `Number.MAX_SAFE_INTEGER` (`9,007,199,254,740,991`).
   - Validation of HMAC-SHA256 signatures on inbound PSP webhooks; rejection of tampered or expired payloads.
 
 ### Layer 5: Reconciliation Engine & Snapshot Invariant Tests

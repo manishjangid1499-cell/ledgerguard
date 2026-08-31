@@ -29,6 +29,7 @@ import java.util.UUID;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -122,7 +123,7 @@ class TransferControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.transferId", notNullValue()))
                 .andExpect(jsonPath("$.sourceLedgerAccountId", is(senderWallet.getId().toString())))
                 .andExpect(jsonPath("$.destinationLedgerAccountId", is(receiverWallet.getId().toString())))
-                .andExpect(jsonPath("$.amountMinor", is(15000)))
+                .andExpect(jsonPath("$.amountMinor", is("15000")))
                 .andExpect(jsonPath("$.currency", is("INR")))
                 .andExpect(jsonPath("$.journalTransactionId", notNullValue()))
                 .andExpect(jsonPath("$.replayed", is(false)));
@@ -138,7 +139,7 @@ class TransferControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.transferId", notNullValue()))
                 .andExpect(jsonPath("$.sourceLedgerAccountId", is(senderWallet.getId().toString())))
                 .andExpect(jsonPath("$.destinationLedgerAccountId", is(receiverWallet.getId().toString())))
-                .andExpect(jsonPath("$.amountMinor", is(15000)))
+                .andExpect(jsonPath("$.amountMinor", is("15000")))
                 .andExpect(jsonPath("$.replayed", is(true)));
     }
 
@@ -164,7 +165,7 @@ class TransferControllerIntegrationTest extends AbstractIntegrationTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.amountMinor", is(25000)))
+                .andExpect(jsonPath("$.amountMinor", is("25000")))
                 .andExpect(jsonPath("$.replayed", is(false)));
     }
 
@@ -356,6 +357,168 @@ class TransferControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.errorCode", is(ApiErrorCode.INSUFFICIENT_FUNDS)))
                 .andExpect(jsonPath("$.title", is("Insufficient funds")))
                 .andExpect(jsonPath("$.detail", is("Insufficient funds for this transfer.")));
+    }
+
+    @Test
+    @DisplayName("GET /api/transfers returns paginated transfers where user is source or destination")
+    void getTransfersReturnsUserTransfers() throws Exception {
+        User userA = new User(UUID.randomUUID(), "list.a." + UUID.randomUUID() + "@example.com", "$2a$hash", UserRole.CUSTOMER, UserStatus.ACTIVE);
+        User userB = new User(UUID.randomUUID(), "list.b." + UUID.randomUUID() + "@example.com", "$2a$hash", UserRole.CUSTOMER, UserStatus.ACTIVE);
+        User userC = new User(UUID.randomUUID(), "list.c." + UUID.randomUUID() + "@example.com", "$2a$hash", UserRole.CUSTOMER, UserStatus.ACTIVE);
+        userRepository.save(userA);
+        userRepository.save(userB);
+        userRepository.save(userC);
+
+        LedgerAccount walletA = createTestWallet(userA.getId(), AccountType.CUSTOMER);
+        LedgerAccount walletB = createTestWallet(userB.getId(), AccountType.CUSTOMER);
+        LedgerAccount walletC = createTestWallet(userC.getId(), AccountType.CUSTOMER);
+
+        fundWallet(walletA.getId(), 50000L);
+        fundWallet(walletB.getId(), 50000L);
+
+        String tokenA = jwtTokenService.generateAccessToken(userA);
+        String tokenB = jwtTokenService.generateAccessToken(userB);
+
+        // A -> B (outgoing for A, incoming for B)
+        mockMvc.perform(post("/api/transfers")
+                .header("Authorization", "Bearer " + tokenA)
+                .header("Idempotency-Key", "key-list-1-" + UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(new CreateTransferRequest(walletB.getId(), 10000L))))
+                .andExpect(status().isCreated());
+
+        // B -> A (incoming for A, outgoing for B)
+        mockMvc.perform(post("/api/transfers")
+                .header("Authorization", "Bearer " + tokenB)
+                .header("Idempotency-Key", "key-list-2-" + UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(new CreateTransferRequest(walletA.getId(), 5000L))))
+                .andExpect(status().isCreated());
+
+        // B -> C (unrelated to A)
+        mockMvc.perform(post("/api/transfers")
+                .header("Authorization", "Bearer " + tokenB)
+                .header("Idempotency-Key", "key-list-3-" + UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(new CreateTransferRequest(walletC.getId(), 2000L))))
+                .andExpect(status().isCreated());
+
+        // Query user A's transfers -> should see exactly 2 transfers (A->B and B->A, newest first)
+        mockMvc.perform(get("/api/transfers?page=0&size=20")
+                        .header("Authorization", "Bearer " + tokenA)
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.totalElements", is(2)))
+                .andExpect(jsonPath("$.items.length()", is(2)))
+                .andExpect(jsonPath("$.items[0].direction", is("INCOMING")))
+                .andExpect(jsonPath("$.items[0].amountMinor", is("5000")))
+                .andExpect(jsonPath("$.items[1].direction", is("OUTGOING")))
+                .andExpect(jsonPath("$.items[1].amountMinor", is("10000")));
+    }
+
+    @Test
+    @DisplayName("GET /api/transfers/{id} returns transfer detail and journal inspector for authorized participants")
+    void getTransferDetailReturnsJournalInspector() throws Exception {
+        User sender = new User(UUID.randomUUID(), "detail.s." + UUID.randomUUID() + "@example.com", "$2a$hash", UserRole.CUSTOMER, UserStatus.ACTIVE);
+        User receiver = new User(UUID.randomUUID(), "detail.r." + UUID.randomUUID() + "@example.com", "$2a$hash", UserRole.CUSTOMER, UserStatus.ACTIVE);
+        User unrelated = new User(UUID.randomUUID(), "detail.u." + UUID.randomUUID() + "@example.com", "$2a$hash", UserRole.CUSTOMER, UserStatus.ACTIVE);
+        userRepository.save(sender);
+        userRepository.save(receiver);
+        userRepository.save(unrelated);
+
+        LedgerAccount senderWallet = createTestWallet(sender.getId(), AccountType.CUSTOMER);
+        LedgerAccount receiverWallet = createTestWallet(receiver.getId(), AccountType.CUSTOMER);
+        createTestWallet(unrelated.getId(), AccountType.CUSTOMER);
+
+        fundWallet(senderWallet.getId(), 50000L);
+        String senderToken = jwtTokenService.generateAccessToken(sender);
+        String receiverToken = jwtTokenService.generateAccessToken(receiver);
+        String unrelatedToken = jwtTokenService.generateAccessToken(unrelated);
+
+        String createResp = mockMvc.perform(post("/api/transfers")
+                        .header("Authorization", "Bearer " + senderToken)
+                        .header("Idempotency-Key", "key-detail-" + UUID.randomUUID())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateTransferRequest(receiverWallet.getId(), 12000L))))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+
+        TransferResponse transfer = objectMapper.readValue(createResp, TransferResponse.class);
+        UUID transferId = transfer.transferId();
+
+        // 1. Sender inspects transfer detail
+        mockMvc.perform(get("/api/transfers/{id}", transferId)
+                        .header("Authorization", "Bearer " + senderToken)
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.transferId", is(transferId.toString())))
+                .andExpect(jsonPath("$.direction", is("OUTGOING")))
+                .andExpect(jsonPath("$.amountMinor", is("12000")))
+                .andExpect(jsonPath("$.journal.status", is("POSTED")))
+                .andExpect(jsonPath("$.journal.entries.length()", is(2)))
+                .andExpect(jsonPath("$.journal.entries[0].direction", notNullValue()))
+                .andExpect(jsonPath("$.journal.entries[0].amountMinor", is("12000")));
+
+        // 2. Receiver inspects transfer detail
+        mockMvc.perform(get("/api/transfers/{id}", transferId)
+                        .header("Authorization", "Bearer " + receiverToken)
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.transferId", is(transferId.toString())))
+                .andExpect(jsonPath("$.direction", is("INCOMING")))
+                .andExpect(jsonPath("$.amountMinor", is("12000")));
+
+        // 3. Unrelated user attempts to inspect transfer detail -> 404 Not Found
+        mockMvc.perform(get("/api/transfers/{id}", transferId)
+                        .header("Authorization", "Bearer " + unrelatedToken)
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("GET /api/transfers normalizes negative pagination and caps oversized size at 50")
+    void paginationLimitsAndNormalization() throws Exception {
+        User user = new User(UUID.randomUUID(), "page.norm." + UUID.randomUUID() + "@example.com", "$2a$hash", UserRole.CUSTOMER, UserStatus.ACTIVE);
+        userRepository.save(user);
+        createTestWallet(user.getId(), AccountType.CUSTOMER);
+        String token = jwtTokenService.generateAccessToken(user);
+
+        // Negative page & oversized size
+        mockMvc.perform(get("/api/transfers?page=-5&size=100")
+                        .header("Authorization", "Bearer " + token)
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.page", is(0)))
+                .andExpect(jsonPath("$.size", is(50)));
+    }
+
+    @Test
+    @DisplayName("GET /api/transfers and GET /api/transfers/{id} reject OPS role with 403 and unauthenticated with 401")
+    void transferEndpointsAuthorizationMatrix() throws Exception {
+        User ops = new User(UUID.randomUUID(), "ops.trf." + UUID.randomUUID() + "@example.com", "$2a$hash", UserRole.OPS, UserStatus.ACTIVE);
+        userRepository.save(ops);
+        String opsToken = jwtTokenService.generateAccessToken(ops);
+
+        // OPS -> 403
+        mockMvc.perform(get("/api/transfers")
+                        .header("Authorization", "Bearer " + opsToken)
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/transfers/{id}", UUID.randomUUID())
+                        .header("Authorization", "Bearer " + opsToken)
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isForbidden());
+
+        // Unauthenticated -> 401
+        mockMvc.perform(get("/api/transfers")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/api/transfers/{id}", UUID.randomUUID())
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isUnauthorized());
     }
 
     private void fundWallet(UUID walletAccountId, long amountMinor) {
