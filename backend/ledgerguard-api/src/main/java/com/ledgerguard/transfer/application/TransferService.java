@@ -11,7 +11,10 @@ import com.ledgerguard.ledger.application.PostingResult;
 import com.ledgerguard.ledger.domain.AccountStatus;
 import com.ledgerguard.ledger.domain.AccountType;
 import com.ledgerguard.ledger.domain.LedgerAccount;
+import com.ledgerguard.ledger.domain.LedgerBalanceSnapshot;
 import com.ledgerguard.ledger.infrastructure.LedgerAccountRepository;
+import com.ledgerguard.ledger.infrastructure.LedgerBalanceSnapshotRepository;
+import com.ledgerguard.transfer.domain.InsufficientFundsException;
 import com.ledgerguard.transfer.domain.Transfer;
 import com.ledgerguard.transfer.domain.TransferDestinationNotFoundException;
 import com.ledgerguard.transfer.domain.TransferValidationException;
@@ -28,9 +31,9 @@ import java.util.UUID;
 /**
  * Authoritative application service for orchestrating atomic internal wallet transfers.
  * <p>
- * Combines authenticated actor validation, idempotency coordination, double-entry ledger posting,
- * automatic balance snapshot maintenance, and immutable transfer business record persistence
- * in a single atomic database transaction.
+ * Combines authenticated actor validation, idempotency coordination, deterministic snapshot row locking,
+ * atomic sufficient-funds validation, double-entry ledger posting, automatic balance snapshot maintenance,
+ * and immutable transfer business record persistence in a single atomic database transaction.
  */
 @Service
 public class TransferService {
@@ -38,24 +41,27 @@ public class TransferService {
     public static final String OPERATION_NAMESPACE = "internal-transfer:v1";
 
     private final LedgerAccountRepository ledgerAccountRepository;
+    private final LedgerBalanceSnapshotRepository ledgerBalanceSnapshotRepository;
     private final LedgerPostingService ledgerPostingService;
     private final IdempotencyService idempotencyService;
     private final TransferRepository transferRepository;
 
     public TransferService(
             LedgerAccountRepository ledgerAccountRepository,
+            LedgerBalanceSnapshotRepository ledgerBalanceSnapshotRepository,
             LedgerPostingService ledgerPostingService,
             IdempotencyService idempotencyService,
             TransferRepository transferRepository
     ) {
         this.ledgerAccountRepository = ledgerAccountRepository;
+        this.ledgerBalanceSnapshotRepository = ledgerBalanceSnapshotRepository;
         this.ledgerPostingService = ledgerPostingService;
         this.idempotencyService = idempotencyService;
         this.transferRepository = transferRepository;
     }
 
     /**
-     * Executes an internal transfer between user wallets idempotently and atomically.
+     * Executes an internal transfer between user wallets idempotently, deterministically, and atomically.
      *
      * @param command validated transfer command
      * @return TransferResult containing transfer details and replay indicator
@@ -131,13 +137,30 @@ public class TransferService {
         );
 
         IdempotencyExecutionResult executionResult = idempotencyService.execute(idempotencyCommand, () -> {
-            // A. Post balanced double-entry journal transaction
+            // A. Acquire deterministic pessimistic row locks on both source and destination balance snapshots (ORDER BY ledger_account_id ASC)
+            List<UUID> accountIds = List.of(sourceAccount.getId(), destinationAccount.getId());
+            List<LedgerBalanceSnapshot> lockedSnapshots = ledgerBalanceSnapshotRepository.findAllByLedgerAccountIdInForUpdateOrdered(accountIds);
+            if (lockedSnapshots.size() != 2) {
+                throw new IllegalStateException("Failed to lock both balance snapshot rows. Expected 2, found: " + lockedSnapshots.size());
+            }
+
+            // B. Read locked source balance and validate sufficient funds
+            LedgerBalanceSnapshot sourceSnapshot = lockedSnapshots.stream()
+                    .filter(s -> s.getLedgerAccountId().equals(sourceAccount.getId()))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalStateException("Source balance snapshot not found"));
+
+            if (sourceSnapshot.getBalanceMinor() < command.amount().getMinorUnits()) {
+                throw new InsufficientFundsException("Insufficient funds for this transfer.");
+            }
+
+            // C. Post balanced double-entry journal transaction
             PostingResult postingResult = ledgerPostingService.post(PostJournalCommand.of(
                     PostingLine.debit(sourceAccount.getId(), command.amount().getMinorUnits()),
                     PostingLine.credit(destinationAccount.getId(), command.amount().getMinorUnits())
             ));
 
-            // B. Persist immutable transfer business record referencing posted journal
+            // D. Persist immutable transfer business record referencing posted journal
             UUID transferId = UUID.randomUUID();
             Transfer transfer = new Transfer(
                     transferId,

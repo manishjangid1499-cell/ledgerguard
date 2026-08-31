@@ -248,6 +248,22 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .body(problemDetail);
     }
 
+    @ExceptionHandler(com.ledgerguard.transfer.domain.InsufficientFundsException.class)
+    public ResponseEntity<ProblemDetail> handleInsufficientFunds(com.ledgerguard.transfer.domain.InsufficientFundsException ex, WebRequest request) {
+        log.warn("Transfer rejected due to insufficient funds: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT,
+                "Insufficient funds for this transfer."
+        );
+        problemDetail.setTitle("Insufficient funds");
+        enrichProblemDetail(problemDetail, ApiErrorCode.INSUFFICIENT_FUNDS, request);
+
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
     @ExceptionHandler(com.ledgerguard.transfer.domain.TransferDestinationNotFoundException.class)
     public ResponseEntity<ProblemDetail> handleTransferDestinationNotFound(com.ledgerguard.transfer.domain.TransferDestinationNotFoundException ex, WebRequest request) {
         log.warn("Transfer destination not found: {}", ex.getMessage());

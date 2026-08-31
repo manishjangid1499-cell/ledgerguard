@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Awaiting Phase 11
-- **Status:** Phase 10 Complete (Verified)
+- **Current Phase:** Awaiting Phase 12
+- **Status:** Phase 11 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -16,10 +16,11 @@
   - **Phase 8 — Wallets & Derived Balance Snapshots** (Completed: 2026-08-31)
   - **Phase 9 — PostgreSQL-Backed Idempotency Infrastructure** (Completed: 2026-08-31)
   - **Phase 10 — Atomic Internal Transfers** (Completed: 2026-08-31)
-- **Current Work:** Atomic internal wallet transfer pipeline implemented (`POST /api/transfers`, `TransferService`). Authenticated user's wallet is derived as source (`CUSTOMER` or `MERCHANT`, `ACTIVE`, `INR`); destination wallet validated; distinct accounts enforced. Idempotency coordination enforced under operation namespace `internal-transfer:v1` with SHA-256 canonical fingerprints. Executes double-entry balanced posting (source `DEBIT`, destination `CREDIT`) via `LedgerPostingService`, creates immutable `Transfer` record (`transfers` table, V5 Flyway migration), updates derived balance snapshots transactionally via PostgreSQL database triggers, and completes idempotency record inside a single `@Transactional REQUIRED` boundary. Immutability trigger protects `transfers` table from any `UPDATE` or `DELETE`. Returns `201 Created` on new transfer and `200 OK` on idempotency replay.
-- **Next Phase:** Phase 11 — Concurrency Control & Deterministic Locking
+  - **Phase 11 — Concurrency Control, Deterministic Locking & Overdraft Prevention** (Completed: 2026-08-31)
+- **Current Work:** Deterministic PostgreSQL row-level locking (`PESSIMISTIC_WRITE` on `ledger_balance_snapshots` ordered by `ledger_account_id ASC`) and atomic sufficient-funds validation implemented in `TransferService`. Prevents double-spending, circular wait deadlocks on opposing transfers (`A -> B` vs `B -> A`), and transfer-induced source wallet overdrafts. Replay requests bypass snapshot locking. Insufficient funds throws `InsufficientFundsException` (HTTP 409 Conflict, `INSUFFICIENT_FUNDS`), rolling back the transaction and leaving the idempotency key unpoisoned for safe retries after future funding. Verified under heavy multi-threaded stress tests (50+ threads, opposing transfers, race conditions) against real PostgreSQL Testcontainers.
+- **Next Phase:** Phase 12 — Wallet, Transfer & Ledger Frontend Experience
 - **Last Verified:** 2026-08-31
-- **Git Branch:** `feat/phase-10-internal-transfers` (workspace uncommitted)
+- **Git Branch:** `feat/phase-11-concurrency-control` (workspace uncommitted)
 
 ---
 
@@ -70,7 +71,7 @@
 | **Phase 8** | Wallet Balance Snapshots & Reconstruction | **Completed** | 2026-08-31 |
 | **Phase 9** | Idempotency Infrastructure | **Completed** | 2026-08-31 |
 | **Phase 10** | Atomic Internal Transfers | **Completed** | 2026-08-31 |
-| **Phase 11** | Concurrency Control & Deterministic Locking | Planned | — |
+| **Phase 11** | Concurrency Control, Deterministic Locking & Overdraft Prevention | **Completed** | 2026-08-31 |
 | **Phase 12** | Wallet, Transfer & Ledger Frontend Experience | Planned | — |
 | **Phase 13** | Merchant Payments Domain | Planned | — |
 | **Phase 14** | Full & Partial Refunds | Planned | — |
