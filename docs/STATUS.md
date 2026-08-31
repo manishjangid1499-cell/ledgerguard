@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Awaiting Phase 10
-- **Status:** Phase 9 Complete (Verified)
+- **Current Phase:** Awaiting Phase 11
+- **Status:** Phase 10 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -15,10 +15,11 @@
   - **Phase 7 — Atomic Double-Entry Posting Engine** (Completed: 2026-08-31)
   - **Phase 8 — Wallets & Derived Balance Snapshots** (Completed: 2026-08-31)
   - **Phase 9 — PostgreSQL-Backed Idempotency Infrastructure** (Completed: 2026-08-31)
-- **Current Work:** PostgreSQL-backed idempotency coordination infrastructure implemented (`IdempotencyService`). Uses unique scope `(actor_user_id, operation, idempotency_key)`, deterministic SHA-256 request fingerprints, atomic slot claiming via `INSERT ... ON CONFLICT DO NOTHING`, pessimistic row-level coordination for concurrent requests, same-transaction execution under `@Transactional REQUIRED`, fail-safe rollback of uncommitted claims, and PostgreSQL trigger-enforced immutability on `COMPLETED` records (blocking direct `COMPLETED` inserts, metadata updates, status reversals, and deletions). Replay returns stored result reference without re-executing underlying callbacks; conflicting fingerprints on the same key are rejected with `IdempotencyConflictException`.
-- **Next Phase:** Phase 10 — Atomic Internal Transfers
+  - **Phase 10 — Atomic Internal Transfers** (Completed: 2026-08-31)
+- **Current Work:** Atomic internal wallet transfer pipeline implemented (`POST /api/transfers`, `TransferService`). Authenticated user's wallet is derived as source (`CUSTOMER` or `MERCHANT`, `ACTIVE`, `INR`); destination wallet validated; distinct accounts enforced. Idempotency coordination enforced under operation namespace `internal-transfer:v1` with SHA-256 canonical fingerprints. Executes double-entry balanced posting (source `DEBIT`, destination `CREDIT`) via `LedgerPostingService`, creates immutable `Transfer` record (`transfers` table, V5 Flyway migration), updates derived balance snapshots transactionally via PostgreSQL database triggers, and completes idempotency record inside a single `@Transactional REQUIRED` boundary. Immutability trigger protects `transfers` table from any `UPDATE` or `DELETE`. Returns `201 Created` on new transfer and `200 OK` on idempotency replay.
+- **Next Phase:** Phase 11 — Concurrency Control & Deterministic Locking
 - **Last Verified:** 2026-08-31
-- **Git Branch:** `feat/phase-09-idempotency` (workspace uncommitted)
+- **Git Branch:** `feat/phase-10-internal-transfers` (workspace uncommitted)
 
 ---
 
@@ -68,7 +69,7 @@
 | **Phase 7** | Atomic Balanced Journal Posting Engine | **Completed** | 2026-08-31 |
 | **Phase 8** | Wallet Balance Snapshots & Reconstruction | **Completed** | 2026-08-31 |
 | **Phase 9** | Idempotency Infrastructure | **Completed** | 2026-08-31 |
-| **Phase 10** | Atomic Internal Transfers | Planned | — |
+| **Phase 10** | Atomic Internal Transfers | **Completed** | 2026-08-31 |
 | **Phase 11** | Concurrency Control & Deterministic Locking | Planned | — |
 | **Phase 12** | Wallet, Transfer & Ledger Frontend Experience | Planned | — |
 | **Phase 13** | Merchant Payments Domain | Planned | — |

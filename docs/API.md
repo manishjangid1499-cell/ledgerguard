@@ -152,20 +152,55 @@ All API error responses use `application/problem+json` and follow the standard R
 
 ---
 
-## 5. Planned Domain Endpoints Roadmap (Phases 6–33)
+## 5. Transfers Endpoints (`/api/transfers`) — Implemented in Phase 10
 
-### 5.1 Wallets & Balances (`/api/wallets`)
+### 5.1 `POST /api/transfers`
+- **Access**: `CUSTOMER`, `MERCHANT` (authenticated; OPS forbidden)
+- **Headers**:
+  - `Authorization: Bearer <access_token>` (required)
+  - `Idempotency-Key: <UUID/String>` (required, max 128 chars)
+- **Request Body**:
+  ```json
+  {
+    "destinationWalletId": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+    "amountMinor": 250000
+  }
+  ```
+- **Response (201 Created on first execution / 200 OK on idempotency replay)**:
+  ```json
+  {
+    "id": "1f8e1234-5678-9abc-def0-123456789abc",
+    "sourceWalletId": "6ba7b810-9dad-11d1-80b4-00c04fd430c7",
+    "destinationWalletId": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+    "amountMinor": 250000,
+    "currency": "INR",
+    "journalTransactionId": "550e8400-e29b-41d4-a716-446655440000",
+    "createdAt": "2026-08-31T22:00:00.000Z",
+    "replayed": false
+  }
+  ```
+- **Error Responses**:
+  - `400 Bad Request` (`INVALID_TRANSFER` / `VALIDATION_FAILED`): Missing/blank Idempotency-Key, non-positive amount, self-transfer, closed account, non-user system account target.
+  - `401 Unauthorized` (`AUTHENTICATION_REQUIRED`): Missing or invalid Bearer token.
+  - `403 Forbidden` (`ACCESS_DENIED`): Caller with `OPS` role.
+  - `409 Conflict` (`IDEMPOTENCY_CONFLICT` / `IDEMPOTENCY_OPERATION_IN_PROGRESS`): Reusing Idempotency-Key with different payload parameters or concurrent in-flight request.
+
+---
+
+## 6. Planned Domain Endpoints Roadmap (Phases 11–33)
+
+### 6.1 Wallets & Balances (`/api/wallets`)
 | Method | Endpoint | Access | Purpose |
 | :--- | :--- | :--- | :--- |
 | `GET` | `/api/wallets/me` | Customer / Merchant | Get current user's wallet summary, posted balance, active holds, and available balance. |
 | `GET` | `/api/wallets/{walletId}/holds` | Customer / Merchant / Ops | List active and historical balance holds on the wallet. |
 
-### 5.2 Peer-to-Peer Transfers (`/api/transfers`)
+### 6.2 Peer-to-Peer Transfers (`/api/transfers`)
 | Method | Endpoint | Access | Purpose |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/api/transfers` | Customer | Initiate an atomic internal transfer to another customer wallet. *Requires `Idempotency-Key`*. |
-| `GET` | `/api/transfers/{transferId}` | Customer (Owner) / Ops | Retrieve details and status of a transfer transaction. |
-| `GET` | `/api/transfers` | Customer / Ops | List transfer history with pagination. |
+| `POST` | `/api/transfers` | Customer / Merchant | Initiate an atomic internal transfer to another wallet. *Requires `Idempotency-Key`*. *(Implemented in Phase 10)* |
+| `GET` | `/api/transfers/{transferId}` | Owner / Ops | Retrieve details and status of a transfer transaction. |
+| `GET` | `/api/transfers` | Customer / Merchant / Ops | List transfer history with pagination. |
 
 ### 5.3 Merchant Payments (`/api/payments`)
 | Method | Endpoint | Access | Purpose |

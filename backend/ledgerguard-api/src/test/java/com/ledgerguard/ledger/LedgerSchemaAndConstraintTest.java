@@ -35,12 +35,12 @@ class LedgerSchemaAndConstraintTest extends AbstractIntegrationTest {
                 "journal_transactions",
                 "journal_entries",
                 "ledger_balance_snapshots",
-                "idempotency_records"
+                "idempotency_records",
+                "transfers"
         );
 
         assertThat(tables).doesNotContain(
                 "wallets",
-                "transfers",
                 "payments",
                 "refunds",
                 "outbox_events",
