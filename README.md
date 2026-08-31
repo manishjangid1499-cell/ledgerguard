@@ -110,8 +110,8 @@ After each failure injection, the engine mathematically proves that:
 
 ## 7. Current Project Status
 
-- **Current State:** Phase 8 Completed — Wallets & Derived Balance Snapshots: User-owned ledger account projection (`Wallet`), Flyway V3 migration (`ledger_balance_snapshots`, partial unique 1-wallet-per-user index), automatic zero snapshot initialization trigger, historical journal backfill, and database-level transactional posting trigger updating derived balances deterministically with normal-balance arithmetic (CREDIT-normal: credits - debits; DEBIT-normal: debits - credits) and overflow protection.
-- **Next Step:** Phase 9 — Idempotency Infrastructure.
+- **Current State:** Phase 9 Completed — PostgreSQL-Backed Idempotency Infrastructure: Core coordination service (`IdempotencyService`), Flyway V4 migration (`idempotency_records`), scoped uniqueness `(actor_user_id, operation, idempotency_key)`, deterministic SHA-256 request fingerprints, atomic slot claiming via `INSERT ... ON CONFLICT DO NOTHING`, pessimistic row-level coordination, same-transaction execution under `@Transactional REQUIRED`, fail-safe rollback of uncommitted claims, and database trigger-enforced immutability on completed records.
+- **Next Step:** Phase 10 — Atomic Internal Transfers.
 - **Roadmap:** Detailed phase-by-phase progress is tracked in [docs/STATUS.md](docs/STATUS.md).
 
 ---

@@ -45,7 +45,8 @@ To validate correctness under real financial conditions, tests must run against 
 ### Layer 3: Integration Tests (Testcontainers)
 - **Scope**: Testing database repositories, Spring Data JPA mappings, and messaging pipelines.
 - **Targets**:
-  - **Idempotency Races**: Concurrent requests with the same `Idempotency-Key` and verify atomic insertion without unique constraint violation crashes.
+  - **Idempotency Races**: Multi-threaded concurrent executions with identical `(actor_user_id, operation, idempotency_key, fingerprint)` verifying that exactly 1 underlying operation executes and duplicates receive replayed cached results; concurrent conflicting fingerprints reject losers without duplicate execution.
+  - **Idempotency Immutability & Rollback**: Direct JDBC tests verifying trigger rejection of direct `COMPLETED` inserts, metadata updates, status reversals, and deletions; operation rollback cleanly rolls back uncommitted `IN_PROGRESS` claims allowing retry.
   - **Transactional Outbox**: Validating that database rollbacks drop outbox rows, and committed transactions persist events in `PENDING` state.
   - **Outbox Poller with `SKIP LOCKED`**: Multiple worker instances claiming distinct pending events without duplicate processing.
   - **Kafka Consumer Inbox**: Redelivery of duplicate Kafka messages asserts zero duplicate domain side-effects.
