@@ -29,17 +29,20 @@ public class AuthService {
     private final RefreshTokenService refreshTokenService;
     private final JwtTokenService jwtTokenService;
     private final JwtProperties jwtProperties;
+    private final com.ledgerguard.ledger.application.WalletProvisioningService walletProvisioningService;
 
     public AuthService(UserRepository userRepository,
                        PasswordEncoder passwordEncoder,
                        RefreshTokenService refreshTokenService,
                        JwtTokenService jwtTokenService,
-                       JwtProperties jwtProperties) {
+                       JwtProperties jwtProperties,
+                       com.ledgerguard.ledger.application.WalletProvisioningService walletProvisioningService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.refreshTokenService = refreshTokenService;
         this.jwtTokenService = jwtTokenService;
         this.jwtProperties = jwtProperties;
+        this.walletProvisioningService = walletProvisioningService;
     }
 
     public record AuthResult(AuthResponse authResponse, String rawRefreshToken) {}
@@ -64,6 +67,7 @@ public class AuthService {
         User user = User.create(normalizedEmail, encodedPassword, role);
         try {
             User savedUser = userRepository.saveAndFlush(user);
+            walletProvisioningService.provisionWallet(savedUser.getId(), savedUser.getRole());
             return UserSummaryResponse.from(savedUser);
         } catch (DataIntegrityViolationException e) {
             // Protect against concurrent duplicate registration race condition

@@ -120,10 +120,11 @@ flowchart TD
 
 ## 4. PostgreSQL Financial Authority
 
-- **Single Source of Truth**: PostgreSQL is the authoritative system of record for all account balances, journal entries, holds, and state transitions.
+- **Single Source of Truth**: PostgreSQL is the authoritative system of record for all account balances, journal entries, holds, and state transitions. Immutable POSTED journal transactions and entries represent the sole authoritative financial history.
 - **No JPA Schema Mutations in Production**: Flyway migrations strictly manage schema evolutions; Hibernate is configured with `ddl-auto=validate`.
-- **ACID Transaction Boundary**: Every transfer or financial event executes inside a single database transaction with appropriate isolation levels (Read Committed / Serializable where required).
-- **Snapshot Integrity**: The `account_balances` table acts as a read-optimized snapshot, fully reconstructible and verifiable against the append-only `journal_entries` table.
+- **ACID Transaction Boundary**: Every transfer, financial posting, or wallet provisioning event executes inside a single database transaction with appropriate isolation levels (Read Committed / Serializable where required).
+- **Derived Balance Snapshots**: The `ledger_balance_snapshots` table acts as a read-optimized, transactionally maintained derived projection (updated atomically via PostgreSQL database triggers on `DRAFT -> POSTED` transition), fully reconstructible and verifiable against the append-only `journal_entries` table.
+- **Wallet Projection**: Wallets are application-facing domain projections over owned `ledger_accounts` and their corresponding `ledger_balance_snapshots` without a redundant persistent `wallets` table.
 
 ---
 

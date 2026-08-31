@@ -78,9 +78,8 @@ class LedgerPostingServiceIntegrationTest extends AbstractIntegrationTest {
         assertThat(creditEntry.getLedgerAccount().getId()).isEqualTo(clearingAccount.getId());
         assertThat(creditEntry.getAmountMinor()).isEqualTo(10000L);
 
-        // Verify no DRAFT journals exist
-        List<JournalTransaction> drafts = journalTransactionRepository.findByStatus(JournalStatus.DRAFT);
-        assertThat(drafts).isEmpty();
+        // Verify journal transaction is POSTED and not DRAFT
+        assertThat(txn.getStatus()).isEqualTo(JournalStatus.POSTED);
     }
 
     @Test

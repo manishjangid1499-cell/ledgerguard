@@ -57,9 +57,12 @@ To validate correctness under real financial conditions, tests must run against 
   - Verification that a `CUSTOMER` cannot access another customer's wallet (HTTP 403).
   - Validation of HMAC-SHA256 signatures on inbound PSP webhooks; rejection of tampered or expired payloads.
 
-### Layer 5: Reconciliation Engine Tests
-- **Scope**: Batch reconciliation validation against simulated dirty data.
+### Layer 5: Reconciliation Engine & Snapshot Invariant Tests
+- **Scope**: Batch reconciliation and snapshot consistency validation.
 - **Targets**:
+  - Flyway V3 migration historical backfill reconstructs exact balances from immutable POSTED journals.
+  - Concurrency tests verify multi-threaded postings on shared accounts yield zero lost updates and no deadlocks via deterministic row update ordering.
+  - Balance snapshot arithmetic overflow triggers immediate PostgreSQL exception, aborting and rolling back the complete journal posting transaction.
   - Intentionally injected balance snapshot drift is flagged and auto-repaired from ledger entries.
   - Unbalanced transactions in test datasets trigger immediate system integrity alarms.
   - Discrepancies between internal payment states and external PSP settlement dumps are identified and routed to `MANUAL_REVIEW`.
