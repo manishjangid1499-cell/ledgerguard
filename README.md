@@ -110,8 +110,8 @@ After each failure injection, the engine mathematically proves that:
 
 ## 7. Current Project Status
 
-- **Current State:** Phase 4 Completed — Identity, authentication, authorization, JWT access tokens, opaque refresh tokens with atomic rotation and pessimistic locking, dedicated `HttpOnly` / `SameSite=Strict` cookies, Flyway V1 schema migration (`users`, `refresh_tokens`), RFC 9457 Problem Details for security errors, anti-enumeration safeguards, and comprehensive PostgreSQL 17.11 Testcontainers integration test suite.
-- **Next Step:** Phase 5 — Frontend Shell & Authentication UI.
+- **Current State:** Phase 5 Completed — Frontend Shell, Authentication UI, React Router, TanStack Query, React Hook Form, Material UI 9 theme, memory-only HS256 JWT access token management, HttpOnly refresh cookie rotation, session restoration, single-flight 401 refresh mechanism, RFC 9457 Problem Details error handling, role-aware navigation, and backend CORS configuration pinned to authorized frontend origin.
+- **Next Step:** Phase 6 — Money Value Object & Ledger Schema.
 - **Roadmap:** Detailed phase-by-phase progress is tracked in [docs/STATUS.md](docs/STATUS.md).
 
 ---
