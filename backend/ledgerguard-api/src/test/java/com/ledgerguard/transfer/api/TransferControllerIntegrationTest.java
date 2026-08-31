@@ -332,6 +332,32 @@ class TransferControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.replayed", is(false)));
     }
 
+    @Test
+    @DisplayName("Transfer with insufficient funds returns HTTP 409 Conflict with INSUFFICIENT_FUNDS ProblemDetail")
+    void insufficientFundsReturns409() throws Exception {
+        User sender = new User(UUID.randomUUID(), "insufficient." + UUID.randomUUID() + "@example.com", "$2a$hash", UserRole.CUSTOMER, UserStatus.ACTIVE);
+        User receiver = new User(UUID.randomUUID(), "insufficient.rx." + UUID.randomUUID() + "@example.com", "$2a$hash", UserRole.CUSTOMER, UserStatus.ACTIVE);
+        userRepository.save(sender);
+        userRepository.save(receiver);
+        LedgerAccount senderWallet = createTestWallet(sender.getId(), AccountType.CUSTOMER);
+        LedgerAccount receiverWallet = createTestWallet(receiver.getId(), AccountType.CUSTOMER);
+        fundWallet(senderWallet.getId(), 2000L); // Sender only has 2,000 INR
+        String senderToken = jwtTokenService.generateAccessToken(sender);
+
+        CreateTransferRequest request = new CreateTransferRequest(receiverWallet.getId(), 5000L); // Attempt 5,000 INR
+
+        mockMvc.perform(post("/api/transfers")
+                        .header("Authorization", "Bearer " + senderToken)
+                        .header("Idempotency-Key", "key-insufficient-409")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.errorCode", is(ApiErrorCode.INSUFFICIENT_FUNDS)))
+                .andExpect(jsonPath("$.title", is("Insufficient funds")))
+                .andExpect(jsonPath("$.detail", is("Insufficient funds for this transfer.")));
+    }
+
     private void fundWallet(UUID walletAccountId, long amountMinor) {
         LedgerAccount reserve = createSystemAccount(AccountType.PLATFORM_RESERVE);
         ledgerPostingService.post(PostJournalCommand.of(

@@ -180,10 +180,11 @@ All API error responses use `application/problem+json` and follow the standard R
   }
   ```
 - **Error Responses**:
-  - `400 Bad Request` (`INVALID_TRANSFER` / `VALIDATION_FAILED`): Missing/blank Idempotency-Key, non-positive amount, self-transfer, closed account, non-user system account target.
+  - `400 Bad Request` (`INVALID_TRANSFER` / `VALIDATION_FAILED`): Missing/blank Idempotency-Key (>128 chars), non-positive amount, self-transfer, closed account, non-user system account target.
   - `401 Unauthorized` (`AUTHENTICATION_REQUIRED`): Missing or invalid Bearer token.
   - `403 Forbidden` (`ACCESS_DENIED`): Caller with `OPS` role.
-  - `409 Conflict` (`IDEMPOTENCY_CONFLICT` / `IDEMPOTENCY_OPERATION_IN_PROGRESS`): Reusing Idempotency-Key with different payload parameters or concurrent in-flight request.
+  - `404 Not Found` (`RESOURCE_NOT_FOUND`): Nonexistent destination ledger account.
+  - `409 Conflict` (`INSUFFICIENT_FUNDS` / `IDEMPOTENCY_CONFLICT` / `IDEMPOTENCY_OPERATION_IN_PROGRESS`): Source wallet has insufficient funds (`balance < amount`), reusing Idempotency-Key with different payload parameters, or concurrent in-flight request with same key.
 
 ---
 

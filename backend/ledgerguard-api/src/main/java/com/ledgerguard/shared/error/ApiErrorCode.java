@@ -17,10 +17,11 @@ public final class ApiErrorCode {
     public static final String ACCESS_DENIED = "ACCESS_DENIED";
     public static final String EMAIL_ALREADY_REGISTERED = "EMAIL_ALREADY_REGISTERED";
 
-    // Phase 9 & 10 Error Codes
+    // Phase 9 & 10 & 11 Error Codes
     public static final String IDEMPOTENCY_CONFLICT = "IDEMPOTENCY_CONFLICT";
     public static final String IDEMPOTENCY_OPERATION_IN_PROGRESS = "IDEMPOTENCY_OPERATION_IN_PROGRESS";
     public static final String INVALID_TRANSFER = "INVALID_TRANSFER";
+    public static final String INSUFFICIENT_FUNDS = "INSUFFICIENT_FUNDS";
 
     private ApiErrorCode() {
         // Utility class

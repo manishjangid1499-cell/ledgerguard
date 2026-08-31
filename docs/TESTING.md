@@ -38,9 +38,12 @@ To validate correctness under real financial conditions, tests must run against 
 ### Layer 2: Concurrency & Lock Contention Tests (Real PostgreSQL)
 - **Scope**: Multi-threaded execution against real PostgreSQL instances via Testcontainers.
 - **Targets**:
-  - **Opposing Transfers**: Simultaneous transfers between Account A and Account B across 50+ concurrent threads to verify prevention of opposing-transfer circular waits via deterministic lock ordering.
-  - **Concurrent Overdraft Race**: 20 concurrent threads attempting to spend ₹100 from an account with only ₹100 available balance. Proves exactly one thread succeeds and 19 fail with insufficient funds.
-  - **Concurrent Refunds**: Multiple threads attempting simultaneous partial refunds against a single payment, verifying that total refunds never exceed the original payment.
+  - **Opposing Transfers**: Simultaneous transfers between Account A and Account B across concurrent threads (e.g. 20 threads) to verify elimination of opposing-transfer circular-wait deadlocks via deterministic `ORDER BY ledger_account_id ASC` row locking.
+  - **Double-Spend Races**: 2 concurrent spends of 7,000 from 10,000 (1 success, 1 insufficient funds) and 10 concurrent requests of 3,000 from 10,000 (exactly 3 succeed, 7 fail).
+  - **50+ Thread High Contention Stress Test**: 50 concurrent threads attempting transfers from an initial balance of 25,000 (1,000 each) proving exactly 25 succeed, 25 fail with `INSUFFICIENT_FUNDS`, and final balance is exactly 0.
+  - **Reconstruction Verification**: Asserting that for every touched account in concurrency tests, `snapshot.balance_minor` matches exact sum of historical `journal_entries`.
+  - **Key Unpoisoning / Retry After Funding**: Verifying that a transfer rejected for insufficient funds rolls back cleanly and permits the caller to retry the exact same `Idempotency-Key` and fingerprint once funds are deposited.
+  - **Concurrent Refunds (Phase 14 Roadmap)**: Multiple threads attempting simultaneous partial refunds against a single payment, verifying that total refunds never exceed the original payment.
 
 ### Layer 3: Integration Tests (Testcontainers)
 - **Scope**: Testing database repositories, Spring Data JPA mappings, and messaging pipelines.

@@ -117,8 +117,8 @@ All entries within a single `journal_transaction` must share the exact same curr
 - Monetary amounts are represented internally in **paise** (1 INR = 100 paise).
 - Business logic is written agnostically to support arbitrary standard currencies without hard-coded currency-specific math.
 
-### Invariant 5: Available Balance Bound
-For any account with overdraft restrictions (such as customer and merchant wallets):
-$$\text{Available Balance} \ge 0$$
-$$\text{Available Balance} = \text{Posted Balance} - \sum \text{Active Holds}$$
-A debit operation that would cause available balance to drop below zero must be rejected.
+### Invariant 5: Overdraft Prevention & Transfer Spending Bounds
+- **Transfer Spending Decision (Phase 11)**: Internal wallet transfers (`TransferService`) acquire deterministic row-level locks on `LedgerBalanceSnapshot` and enforce `sourceSnapshot.balanceMinor >= transferAmountMinor`. If balance is insufficient, `InsufficientFundsException` is thrown, rolling back the transaction and leaving the idempotency key unpoisoned.
+- **Available Balance & Holds (Phase 15 Roadmap)**: In future phases with balance holds:
+$$\text{Available Balance} = \text{Posted Balance} - \sum \text{Active Holds} \ge 0$$
+- **Generic Ledger vs. Transfer Service Distinction**: `LedgerPostingService` remains a pure, generic double-entry primitive without overdraft constraints (generic accounting postings may legitimately produce negative balances, e.g., fees or system adjustments). Overdraft restrictions are enforced as application-layer business rules in `TransferService`.

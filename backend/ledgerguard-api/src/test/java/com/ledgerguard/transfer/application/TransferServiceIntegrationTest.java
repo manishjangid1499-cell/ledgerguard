@@ -540,6 +540,410 @@ class TransferServiceIntegrationTest extends AbstractIntegrationTest {
                 senderId, TransferService.OPERATION_NAMESPACE, key)).isEmpty();
     }
 
+    @Test
+    @DisplayName("Exact balance transfer succeeds and leaves source snapshot at exactly zero")
+    void exactBalanceTransferSucceeds() {
+        UUID senderId = createTestUser("CUSTOMER");
+        UUID receiverId = createTestUser("CUSTOMER");
+        LedgerAccount senderWallet = createTestWallet(senderId, AccountType.CUSTOMER);
+        LedgerAccount receiverWallet = createTestWallet(receiverId, AccountType.CUSTOMER);
+
+        fundWallet(senderWallet.getId(), 10000L);
+        assertThat(getSnapshotBalance(senderWallet.getId())).isEqualTo(10000L);
+
+        TransferResult result = transferService.createTransfer(CreateTransferCommand.of(
+                senderId, receiverWallet.getId(), Money.inr(10000L), "key-exact-" + UUID.randomUUID()
+        ));
+
+        assertThat(result.replayed()).isFalse();
+        assertThat(getSnapshotBalance(senderWallet.getId())).isEqualTo(0L);
+        assertThat(getSnapshotBalance(receiverWallet.getId())).isEqualTo(10000L);
+        assertThat(reconstructBalance(senderWallet.getId())).isEqualTo(0L);
+        assertThat(reconstructBalance(receiverWallet.getId())).isEqualTo(10000L);
+    }
+
+    @Test
+    @DisplayName("Transfer one minor unit short fails with InsufficientFundsException and rolls back idempotency record")
+    void oneUnitShortFailsWithInsufficientFunds() {
+        UUID senderId = createTestUser("CUSTOMER");
+        UUID receiverId = createTestUser("CUSTOMER");
+        LedgerAccount senderWallet = createTestWallet(senderId, AccountType.CUSTOMER);
+        LedgerAccount receiverWallet = createTestWallet(receiverId, AccountType.CUSTOMER);
+
+        fundWallet(senderWallet.getId(), 9999L);
+        assertThat(getSnapshotBalance(senderWallet.getId())).isEqualTo(9999L);
+
+        long initialTransferCount = transferRepository.count();
+        long initialJournalCount = journalTransactionRepository.count();
+        String key = "key-short-" + UUID.randomUUID();
+
+        assertThatThrownBy(() -> transferService.createTransfer(CreateTransferCommand.of(
+                senderId, receiverWallet.getId(), Money.inr(10000L), key
+        ))).isInstanceOf(com.ledgerguard.transfer.domain.InsufficientFundsException.class)
+                .hasMessageContaining("Insufficient funds");
+
+        // Zero mutations, snapshot unchanged, idempotency record not committed
+        assertThat(getSnapshotBalance(senderWallet.getId())).isEqualTo(9999L);
+        assertThat(getSnapshotBalance(receiverWallet.getId())).isEqualTo(0L);
+        assertThat(transferRepository.count()).isEqualTo(initialTransferCount);
+        assertThat(journalTransactionRepository.count()).isEqualTo(initialJournalCount);
+        assertThat(idempotencyRecordRepository.findByActorUserIdAndOperationAndIdempotencyKey(
+                senderId, TransferService.OPERATION_NAMESPACE, key)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Zero source balance transfer fails with InsufficientFundsException")
+    void zeroBalanceFailsWithInsufficientFunds() {
+        UUID senderId = createTestUser("CUSTOMER");
+        UUID receiverId = createTestUser("CUSTOMER");
+        createTestWallet(senderId, AccountType.CUSTOMER);
+        LedgerAccount receiverWallet = createTestWallet(receiverId, AccountType.CUSTOMER);
+
+        assertThatThrownBy(() -> transferService.createTransfer(CreateTransferCommand.of(
+                senderId, receiverWallet.getId(), Money.inr(1000L), "key-zero-bal-" + UUID.randomUUID()
+        ))).isInstanceOf(com.ledgerguard.transfer.domain.InsufficientFundsException.class);
+    }
+
+    @Test
+    @DisplayName("Negative existing source balance transfer fails with InsufficientFundsException")
+    void negativeExistingBalanceFailsWithInsufficientFunds() {
+        UUID senderId = createTestUser("CUSTOMER");
+        UUID receiverId = createTestUser("CUSTOMER");
+        LedgerAccount senderWallet = createTestWallet(senderId, AccountType.CUSTOMER);
+        LedgerAccount receiverWallet = createTestWallet(receiverId, AccountType.CUSTOMER);
+
+        // Put sender wallet into negative balance via legitimate generic ledger posting
+        LedgerAccount fees = createSystemAccount(AccountType.PLATFORM_FEES);
+        ledgerPostingService.post(PostJournalCommand.of(
+                PostingLine.debit(senderWallet.getId(), 5000L),
+                PostingLine.credit(fees.getId(), 5000L)
+        ));
+        assertThat(getSnapshotBalance(senderWallet.getId())).isEqualTo(-5000L);
+
+        assertThatThrownBy(() -> transferService.createTransfer(CreateTransferCommand.of(
+                senderId, receiverWallet.getId(), Money.inr(1000L), "key-neg-bal-" + UUID.randomUUID()
+        ))).isInstanceOf(com.ledgerguard.transfer.domain.InsufficientFundsException.class);
+
+        assertThat(getSnapshotBalance(senderWallet.getId())).isEqualTo(-5000L);
+    }
+
+    @Test
+    @DisplayName("Failed insufficient-funds transfer unpoisons idempotency key: retrying same key after funding succeeds")
+    void insufficientFundsKeyCanBeRetriedAfterFunding() {
+        UUID senderId = createTestUser("CUSTOMER");
+        UUID receiverId = createTestUser("CUSTOMER");
+        LedgerAccount senderWallet = createTestWallet(senderId, AccountType.CUSTOMER);
+        LedgerAccount receiverWallet = createTestWallet(receiverId, AccountType.CUSTOMER);
+
+        fundWallet(senderWallet.getId(), 2000L);
+        String sharedKey = "key-retry-after-fund-" + UUID.randomUUID();
+
+        // 1. Attempt transfer 5,000 INR -> fails with insufficient funds
+        assertThatThrownBy(() -> transferService.createTransfer(CreateTransferCommand.of(
+                senderId, receiverWallet.getId(), Money.inr(5000L), sharedKey
+        ))).isInstanceOf(com.ledgerguard.transfer.domain.InsufficientFundsException.class);
+
+        // 2. Fund sender wallet with 10,000 INR (new balance 12,000)
+        fundWallet(senderWallet.getId(), 10000L);
+        assertThat(getSnapshotBalance(senderWallet.getId())).isEqualTo(12000L);
+
+        // 3. Retry identical transfer request with the SAME Idempotency-Key -> succeeds!
+        TransferResult result = transferService.createTransfer(CreateTransferCommand.of(
+                senderId, receiverWallet.getId(), Money.inr(5000L), sharedKey
+        ));
+
+        assertThat(result.replayed()).isFalse();
+        assertThat(result.amountMinor()).isEqualTo(5000L);
+        assertThat(getSnapshotBalance(senderWallet.getId())).isEqualTo(7000L);
+        assertThat(getSnapshotBalance(receiverWallet.getId())).isEqualTo(5000L);
+    }
+
+    @Test
+    @DisplayName("Two concurrent spends of 7000 from 10000: exactly one succeeds, one fails, final balance 3000")
+    void twoConcurrentSpendsFromSameSource() throws Exception {
+        UUID senderId = createTestUser("CUSTOMER");
+        UUID r1 = createTestUser("CUSTOMER");
+        UUID r2 = createTestUser("CUSTOMER");
+        LedgerAccount senderWallet = createTestWallet(senderId, AccountType.CUSTOMER);
+        LedgerAccount w1 = createTestWallet(r1, AccountType.CUSTOMER);
+        LedgerAccount w2 = createTestWallet(r2, AccountType.CUSTOMER);
+        fundWallet(senderWallet.getId(), 10000L);
+
+        int threadCount = 2;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CyclicBarrier barrier = new CyclicBarrier(threadCount);
+
+        Future<TransferResult> f1 = executor.submit(() -> {
+            barrier.await();
+            return transferService.createTransfer(CreateTransferCommand.of(
+                    senderId, w1.getId(), Money.inr(7000L), "key-race-2-1-" + UUID.randomUUID()
+            ));
+        });
+        Future<TransferResult> f2 = executor.submit(() -> {
+            barrier.await();
+            return transferService.createTransfer(CreateTransferCommand.of(
+                    senderId, w2.getId(), Money.inr(7000L), "key-race-2-2-" + UUID.randomUUID()
+            ));
+        });
+
+        int successCount = 0;
+        int failureCount = 0;
+
+        for (Future<TransferResult> f : List.of(f1, f2)) {
+            try {
+                f.get();
+                successCount++;
+            } catch (Exception e) {
+                if (e.getCause() instanceof com.ledgerguard.transfer.domain.InsufficientFundsException) {
+                    failureCount++;
+                } else {
+                    throw e;
+                }
+            }
+        }
+        executor.shutdown();
+
+        assertThat(successCount).isEqualTo(1);
+        assertThat(failureCount).isEqualTo(1);
+        assertThat(getSnapshotBalance(senderWallet.getId())).isEqualTo(3000L);
+        assertThat(reconstructBalance(senderWallet.getId())).isEqualTo(3000L);
+    }
+
+    @Test
+    @DisplayName("10 concurrent requests of 3000 from 10000: exactly 3 succeed, 7 fail, final balance 1000")
+    void tenConcurrentRequestsRace() throws Exception {
+        UUID senderId = createTestUser("CUSTOMER");
+        UUID receiverId = createTestUser("CUSTOMER");
+        LedgerAccount senderWallet = createTestWallet(senderId, AccountType.CUSTOMER);
+        LedgerAccount receiverWallet = createTestWallet(receiverId, AccountType.CUSTOMER);
+        fundWallet(senderWallet.getId(), 10000L);
+
+        int threadCount = 10;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CyclicBarrier barrier = new CyclicBarrier(threadCount);
+
+        List<Future<TransferResult>> futures = new ArrayList<>();
+        for (int i = 0; i < threadCount; i++) {
+            final String key = "key-race-10-" + i + "-" + UUID.randomUUID();
+            futures.add(executor.submit(() -> {
+                barrier.await();
+                return transferService.createTransfer(CreateTransferCommand.of(
+                        senderId, receiverWallet.getId(), Money.inr(3000L), key
+                ));
+            }));
+        }
+
+        int successCount = 0;
+        int failureCount = 0;
+
+        for (Future<TransferResult> future : futures) {
+            try {
+                future.get();
+                successCount++;
+            } catch (Exception e) {
+                if (e.getCause() instanceof com.ledgerguard.transfer.domain.InsufficientFundsException) {
+                    failureCount++;
+                } else {
+                    throw e;
+                }
+            }
+        }
+        executor.shutdown();
+
+        assertThat(successCount).isEqualTo(3);
+        assertThat(failureCount).isEqualTo(7);
+        assertThat(getSnapshotBalance(senderWallet.getId())).isEqualTo(1000L);
+        assertThat(getSnapshotBalance(receiverWallet.getId())).isEqualTo(9000L);
+        assertThat(reconstructBalance(senderWallet.getId())).isEqualTo(1000L);
+        assertThat(reconstructBalance(receiverWallet.getId())).isEqualTo(9000L);
+    }
+
+    @Test
+    @DisplayName("50 concurrent transfer attempts from 25000 (1000 each): exactly 25 succeed, 25 fail, final balance 0")
+    void fiftyThreadHighContentionStressTest() throws Exception {
+        UUID senderId = createTestUser("CUSTOMER");
+        LedgerAccount senderWallet = createTestWallet(senderId, AccountType.CUSTOMER);
+        fundWallet(senderWallet.getId(), 25000L);
+
+        int threadCount = 50;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CyclicBarrier barrier = new CyclicBarrier(threadCount);
+
+        // Pre-create 50 distinct receivers
+        List<LedgerAccount> receivers = new ArrayList<>();
+        for (int i = 0; i < threadCount; i++) {
+            UUID rxId = createTestUser("CUSTOMER");
+            receivers.add(createTestWallet(rxId, AccountType.CUSTOMER));
+        }
+
+        List<Future<TransferResult>> futures = new ArrayList<>();
+        for (int i = 0; i < threadCount; i++) {
+            final LedgerAccount rx = receivers.get(i);
+            final String key = "key-50-stress-" + i + "-" + UUID.randomUUID();
+            futures.add(executor.submit(() -> {
+                barrier.await();
+                return transferService.createTransfer(CreateTransferCommand.of(
+                        senderId, rx.getId(), Money.inr(1000L), key
+                ));
+            }));
+        }
+
+        int successCount = 0;
+        int failureCount = 0;
+
+        for (Future<TransferResult> future : futures) {
+            try {
+                future.get();
+                successCount++;
+            } catch (Exception e) {
+                if (e.getCause() instanceof com.ledgerguard.transfer.domain.InsufficientFundsException) {
+                    failureCount++;
+                } else {
+                    throw e;
+                }
+            }
+        }
+        executor.shutdown();
+
+        assertThat(successCount).isEqualTo(25);
+        assertThat(failureCount).isEqualTo(25);
+        assertThat(getSnapshotBalance(senderWallet.getId())).isEqualTo(0L);
+        assertThat(reconstructBalance(senderWallet.getId())).isEqualTo(0L);
+
+        // Verify total funds across all receivers equals exactly 25,000
+        long totalReceiverFunds = receivers.stream()
+                .mapToLong(r -> getSnapshotBalance(r.getId()))
+                .sum();
+        assertThat(totalReceiverFunds).isEqualTo(25000L);
+    }
+
+    @Test
+    @DisplayName("Opposing concurrent transfers (A -> B and B -> A) complete without circular lock deadlocks")
+    void opposingTransfersNoDeadlock() throws Exception {
+        UUID userA = createTestUser("CUSTOMER");
+        UUID userB = createTestUser("CUSTOMER");
+        LedgerAccount walletA = createTestWallet(userA, AccountType.CUSTOMER);
+        LedgerAccount walletB = createTestWallet(userB, AccountType.CUSTOMER);
+
+        fundWallet(walletA.getId(), 100000L);
+        fundWallet(walletB.getId(), 100000L);
+
+        int threadCount = 20; // 10 transfers A -> B, 10 transfers B -> A
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CyclicBarrier barrier = new CyclicBarrier(threadCount);
+
+        List<Future<TransferResult>> futures = new ArrayList<>();
+        for (int i = 0; i < threadCount; i++) {
+            final boolean aToB = (i % 2 == 0);
+            final UUID sender = aToB ? userA : userB;
+            final UUID dest = aToB ? walletB.getId() : walletA.getId();
+            final String key = "key-opposing-" + i + "-" + UUID.randomUUID();
+
+            futures.add(executor.submit(() -> {
+                barrier.await();
+                return transferService.createTransfer(CreateTransferCommand.of(
+                        sender, dest, Money.inr(1000L), key
+                ));
+            }));
+        }
+
+        List<TransferResult> results = new ArrayList<>();
+        for (Future<TransferResult> future : futures) {
+            results.add(future.get());
+        }
+        executor.shutdown();
+
+        assertThat(results).hasSize(20);
+        // Combined balance conserved (200,000)
+        assertThat(getSnapshotBalance(walletA.getId()) + getSnapshotBalance(walletB.getId())).isEqualTo(200000L);
+        assertThat(getSnapshotBalance(walletA.getId())).isEqualTo(reconstructBalance(walletA.getId()));
+        assertThat(getSnapshotBalance(walletB.getId())).isEqualTo(reconstructBalance(walletB.getId()));
+    }
+
+    @Test
+    @DisplayName("Independent account pairs (A -> B and C -> D) execute in parallel without global locking")
+    void independentAccountPairsExecuteInParallel() throws Exception {
+        UUID userA = createTestUser("CUSTOMER");
+        UUID userB = createTestUser("CUSTOMER");
+        UUID userC = createTestUser("CUSTOMER");
+        UUID userD = createTestUser("CUSTOMER");
+        LedgerAccount walletA = createTestWallet(userA, AccountType.CUSTOMER);
+        LedgerAccount walletB = createTestWallet(userB, AccountType.CUSTOMER);
+        LedgerAccount walletC = createTestWallet(userC, AccountType.CUSTOMER);
+        LedgerAccount walletD = createTestWallet(userD, AccountType.CUSTOMER);
+
+        fundWallet(walletA.getId(), 20000L);
+        fundWallet(walletC.getId(), 20000L);
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CyclicBarrier barrier = new CyclicBarrier(2);
+
+        Future<TransferResult> f1 = executor.submit(() -> {
+            barrier.await();
+            return transferService.createTransfer(CreateTransferCommand.of(
+                    userA, walletB.getId(), Money.inr(10000L), "key-pair-1-" + UUID.randomUUID()
+            ));
+        });
+        Future<TransferResult> f2 = executor.submit(() -> {
+            barrier.await();
+            return transferService.createTransfer(CreateTransferCommand.of(
+                    userC, walletD.getId(), Money.inr(10000L), "key-pair-2-" + UUID.randomUUID()
+            ));
+        });
+
+        TransferResult r1 = f1.get();
+        TransferResult r2 = f2.get();
+        executor.shutdown();
+
+        assertThat(r1.replayed()).isFalse();
+        assertThat(r2.replayed()).isFalse();
+        assertThat(getSnapshotBalance(walletA.getId())).isEqualTo(10000L);
+        assertThat(getSnapshotBalance(walletB.getId())).isEqualTo(10000L);
+        assertThat(getSnapshotBalance(walletC.getId())).isEqualTo(10000L);
+        assertThat(getSnapshotBalance(walletD.getId())).isEqualTo(10000L);
+    }
+
+    @Test
+    @DisplayName("Shared destination concurrent credits (A -> C and B -> C) succeed without lost updates")
+    void sharedDestinationConcurrentCredits() throws Exception {
+        UUID userA = createTestUser("CUSTOMER");
+        UUID userB = createTestUser("CUSTOMER");
+        UUID userC = createTestUser("CUSTOMER");
+        LedgerAccount walletA = createTestWallet(userA, AccountType.CUSTOMER);
+        LedgerAccount walletB = createTestWallet(userB, AccountType.CUSTOMER);
+        LedgerAccount walletC = createTestWallet(userC, AccountType.CUSTOMER);
+
+        fundWallet(walletA.getId(), 30000L);
+        fundWallet(walletB.getId(), 30000L);
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CyclicBarrier barrier = new CyclicBarrier(2);
+
+        Future<TransferResult> f1 = executor.submit(() -> {
+            barrier.await();
+            return transferService.createTransfer(CreateTransferCommand.of(
+                    userA, walletC.getId(), Money.inr(10000L), "key-shared-1-" + UUID.randomUUID()
+            ));
+        });
+        Future<TransferResult> f2 = executor.submit(() -> {
+            barrier.await();
+            return transferService.createTransfer(CreateTransferCommand.of(
+                    userB, walletC.getId(), Money.inr(15000L), "key-shared-2-" + UUID.randomUUID()
+            ));
+        });
+
+        TransferResult r1 = f1.get();
+        TransferResult r2 = f2.get();
+        executor.shutdown();
+
+        assertThat(r1.replayed()).isFalse();
+        assertThat(r2.replayed()).isFalse();
+        assertThat(getSnapshotBalance(walletA.getId())).isEqualTo(20000L);
+        assertThat(getSnapshotBalance(walletB.getId())).isEqualTo(15000L);
+        assertThat(getSnapshotBalance(walletC.getId())).isEqualTo(25000L);
+        assertThat(reconstructBalance(walletC.getId())).isEqualTo(25000L);
+    }
+
     private void fundWallet(UUID walletAccountId, long amountMinor) {
         LedgerAccount reserve = createSystemAccount(AccountType.PLATFORM_RESERVE);
         ledgerPostingService.post(PostJournalCommand.of(
@@ -552,6 +956,24 @@ class TransferServiceIntegrationTest extends AbstractIntegrationTest {
         return ledgerBalanceSnapshotRepository.findById(ledgerAccountId)
                 .map(s -> s.getBalanceMinor())
                 .orElse(null);
+    }
+
+    private long reconstructBalance(UUID accountId) {
+        Long balance = jdbcTemplate.queryForObject(
+                "SELECT COALESCE(SUM(" +
+                        "  CASE WHEN la.account_type IN ('CUSTOMER', 'MERCHANT', 'PLATFORM_FEES') THEN " +
+                        "    CASE WHEN je.direction = 'CREDIT' THEN je.amount_minor ELSE -je.amount_minor END " +
+                        "  ELSE " +
+                        "    CASE WHEN je.direction = 'DEBIT' THEN je.amount_minor ELSE -je.amount_minor END " +
+                        "  END), 0) " +
+                        "FROM ledger_accounts la " +
+                        "LEFT JOIN journal_entries je ON je.ledger_account_id = la.id " +
+                        "LEFT JOIN journal_transactions jt ON jt.id = je.journal_transaction_id " +
+                        "WHERE la.id = ? AND jt.status = 'POSTED'",
+                Long.class,
+                accountId
+        );
+        return balance != null ? balance : 0L;
     }
 
     private LedgerAccount createTestWallet(UUID ownerUserId, AccountType type) {
