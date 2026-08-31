@@ -216,6 +216,86 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .body(problemDetail);
     }
 
+    @ExceptionHandler(com.ledgerguard.idempotency.domain.IdempotencyConflictException.class)
+    public ResponseEntity<ProblemDetail> handleIdempotencyConflict(com.ledgerguard.idempotency.domain.IdempotencyConflictException ex, WebRequest request) {
+        log.warn("Idempotency conflict: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT,
+                ex.getMessage()
+        );
+        problemDetail.setTitle("Idempotency conflict");
+        enrichProblemDetail(problemDetail, ApiErrorCode.IDEMPOTENCY_CONFLICT, request);
+
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
+    @ExceptionHandler(com.ledgerguard.idempotency.domain.IdempotencyOperationInProgressException.class)
+    public ResponseEntity<ProblemDetail> handleIdempotencyInProgress(com.ledgerguard.idempotency.domain.IdempotencyOperationInProgressException ex, WebRequest request) {
+        log.warn("Idempotency operation in progress: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT,
+                ex.getMessage()
+        );
+        problemDetail.setTitle("Operation in progress");
+        enrichProblemDetail(problemDetail, ApiErrorCode.IDEMPOTENCY_OPERATION_IN_PROGRESS, request);
+
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
+    @ExceptionHandler(com.ledgerguard.transfer.domain.TransferDestinationNotFoundException.class)
+    public ResponseEntity<ProblemDetail> handleTransferDestinationNotFound(com.ledgerguard.transfer.domain.TransferDestinationNotFoundException ex, WebRequest request) {
+        log.warn("Transfer destination not found: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.NOT_FOUND,
+                ex.getMessage()
+        );
+        problemDetail.setTitle("Resource not found");
+        enrichProblemDetail(problemDetail, ApiErrorCode.RESOURCE_NOT_FOUND, request);
+
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
+    @ExceptionHandler(com.ledgerguard.transfer.domain.TransferValidationException.class)
+    public ResponseEntity<ProblemDetail> handleTransferValidation(com.ledgerguard.transfer.domain.TransferValidationException ex, WebRequest request) {
+        log.warn("Transfer validation rejected: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                ex.getMessage()
+        );
+        problemDetail.setTitle("Transfer validation failed");
+        enrichProblemDetail(problemDetail, ApiErrorCode.INVALID_TRANSFER, request);
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
+    @ExceptionHandler(com.ledgerguard.ledger.application.LedgerPostingException.class)
+    public ResponseEntity<ProblemDetail> handleLedgerPostingException(com.ledgerguard.ledger.application.LedgerPostingException ex, WebRequest request) {
+        log.warn("Ledger posting rejected: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                ex.getMessage()
+        );
+        problemDetail.setTitle("Ledger posting failed");
+        enrichProblemDetail(problemDetail, ApiErrorCode.INVALID_TRANSFER, request);
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetail> handleUnhandledException(Exception ex, WebRequest request) {
         log.error("Unhandled server exception: {}", ex.getMessage(), ex);

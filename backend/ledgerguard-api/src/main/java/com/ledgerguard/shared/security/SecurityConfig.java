@@ -73,7 +73,7 @@ public class SecurityConfig {
         if (!origins.isEmpty()) {
             configuration.setAllowedOrigins(origins);
             configuration.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
-            configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept"));
+            configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Idempotency-Key"));
             configuration.setAllowCredentials(true);
             configuration.setMaxAge(3600L);
         }
@@ -144,6 +144,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout").permitAll()
                         // Public actuator health/info endpoints
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
+                        // Transfers endpoint
+                        .requestMatchers(HttpMethod.POST, "/api/transfers").hasAnyRole("CUSTOMER", "MERCHANT")
                         // Operations routes
                         .requestMatchers("/api/ops/**").hasRole("OPS")
                         // Protected API endpoints

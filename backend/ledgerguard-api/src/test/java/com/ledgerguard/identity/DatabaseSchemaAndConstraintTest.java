@@ -25,7 +25,7 @@ class DatabaseSchemaAndConstraintTest extends AbstractIntegrationTest {
 
         assertThat(tables).contains("users", "refresh_tokens", "flyway_schema_history");
         assertThat(tables).doesNotContain(
-                "wallets", "transfers", "payments", "refunds", "outbox_events", "reconciliation_records",
+                "wallets", "payments", "refunds", "outbox_events", "reconciliation_records",
                 "balance_holds", "account_balances"
         );
     }

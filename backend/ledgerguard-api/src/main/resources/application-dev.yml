@@ -2,12 +2,14 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/ledgerguard
     username: ledgerguard_app
-    password: ${LEDGERGUARD_DB_PASSWORD:}
+    password: ${LEDGERGUARD_DB_PASSWORD:local_dev_ledgerguard_password}
   jpa:
     show-sql: false
 
 ledgerguard:
   security:
+    jwt:
+      secret: ${LEDGERGUARD_JWT_SECRET:dev_jwt_secret_must_be_at_least_32_bytes_long_for_hs256}
     cookie:
       secure: false
     cors:
