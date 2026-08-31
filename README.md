@@ -110,8 +110,8 @@ After each failure injection, the engine mathematically proves that:
 
 ## 7. Current Project Status
 
-- **Current State:** Phase 6 Completed — Money value object (immutable currency + signed 64-bit integer minor units with checked arithmetic), ledger account model (no mutable balance column), immutable journal transaction & entry entities, Flyway V2 migration (`ledger_accounts`, `journal_transactions`, `journal_entries`), PostgreSQL double-entry balance enforcement triggers ($\sum \text{debit} = \sum \text{credit}$, minimum 2 entries, at least 1 debit and 1 credit), and database-level immutability triggers protecting posted journal history from UPDATE/DELETE/entry-append.
-- **Next Step:** Phase 7 — Atomic Double-Entry Posting Engine.
+- **Current State:** Phase 7 Completed — Atomic Double-Entry Posting Engine (`LedgerPostingService`), `PostJournalCommand` with immutable `PostingLine` entries, fail-fast double-entry validation ($\ge 2$ entries, at least 1 `DEBIT`, at least 1 `CREDIT`, INR currency only, $\sum \text{debit} == \sum \text{credit}$ with checked arithmetic), batch ledger account verification, single-transaction DRAFT $\to$ entries $\to$ POSTED lifecycle, and automatic rollback on any failure.
+- **Next Step:** Phase 8 — Wallets & Balance Snapshots.
 - **Roadmap:** Detailed phase-by-phase progress is tracked in [docs/STATUS.md](docs/STATUS.md).
 
 ---
