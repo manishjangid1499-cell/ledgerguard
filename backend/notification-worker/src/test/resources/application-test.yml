@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: notification-worker-test
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    show-sql: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+ledgerguard:
+  kafka:
+    domain-events-topic: ledgerguard.domain-events.v1
+    domain-events-dlt-topic: ledgerguard.domain-events.v1.DLT
+    retry:
+      backoff-ms: 50
+      max-attempts: 2
