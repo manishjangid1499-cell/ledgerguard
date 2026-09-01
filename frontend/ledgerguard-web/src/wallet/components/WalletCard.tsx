@@ -10,11 +10,14 @@ import {
   Chip,
   Skeleton,
   Alert,
+  Grid,
 } from '@mui/material';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
+import LockClockIcon from '@mui/icons-material/LockClock';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { walletApi } from '../api/walletApi';
 import { formatMinorUnitsToInr } from '../../shared/utils/money';
@@ -82,7 +85,9 @@ export const WalletCard: React.FC = () => {
     return null;
   }
 
-  const formattedBalance = formatMinorUnitsToInr(wallet.balanceMinor);
+  const formattedPostedBalance = formatMinorUnitsToInr(wallet.balanceMinor);
+  const formattedActiveHold = formatMinorUnitsToInr(wallet.activeHoldAmountMinor);
+  const formattedAvailableBalance = formatMinorUnitsToInr(wallet.availableBalanceMinor);
 
   return (
     <Card
@@ -97,7 +102,7 @@ export const WalletCard: React.FC = () => {
       }}
     >
       <CardContent sx={{ p: { xs: 2.5, sm: 3 } }}>
-        <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+        <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'flex-start', mb: 2.5 }}>
           <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
             <Box
               sx={{
@@ -115,10 +120,10 @@ export const WalletCard: React.FC = () => {
             </Box>
             <Box>
               <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                Posted Balance
+                Available Balance
               </Typography>
               <Typography variant="h4" component="div" sx={{ fontWeight: 800, color: 'text.primary', letterSpacing: -0.5 }}>
-                {formattedBalance}
+                {formattedAvailableBalance}
               </Typography>
             </Box>
           </Stack>
@@ -140,6 +145,51 @@ export const WalletCard: React.FC = () => {
             </Tooltip>
           </Stack>
         </Stack>
+
+        <Grid container spacing={2} sx={{ mb: 2.5 }}>
+          <Grid size={{ xs: 12, sm: 6 }}>
+            <Box
+              sx={{
+                p: 1.5,
+                bgcolor: 'background.paper',
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: 1.5,
+              }}
+            >
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 0.5 }}>
+                <CheckCircleIcon fontSize="small" color="action" />
+                <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase' }}>
+                  Posted Balance
+                </Typography>
+              </Stack>
+              <Typography variant="h6" component="div" sx={{ fontWeight: 700, color: 'text.primary' }}>
+                {formattedPostedBalance}
+              </Typography>
+            </Box>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6 }}>
+            <Box
+              sx={{
+                p: 1.5,
+                bgcolor: 'background.paper',
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: 1.5,
+              }}
+            >
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 0.5 }}>
+                <LockClockIcon fontSize="small" color="action" />
+                <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase' }}>
+                  On Hold
+                </Typography>
+              </Stack>
+              <Typography variant="h6" component="div" sx={{ fontWeight: 700, color: 'text.secondary' }}>
+                {formattedActiveHold}
+              </Typography>
+            </Box>
+          </Grid>
+        </Grid>
 
         <Box
           sx={{

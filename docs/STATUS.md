@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Awaiting Phase 15
-- **Status:** Phase 14 Complete (Verified)
+- **Current Phase:** Awaiting Phase 16
+- **Status:** Phase 15 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -20,10 +20,11 @@
   - **Phase 12 — Wallet, Transfer & Ledger Frontend Experience** (Completed: 2026-08-31)
   - **Phase 13 — Merchant Payments Domain** (Completed: 2026-09-01)
   - **Phase 14 — Full & Partial Payment Refunds** (Completed: 2026-09-01)
-- **Current Work:** Phase 14 completed. Implemented immutable `Refund` business records, Flyway `V7__create_refunds.sql`, cumulative refund cap database trigger and application validation, parent payment row serialization via `PESSIMISTIC_WRITE`, proportional telescoping fee reversal policy (`original-payment-pro-rata:v1`), compensating double-entry journal postings (`CREDIT customer refundAmount`, `DEBIT merchant merchantDebitAmount`, `DEBIT platform_fees feeDebitAmount`), snapshot updates, and `POST /api/payments/{paymentId}/refund` endpoint.
-- **Next Phase:** Phase 15 — Balance Holds & Available-Balance Model
+  - **Phase 15 — Balance Holds & Available-Balance Model** (Completed: 2026-09-01)
+- **Current Work:** Phase 15 completed. Implemented temporary balance reservations (`BalanceHold`), Flyway migration `V8__create_balance_holds.sql`, database triggers enforcing immutability and capacity under snapshot row locks `FOR UPDATE`, available balance decomposition (`availableBalance = postedBalance - sum(ACTIVE holds)`), spending paths integration (`TransferService` and `PaymentService`), scheduled background hold expiration (`HoldExpirationScheduler`), frontend `WalletCard.tsx` 3-balance display, and full test suite across 5 Maven modules (295 tests passing).
+- **Next Phase:** Phase 16
 - **Last Verified:** 2026-09-01
-- **Git Branch:** `feat/phase-14-refunds` (workspace uncommitted)
+- **Git Branch:** `feat/phase-15-balance-holds` (workspace uncommitted)
 
 ---
 

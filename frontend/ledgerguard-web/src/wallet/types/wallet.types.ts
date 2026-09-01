@@ -4,4 +4,6 @@ export interface WalletResponse {
   currency: string;
   status: 'ACTIVE' | 'FROZEN' | 'CLOSED';
   balanceMinor: string;
+  activeHoldAmountMinor: string;
+  availableBalanceMinor: string;
 }

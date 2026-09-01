@@ -199,9 +199,15 @@ All API error responses use `application/problem+json` and follow the standard R
     "accountType": "CUSTOMER",
     "currency": "INR",
     "status": "ACTIVE",
-    "balanceMinor": "125000"
+    "balanceMinor": "125000",
+    "activeHoldAmountMinor": "25000",
+    "availableBalanceMinor": "100000"
   }
   ```
+- **Fields**:
+  - `balanceMinor`: Immutable posted balance snapshot in paise (decimal string).
+  - `activeHoldAmountMinor`: Sum of all currently `ACTIVE` holds in paise (decimal string).
+  - `availableBalanceMinor`: Spendable capacity (`balanceMinor - activeHoldAmountMinor`) in paise (decimal string, may be negative).
 
 ### 6.2 Get Transfer History (`GET /api/transfers?page=0&size=20`)
 - **Access**: `CUSTOMER`, `MERCHANT`

@@ -1,5 +1,7 @@
 package com.ledgerguard.transfer.application;
 
+import com.ledgerguard.hold.domain.AvailableBalance;
+import com.ledgerguard.hold.infrastructure.BalanceHoldRepository;
 import com.ledgerguard.idempotency.application.IdempotencyCommand;
 import com.ledgerguard.idempotency.application.IdempotencyExecutionResult;
 import com.ledgerguard.idempotency.application.IdempotencyService;
@@ -42,6 +44,7 @@ public class TransferService {
 
     private final LedgerAccountRepository ledgerAccountRepository;
     private final LedgerBalanceSnapshotRepository ledgerBalanceSnapshotRepository;
+    private final BalanceHoldRepository balanceHoldRepository;
     private final LedgerPostingService ledgerPostingService;
     private final IdempotencyService idempotencyService;
     private final TransferRepository transferRepository;
@@ -49,12 +52,14 @@ public class TransferService {
     public TransferService(
             LedgerAccountRepository ledgerAccountRepository,
             LedgerBalanceSnapshotRepository ledgerBalanceSnapshotRepository,
+            BalanceHoldRepository balanceHoldRepository,
             LedgerPostingService ledgerPostingService,
             IdempotencyService idempotencyService,
             TransferRepository transferRepository
     ) {
         this.ledgerAccountRepository = ledgerAccountRepository;
         this.ledgerBalanceSnapshotRepository = ledgerBalanceSnapshotRepository;
+        this.balanceHoldRepository = balanceHoldRepository;
         this.ledgerPostingService = ledgerPostingService;
         this.idempotencyService = idempotencyService;
         this.transferRepository = transferRepository;
@@ -144,13 +149,16 @@ public class TransferService {
                 throw new IllegalStateException("Failed to lock both balance snapshot rows. Expected 2, found: " + lockedSnapshots.size());
             }
 
-            // B. Read locked source balance and validate sufficient funds
+            // B. Read locked source balance, compute exact AvailableBalance, and validate available funds
             LedgerBalanceSnapshot sourceSnapshot = lockedSnapshots.stream()
                     .filter(s -> s.getLedgerAccountId().equals(sourceAccount.getId()))
                     .findFirst()
                     .orElseThrow(() -> new IllegalStateException("Source balance snapshot not found"));
 
-            if (sourceSnapshot.getBalanceMinor() < command.amount().getMinorUnits()) {
+            long sourceActiveHolds = balanceHoldRepository.sumActiveAmountByLedgerAccountId(sourceAccount.getId());
+            AvailableBalance sourceAvailable = AvailableBalance.of(sourceSnapshot.getBalanceMinor(), sourceActiveHolds);
+
+            if (!sourceAvailable.hasAvailable(command.amount().getMinorUnits())) {
                 throw new InsufficientFundsException("Insufficient funds for this transfer.");
             }
 

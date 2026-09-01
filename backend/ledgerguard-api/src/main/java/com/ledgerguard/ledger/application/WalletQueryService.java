@@ -1,5 +1,6 @@
 package com.ledgerguard.ledger.application;
 
+import com.ledgerguard.hold.domain.AvailableBalance;
 import com.ledgerguard.ledger.domain.LedgerAccount;
 import com.ledgerguard.ledger.domain.Money;
 import com.ledgerguard.ledger.domain.Wallet;
@@ -8,13 +9,15 @@ import com.ledgerguard.ledger.infrastructure.LedgerBalanceSnapshotRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigInteger;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Read-only query service for resolving user wallets with fast derived balance snapshots.
+ * Read-only query service for resolving user wallets with fast derived balance snapshots
+ * and active hold reservations via a single coherent database projection.
  */
 @Service
 public class WalletQueryService {
@@ -52,14 +55,26 @@ public class WalletQueryService {
         if (account.getOwnerUserId() == null) {
             return Optional.empty(); // System accounts are not user wallets
         }
-        return ledgerBalanceSnapshotRepository.findById(account.getId())
-                .map(snapshot -> new Wallet(
-                        account.getId(),
-                        account.getOwnerUserId(),
-                        account.getAccountType(),
-                        account.getCurrency(),
-                        account.getStatus(),
-                        Money.inr(snapshot.getBalanceMinor())
-                ));
+        return ledgerBalanceSnapshotRepository.findWalletBalanceByAccountId(account.getId())
+                .map(projection -> {
+                    long postedBalanceMinor = projection.getPostedBalanceMinor();
+                    BigInteger posted = BigInteger.valueOf(postedBalanceMinor);
+
+                    Number rawHeld = projection.getActiveHoldAmountMinor();
+                    BigInteger held = rawHeld != null ? new BigInteger(rawHeld.toString()) : BigInteger.ZERO;
+
+                    AvailableBalance availableBalance = AvailableBalance.of(posted, held);
+
+                    return new Wallet(
+                            account.getId(),
+                            account.getOwnerUserId(),
+                            account.getAccountType(),
+                            account.getCurrency(),
+                            account.getStatus(),
+                            Money.ofMinor(postedBalanceMinor, account.getCurrency()),
+                            Money.ofMinor(held.longValueExact(), account.getCurrency()),
+                            availableBalance.availableBalanceMinorString()
+                    );
+                });
     }
 }
