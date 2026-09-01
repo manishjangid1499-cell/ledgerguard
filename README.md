@@ -112,8 +112,8 @@ After each failure injection, the engine mathematically proves that:
 
 ## 7. Current Project Status
 
-- **Current State:** Phase 16 Completed — Transactional Outbox Persistence: Implemented transactional outbox persistence foundation (`outbox_events`), Flyway migration `V9__create_outbox_events.sql`, database trigger enforcing lifecycle transitions (`PENDING -> PUBLISHED`), content immutability, deletion safety, partial index on `(created_at, id) WHERE status = 'PENDING'`, `OutboxService` with `Propagation.MANDATORY` and Jackson `ObjectMapper` decimal-string monetary serialization, explicit domain event integration in `TransferService` (`TRANSFER_COMPLETED`), `PaymentService` (`PAYMENT_SUCCEEDED`), and `RefundService` (`REFUND_COMPLETED`), and complete test suite across all 5 Maven modules (319 tests passing).
-- **Next Step:** Phase 17 — Kafka Outbox Publisher & Event Contracts.
+- **Current State:** Phase 20 Completed — External Wallet Funding / Top-Ups: Implemented external wallet funding integration with standalone PSP simulator: Flyway V10 migration for `funding_operations` with strict check constraints and PostgreSQL lifecycle/immutability trigger; three-phase decoupled execution pipeline (`FundingCreationService` -> `PspClient` outside DB transaction -> `FundingSettlementService` with pessimistic lock, snapshot locks, and double-entry settlement `PSP_CLEARING` DEBIT to `CUSTOMER` CREDIT); non-transactional `FundingService` orchestrator; `FundingController` with `@PreAuthorize("hasRole('CUSTOMER')")`, string-serialized money responses, HTTP 201/200/202 status codes; comprehensive test suite (26 new tests, 391 total across workspace with 0 failures, 0 errors).
+- **Next Step:** Phase 21 — External Payouts / Withdrawals.
 - **Roadmap:** Detailed phase-by-phase progress is tracked in [docs/STATUS.md](docs/STATUS.md).
 
 ---

@@ -114,7 +114,7 @@ The following database-level behaviors are central to LedgerGuard's correctness 
   - `@SpringBootTest(webEnvironment = RANDOM_PORT)` with Spring `RestClient`.
   - `NORMAL_SUCCESS`: Operation created (201 Created), 1 DB row, 1 webhook row, single webhook delivered with matching payload.
   - `IDEMPOTENT_REPLAY`: Replaying same request returns 200 OK, identical `providerOperationId`, 1 DB operation, no duplicate webhook generation.
-  - `CONFLICTING_REPLAY`: Replaying `clientOperationId` with modified amount returns HTTP 409 Conflict without modifying existing record.
+  - `CONFLICTING_REPLAY`: Replaying `clientOperationId` with modified amount or conflicting `webhookUrl` returns HTTP 409 Conflict without modifying existing record.
   - `CONCURRENT_IDEMPOTENCY`: 20 concurrent threads with same `clientOperationId` yield exactly 1 DB operation and 1 webhook set; all threads receive successful responses with the identical operation ID.
   - `TEMPORARY_500`: Returns HTTP 500 for $N$ configured attempts with 0 database rows created; subsequent attempt succeeds with 201 Created; subsequent replay returns 200 OK without re-triggering failures.
   - `TIMEOUT_AFTER_SUCCESS`: Client read timeout (200ms) against server delay (800ms) causes client-side timeout; status query (`GET /api/provider/operations/by-client/{clientOperationId}`) proves operation was already committed and `SUCCEEDED` in the database prior to the timeout.
@@ -122,3 +122,25 @@ The following database-level behaviors are central to LedgerGuard's correctness 
   - `DUPLICATE_WEBHOOK`: Operation schedules 2 delivery rows; receiver observes 2 HTTP callbacks carrying the exact same `eventId` and payload.
   - `WEBHOOK_DELIVERY_FAILURE`: Unreachable webhook endpoint transitions delivery row to `FAILED` without affecting provider operation `SUCCEEDED` status.
   - `SCENARIO_ISOLATION`: Injected scenario on Client A does not alter normal behavior on Client B.
+
+---
+
+## 5. External Wallet Funding Testing Strategy (Phase 20)
+
+- **Database Constraint Verification (`FundingDatabaseConstraintTest`)**:
+  - Direct insert with `PROCESSING` succeeds for active INR customer account owned by initiator.
+  - Direct insert with `SUCCEEDED` rejected by trigger.
+  - Direct insert with wrong account type (`MERCHANT`, `PSP_CLEARING`), wrong currency, wrong owner, closed account, or invalid amounts ($\le 0$) rejected.
+  - Valid transition `PROCESSING -> SUCCEEDED` requires `provider_operation_id`, `completed_at`, and an existing balanced `POSTED` settlement journal.
+  - Transition rejected if settlement journal has mismatched amounts or wrong accounts.
+  - Completed funding operations are immutable and cannot be updated or deleted.
+- **Service & Integration Invariant Verification (`FundingServiceIntegrationTest`, `FundingControllerIntegrationTest`)**:
+  - **Normal Settlement**: Verifies atomic DEBIT `PSP_CLEARING` and CREDIT customer wallet, updating snapshots and creating 1 journal transaction.
+  - **Existing Balances & Holds**: Funds correctly increase posted and available balances without overwriting existing balances or disturbing active holds.
+  - **No Active DB Transaction During Network I/O**: Verifies `TransactionSynchronizationManager.isActualTransactionActive()` is false during external PSP HTTP requests.
+  - **Ambiguity & Network Timeouts (`TIMEOUT_AFTER_SUCCESS`)**: Read timeout during PSP call preserves `PROCESSING` status with 0 wallet credit; matching replay with same `Idempotency-Key` resolves the existing provider operation and settles the ledger.
+  - **Provider 5xx Faults (`TEMPORARY_500`)**: Preserves `PROCESSING` status and 0 wallet credit; subsequent replay retries the call using the same `FundingOperation.id` as `clientOperationId`, settling upon recovery.
+  - **Provider Response Integrity Mismatch**: Mismatched currency, amount, type, or clientOperationId fails validation and preserves `PROCESSING` status with 0 wallet credit.
+  - **Concurrent Idempotency**: 20 concurrent threads with identical request and idempotency key produce exactly 1 `FundingOperation`, 1 settlement journal, and 1 credit.
+  - **High-Precision Money**: Handles large integer values ($> \text{Number.MAX\_SAFE\_INTEGER}$) without precision loss.
+  - **Fails Closed on Missing/Multiple Clearing Accounts**: Rejects settlement if 0 or $>1$ active `PSP_CLEARING` accounts exist.

@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Awaiting Phase 20
-- **Status:** Phase 19 Complete (Verified)
+- **Current Phase:** Awaiting Phase 21
+- **Status:** Phase 20 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -25,10 +25,11 @@
   - **Phase 17 — Kafka Outbox Publisher & Event Contracts** (Completed: 2026-09-01)
   - **Phase 18 — Notification Worker & Idempotent Inbox Consumer** (Completed: 2026-09-01)
   - **Phase 19 — External PSP & Banking Simulator** (Completed: 2026-09-01)
-- **Current Work:** Phase 19 completed. Implemented independent standalone `psp-simulator` module with dedicated PostgreSQL database (`psp_simulator`), independent Flyway V1 migration (`provider_operations`, `provider_webhooks`, strict constraints and partial scheduler index), atomic database insert idempotency (`tryInsertOperation` with `ON CONFLICT (client_operation_id) DO NOTHING`), durable clientOperationId and webhookUrl conflict detection (409 Conflict), in-memory per-client `ScenarioRegistry`, deterministic fault injection (`NORMAL_SUCCESS`, `TIMEOUT_AFTER_SUCCESS`, `DELAYED_WEBHOOK`, `DUPLICATE_WEBHOOK`, `TEMPORARY_500`), asynchronous scheduled webhook dispatcher using `RestClient` and `FOR UPDATE SKIP LOCKED`, status lookup API, and comprehensive PostgreSQL / HTTP Testcontainers integration test suite (15 tests). All 366 tests pass across all modules with 0 regressions (ledgerguard-api: 332, psp-simulator: 15, notification-worker: 18, failure-lab: 1).
-- **Next Phase:** Phase 20 — External Wallet Funding (Top-Ups)
+  - **Phase 20 — External Wallet Funding / Top-Ups** (Completed: 2026-09-01)
+- **Current Work:** Phase 20 completed. Implemented external wallet funding integration with standalone PSP simulator: Flyway V10 migration for `funding_operations` with strict check constraints and PostgreSQL lifecycle/immutability trigger; three-phase decoupled execution pipeline (`FundingCreationService` -> `PspClient` outside DB transaction -> `FundingSettlementService` with pessimistic lock, snapshot locks, and double-entry settlement `PSP_CLEARING` DEBIT to `CUSTOMER` CREDIT); non-transactional `FundingService` orchestrator; `FundingController` with `@PreAuthorize("hasRole('CUSTOMER')")`, string-serialized money responses, HTTP 201/200/202 status codes; comprehensive test suite (26 new tests, 391 total across workspace with 0 failures, 0 errors).
+- **Next Phase:** Phase 21 — External Payouts / Withdrawals
 - **Last Verified:** 2026-09-01
-- **Git Branch:** `feat/phase-19-psp-simulator` (workspace uncommitted)
+- **Git Branch:** `feat/phase-20-external-funding` (workspace uncommitted)
 
 ---
 
