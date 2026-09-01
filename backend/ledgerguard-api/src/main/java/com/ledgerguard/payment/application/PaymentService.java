@@ -1,5 +1,7 @@
 package com.ledgerguard.payment.application;
 
+import com.ledgerguard.hold.domain.AvailableBalance;
+import com.ledgerguard.hold.infrastructure.BalanceHoldRepository;
 import com.ledgerguard.idempotency.application.IdempotencyCommand;
 import com.ledgerguard.idempotency.application.IdempotencyExecutionResult;
 import com.ledgerguard.idempotency.application.IdempotencyService;
@@ -46,6 +48,7 @@ public class PaymentService {
 
     private final LedgerAccountRepository ledgerAccountRepository;
     private final LedgerBalanceSnapshotRepository ledgerBalanceSnapshotRepository;
+    private final BalanceHoldRepository balanceHoldRepository;
     private final LedgerPostingService ledgerPostingService;
     private final IdempotencyService idempotencyService;
     private final PaymentRepository paymentRepository;
@@ -53,12 +56,14 @@ public class PaymentService {
     public PaymentService(
             LedgerAccountRepository ledgerAccountRepository,
             LedgerBalanceSnapshotRepository ledgerBalanceSnapshotRepository,
+            BalanceHoldRepository balanceHoldRepository,
             LedgerPostingService ledgerPostingService,
             IdempotencyService idempotencyService,
             PaymentRepository paymentRepository
     ) {
         this.ledgerAccountRepository = ledgerAccountRepository;
         this.ledgerBalanceSnapshotRepository = ledgerBalanceSnapshotRepository;
+        this.balanceHoldRepository = balanceHoldRepository;
         this.ledgerPostingService = ledgerPostingService;
         this.idempotencyService = idempotencyService;
         this.paymentRepository = paymentRepository;
@@ -176,13 +181,16 @@ public class PaymentService {
                         + accountsToLock.size() + ", found: " + lockedSnapshots.size());
             }
 
-            // B. Read locked customer balance and validate sufficient funds against GROSS amount
+            // B. Read locked customer balance, compute exact AvailableBalance, and validate available funds against GROSS amount
             LedgerBalanceSnapshot customerSnapshot = lockedSnapshots.stream()
                     .filter(s -> s.getLedgerAccountId().equals(customerAccount.getId()))
                     .findFirst()
                     .orElseThrow(() -> new IllegalStateException("Customer balance snapshot not found"));
 
-            if (customerSnapshot.getBalanceMinor() < grossAmountMinor) {
+            long customerActiveHolds = balanceHoldRepository.sumActiveAmountByLedgerAccountId(customerAccount.getId());
+            AvailableBalance customerAvailable = AvailableBalance.of(customerSnapshot.getBalanceMinor(), customerActiveHolds);
+
+            if (!customerAvailable.hasAvailable(grossAmountMinor)) {
                 throw new InsufficientFundsException("Insufficient funds for this payment.");
             }
 

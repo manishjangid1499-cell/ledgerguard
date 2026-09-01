@@ -90,7 +90,8 @@ After each failure injection, the engine mathematically proves that:
 - **Identity & Authentication**: Embedded Spring Security architecture, BCrypt password hashing, short-lived HS256 JWT access tokens, high-entropy opaque refresh tokens with SHA-256 hash persistence, dedicated `HttpOnly` / `SameSite=Strict` cookie strategy, and pessimistic row locking for atomic token rotation.
 - **Immutable Double-Entry Accounting**: Balanced debit/credit entries; posted transactions are permanent and corrected only through compensating entries.
 - **Merchant Payments & Refunds Domain**: Customer-to-merchant commercial transactions (`CREATED -> PROCESSING -> SUCCEEDED / FAILED`), 100 bps integer floor division platform fee policy, and synchronous full and partial payment refunds (`original-payment-pro-rata:v1` telescoping pro-rata fee reversal) backed by immutable compensating double-entry journals (`CREDIT customer refundAmount`, `DEBIT merchant merchantDebitAmount`, `DEBIT platform_fees feeDebitAmount`), cumulative refund cap enforcement, parent payment row serialization (`FOR UPDATE`), and original fee account resolution.
-- **Concurrency Control**: Deterministic account lock ordering (lower identifier first) to prevent opposing-transfer circular-wait deadlocks, serialize refund attempts on parent payment rows, and prevent double-spending under concurrent workloads.
+- **Balance Holds & Available-Balance Model**: Temporary fund reservations (`balance_holds`) separating immutable posted ledger history from spendable capacity without altering double-entry journals or snapshots, database triggers enforcing immutability and capacity under snapshot row locks `FOR UPDATE`, available balance decomposition (`availableBalance = postedBalance - sum(ACTIVE holds)`), spending paths validation, and multi-instance safe background expiration (`HoldExpirationScheduler`).
+- **Concurrency Control**: Deterministic account lock ordering (lower identifier first) to prevent opposing-transfer circular-wait deadlocks, serialize refund attempts on parent payment rows, serialize hold reservations on snapshot rows, and prevent double-spending under concurrent workloads.
 - **Authoritative Idempotency**: Atomic database-backed request deduplication keys with cryptographic payload fingerprinting.
 - **Transactional Outbox & Inbox**: Multi-worker `SKIP LOCKED` event publishing to Kafka with idempotent consumer processing.
 - **Three-Level Reconciliation**: Journal invariant verification, snapshot vs. ledger verification, and internal ledger vs. external PSP state matching.
@@ -111,8 +112,8 @@ After each failure injection, the engine mathematically proves that:
 
 ## 7. Current Project Status
 
-- **Current State:** Phase 14 Completed — Full & Partial Payment Refunds: Built immutable `Refund` business records, Flyway `V7__create_refunds.sql`, cumulative refund cap database trigger and application validation, parent payment row serialization via `PESSIMISTIC_WRITE`, telescoping pro-rata fee reversal policy (`original-payment-pro-rata:v1`), original platform fee account resolution from immutable payment journals, compensating double-entry journal postings, snapshot updates, and `POST /api/payments/{paymentId}/refund` endpoint.
-- **Next Step:** Phase 15 — Balance Holds & Available-Balance Model.
+- **Current State:** Phase 15 Completed — Balance Holds & Available-Balance Model: Built temporary balance reservations (`BalanceHold`), Flyway migration `V8__create_balance_holds.sql`, database triggers enforcing immutability and capacity under snapshot row locks `FOR UPDATE`, available balance decomposition (`availableBalance = postedBalance - sum(ACTIVE holds)`), spending paths integration (`TransferService` and `PaymentService`), scheduled background hold expiration (`HoldExpirationScheduler`), frontend `WalletCard.tsx` 3-balance display, and full test suite across 5 Maven modules (295 tests passing).
+- **Next Step:** Phase 16.
 - **Roadmap:** Detailed phase-by-phase progress is tracked in [docs/STATUS.md](docs/STATUS.md).
 
 ---

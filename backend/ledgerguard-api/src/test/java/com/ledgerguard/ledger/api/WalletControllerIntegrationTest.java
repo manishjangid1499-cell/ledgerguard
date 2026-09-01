@@ -23,6 +23,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -56,6 +57,9 @@ class WalletControllerIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -84,7 +88,9 @@ class WalletControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.accountType", is("CUSTOMER")))
                 .andExpect(jsonPath("$.currency", is("INR")))
                 .andExpect(jsonPath("$.status", is("ACTIVE")))
-                .andExpect(jsonPath("$.balanceMinor", is("75000")));
+                .andExpect(jsonPath("$.balanceMinor", is("75000")))
+                .andExpect(jsonPath("$.activeHoldAmountMinor", is("0")))
+                .andExpect(jsonPath("$.availableBalanceMinor", is("75000")));
     }
 
     @Test
@@ -106,7 +112,128 @@ class WalletControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.accountType", is("MERCHANT")))
                 .andExpect(jsonPath("$.currency", is("INR")))
                 .andExpect(jsonPath("$.status", is("ACTIVE")))
-                .andExpect(jsonPath("$.balanceMinor", is("150000")));
+                .andExpect(jsonPath("$.balanceMinor", is("150000")))
+                .andExpect(jsonPath("$.activeHoldAmountMinor", is("0")))
+                .andExpect(jsonPath("$.availableBalanceMinor", is("150000")));
+    }
+
+    @Test
+    @DisplayName("Wallet response exposes active hold amount and derived available balance as decimal strings")
+    void walletResponseExposesActiveHoldAndAvailableBalance() throws Exception {
+        User customer = new User(UUID.randomUUID(), "hold.wallet." + UUID.randomUUID() + "@example.com", "$2a$hash", UserRole.CUSTOMER, UserStatus.ACTIVE);
+        userRepository.save(customer);
+        LedgerAccount wallet = createTestWallet(customer.getId(), AccountType.CUSTOMER);
+        fundWallet(wallet.getId(), 10000L);
+
+        // Insert active hold of 7000
+        jdbcTemplate.update(
+                "INSERT INTO balance_holds (id, ledger_account_id, amount_minor, currency, status, expires_at, created_at, updated_at, terminal_at) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                UUID.randomUUID(), wallet.getId(), 7000L, "INR", "ACTIVE",
+                java.sql.Timestamp.from(Instant.now().plus(1, java.time.temporal.ChronoUnit.HOURS)),
+                java.sql.Timestamp.from(Instant.now()), java.sql.Timestamp.from(Instant.now()), null
+        );
+
+        String token = jwtTokenService.generateAccessToken(customer);
+
+        mockMvc.perform(get("/api/wallets/me")
+                        .header("Authorization", "Bearer " + token)
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.balanceMinor", is("10000")))
+                .andExpect(jsonPath("$.activeHoldAmountMinor", is("7000")))
+                .andExpect(jsonPath("$.availableBalanceMinor", is("3000")));
+    }
+
+    @Test
+    @DisplayName("Terminal RELEASED, CONSUMED, and EXPIRED holds are excluded from active hold sum in coherent read")
+    void terminalHoldsExcludedFromActiveHoldSum() throws Exception {
+        User customer = new User(UUID.randomUUID(), "term.wallet." + UUID.randomUUID() + "@example.com", "$2a$hash", UserRole.CUSTOMER, UserStatus.ACTIVE);
+        userRepository.save(customer);
+        LedgerAccount wallet = createTestWallet(customer.getId(), AccountType.CUSTOMER);
+        fundWallet(wallet.getId(), 10000L);
+
+        Instant now = Instant.now();
+        Instant future = now.plus(1, java.time.temporal.ChronoUnit.HOURS);
+        java.sql.Timestamp nowTs = java.sql.Timestamp.from(now);
+        java.sql.Timestamp futureTs = java.sql.Timestamp.from(future);
+
+        // 1. ACTIVE hold: 2000
+        jdbcTemplate.update(
+                "INSERT INTO balance_holds (id, ledger_account_id, amount_minor, currency, status, expires_at, created_at, updated_at, terminal_at) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                UUID.randomUUID(), wallet.getId(), 2000L, "INR", "ACTIVE", futureTs, nowTs, nowTs, null
+        );
+
+        // 2. RELEASED hold: 3000
+        UUID releasedId = UUID.randomUUID();
+        jdbcTemplate.update(
+                "INSERT INTO balance_holds (id, ledger_account_id, amount_minor, currency, status, expires_at, created_at, updated_at, terminal_at) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                releasedId, wallet.getId(), 3000L, "INR", "ACTIVE", futureTs, nowTs, nowTs, null
+        );
+        jdbcTemplate.update("UPDATE balance_holds SET status = 'RELEASED', terminal_at = ? WHERE id = ?", nowTs, releasedId);
+
+        // 3. CONSUMED hold: 1000
+        UUID consumedId = UUID.randomUUID();
+        jdbcTemplate.update(
+                "INSERT INTO balance_holds (id, ledger_account_id, amount_minor, currency, status, expires_at, created_at, updated_at, terminal_at) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                consumedId, wallet.getId(), 1000L, "INR", "ACTIVE", futureTs, nowTs, nowTs, null
+        );
+        jdbcTemplate.update("UPDATE balance_holds SET status = 'CONSUMED', terminal_at = ? WHERE id = ?", nowTs, consumedId);
+
+        // 4. EXPIRED hold: 500
+        UUID expiredId = UUID.randomUUID();
+        jdbcTemplate.update(
+                "INSERT INTO balance_holds (id, ledger_account_id, amount_minor, currency, status, expires_at, created_at, updated_at, terminal_at) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                expiredId, wallet.getId(), 500L, "INR", "ACTIVE", futureTs, nowTs, nowTs, null
+        );
+        jdbcTemplate.update("UPDATE balance_holds SET status = 'EXPIRED', terminal_at = ? WHERE id = ?", nowTs, expiredId);
+
+        String token = jwtTokenService.generateAccessToken(customer);
+
+        mockMvc.perform(get("/api/wallets/me")
+                        .header("Authorization", "Bearer " + token)
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.balanceMinor", is("10000")))
+                .andExpect(jsonPath("$.activeHoldAmountMinor", is("2000")))
+                .andExpect(jsonPath("$.availableBalanceMinor", is("8000")));
+    }
+
+    @Test
+    @DisplayName("Negative available balance (e.g. posted 2000, held 4000 -> available -2000) is returned accurately without clamping")
+    void negativeAvailableBalanceReturnedAccurately() throws Exception {
+        User merchant = new User(UUID.randomUUID(), "neg.wallet." + UUID.randomUUID() + "@example.com", "$2a$hash", UserRole.MERCHANT, UserStatus.ACTIVE);
+        userRepository.save(merchant);
+        LedgerAccount wallet = createTestWallet(merchant.getId(), AccountType.MERCHANT);
+        fundWallet(wallet.getId(), 4000L);
+
+        // Insert active hold of 4000
+        jdbcTemplate.update(
+                "INSERT INTO balance_holds (id, ledger_account_id, amount_minor, currency, status, expires_at, created_at, updated_at, terminal_at) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                UUID.randomUUID(), wallet.getId(), 4000L, "INR", "ACTIVE",
+                java.sql.Timestamp.from(Instant.now().plus(1, java.time.temporal.ChronoUnit.HOURS)),
+                java.sql.Timestamp.from(Instant.now()), java.sql.Timestamp.from(Instant.now()), null
+        );
+        // Reduce posted balance to 2000 (e.g. from refund debit)
+        jdbcTemplate.update(
+                "UPDATE ledger_balance_snapshots SET balance_minor = 2000 WHERE ledger_account_id = ?",
+                wallet.getId()
+        );
+
+        String token = jwtTokenService.generateAccessToken(merchant);
+
+        mockMvc.perform(get("/api/wallets/me")
+                        .header("Authorization", "Bearer " + token)
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.balanceMinor", is("2000")))
+                .andExpect(jsonPath("$.activeHoldAmountMinor", is("4000")))
+                .andExpect(jsonPath("$.availableBalanceMinor", is("-2000")));
     }
 
     @Test

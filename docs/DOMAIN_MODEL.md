@@ -124,14 +124,16 @@ All entries within a single `journal_transaction` must share the exact same curr
 - Monetary amounts are represented internally in **paise** (1 INR = 100 paise).
 - Business logic is written agnostically to support arbitrary standard currencies without hard-coded currency-specific math.
 
-### Invariant 5: Overdraft Prevention & Transfer Spending Bounds
-- **Transfer Spending Decision (Phase 11)**: Internal wallet transfers (`TransferService`) acquire deterministic row-level locks on `LedgerBalanceSnapshot` and enforce `sourceSnapshot.balanceMinor >= transferAmountMinor`. If balance is insufficient, `InsufficientFundsException` is thrown, rolling back the transaction and leaving the idempotency key unpoisoned.
-- **Available Balance & Holds (Phase 15 Roadmap)**: In future phases with balance holds:
-$$\text{Available Balance} = \text{Posted Balance} - \sum \text{Active Holds} \ge 0$$
-- **Generic Ledger vs. Transfer Service Distinction**: `LedgerPostingService` remains a pure, generic double-entry primitive without overdraft constraints (generic accounting postings may legitimately produce negative balances, e.g., fees or system adjustments). Overdraft restrictions are enforced as application-layer business rules in `TransferService`.
+### Invariant 5: Overdraft Prevention & Available Balance Spending Bounds
+- **Transfer Spending Decision (Phase 11, Phase 15)**: Internal wallet transfers (`TransferService`) acquire deterministic row-level locks on `LedgerBalanceSnapshot` and enforce `sourceAvailableBalance >= transferAmountMinor` where $\text{sourceAvailableBalance} = \text{sourceSnapshot.balanceMinor} - \text{sourceActiveHolds}$. If available funds are insufficient, `InsufficientFundsException` is thrown, rolling back the transaction and leaving the idempotency key unpoisoned.
+- **Payment Spending Decision (Phase 13, Phase 15)**: Merchant payments (`PaymentService`) acquire deterministic row-level locks on all involved snapshots in ascending ID order and enforce `customerAvailableBalance >= grossAmountMinor` where $\text{customerAvailableBalance} = \text{customerSnapshot.balanceMinor} - \text{customerActiveHolds}$.
+- **Balance Holds & Capacity (Phase 15)**: Temporary reservations (`BalanceHold`) reduce available spending capacity without mutating posted double-entry history. Hold creation locks the snapshot row `FOR UPDATE` and verifies $\sum \text{Active Holds} + \text{newHold} \le \text{Posted Balance}$.
+- **Available Balance Formula**:
+$$\text{Available Balance} = \text{Posted Balance} - \sum \text{Active Holds}$$
+- **Generic Ledger vs. Spending Layer Distinction**: `LedgerPostingService` remains a pure, generic double-entry primitive without overdraft constraints (generic accounting postings may legitimately produce negative balances, e.g., fees or system adjustments). Overdraft and available-balance restrictions are enforced as application-layer and trigger-level business rules in `TransferService`, `PaymentService`, and `HoldService`.
 
 ### Invariant 6: Cumulative Refund Cap & Reversal Bounds
 - **Cumulative Cap**: $\sum \text{Refunds} \le \text{Payment.grossAmountMinor}$. Attempting a refund where $\text{alreadyRefunded} + \text{requestedRefund} > \text{grossAmountMinor}$ is rejected with HTTP 409 `REFUND_LIMIT_EXCEEDED` at both application and database trigger levels.
 - **Parent Payment Lock**: Concurrency control locks the parent `payments` row (`SELECT ... FOR UPDATE`) before calculating cumulative refunds.
 - **Original Immutability**: The original `Payment` and original `journal_transaction` remain strictly immutable and in `SUCCEEDED`/`POSTED` status.
-- **Merchant Liability**: Refunds represent merchant obligations to customers; merchant balance checks are not performed, allowing merchant balances to become negative if funds have been withdrawn.
+- **Merchant Liability & Negative Available Balance**: Refunds represent merchant obligations to customers; merchant balance checks are not performed. When refunds occur on a merchant wallet with active holds or zero posted balance, negative posted and negative available balances are representable and valid.
