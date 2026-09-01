@@ -17,6 +17,9 @@ import com.ledgerguard.ledger.domain.LedgerBalanceSnapshot;
 import com.ledgerguard.ledger.infrastructure.JournalEntryRepository;
 import com.ledgerguard.ledger.infrastructure.LedgerAccountRepository;
 import com.ledgerguard.ledger.infrastructure.LedgerBalanceSnapshotRepository;
+import com.ledgerguard.outbox.application.OutboxService;
+import com.ledgerguard.outbox.domain.RefundCompletedEvent;
+import com.ledgerguard.outbox.domain.RefundCompletedPayload;
 import com.ledgerguard.payment.domain.Payment;
 import com.ledgerguard.payment.domain.PaymentDestinationNotFoundException;
 import com.ledgerguard.payment.domain.PaymentStatus;
@@ -43,7 +46,7 @@ import java.util.UUID;
  * Authoritative application service for processing payment refunds.
  * Orchestrates merchant ownership validation, payment status verification, cumulative refund cap enforcement,
  * proportional allocation calculations, deterministic row-locking, double-entry compensating ledger postings,
- * and PostgreSQL-backed idempotency.
+ * PostgreSQL-backed idempotency, and transactional outbox event persistence.
  */
 @Service
 public class RefundService {
@@ -57,6 +60,7 @@ public class RefundService {
     private final JournalEntryRepository journalEntryRepository;
     private final LedgerPostingService ledgerPostingService;
     private final IdempotencyService idempotencyService;
+    private final OutboxService outboxService;
 
     public RefundService(
             PaymentRepository paymentRepository,
@@ -65,7 +69,8 @@ public class RefundService {
             LedgerBalanceSnapshotRepository ledgerBalanceSnapshotRepository,
             JournalEntryRepository journalEntryRepository,
             LedgerPostingService ledgerPostingService,
-            IdempotencyService idempotencyService
+            IdempotencyService idempotencyService,
+            OutboxService outboxService
     ) {
         this.paymentRepository = Objects.requireNonNull(paymentRepository, "paymentRepository must not be null");
         this.refundRepository = Objects.requireNonNull(refundRepository, "refundRepository must not be null");
@@ -74,6 +79,7 @@ public class RefundService {
         this.journalEntryRepository = Objects.requireNonNull(journalEntryRepository, "journalEntryRepository must not be null");
         this.ledgerPostingService = Objects.requireNonNull(ledgerPostingService, "ledgerPostingService must not be null");
         this.idempotencyService = Objects.requireNonNull(idempotencyService, "idempotencyService must not be null");
+        this.outboxService = Objects.requireNonNull(outboxService, "outboxService must not be null");
     }
 
     /**
@@ -208,6 +214,22 @@ public class RefundService {
                             Instant.now()
                     );
                     refundRepository.saveAndFlush(refund);
+
+                    // 12. Append REFUND_COMPLETED domain event to transactional outbox
+                    outboxService.append(RefundCompletedEvent.of(
+                            UUID.randomUUID(),
+                            refund.getId(),
+                            refund.getCreatedAt(),
+                            new RefundCompletedPayload(
+                                    refund.getId().toString(),
+                                    refund.getPaymentId().toString(),
+                                    String.valueOf(refund.getRefundAmountMinor()),
+                                    String.valueOf(refund.getMerchantDebitAmountMinor()),
+                                    String.valueOf(refund.getFeeDebitAmountMinor()),
+                                    refund.getCurrency(),
+                                    postingResult.journalTransactionId().toString()
+                            )
+                    ));
 
                     return refundId;
                 }

@@ -39,12 +39,12 @@ class LedgerSchemaAndConstraintTest extends AbstractIntegrationTest {
                 "transfers",
                 "payments",
                 "refunds",
-                "balance_holds"
+                "balance_holds",
+                "outbox_events"
         );
 
         assertThat(tables).doesNotContain(
                 "wallets",
-                "outbox_events",
                 "account_balances"
         );
     }

@@ -401,3 +401,10 @@ All API error responses use `application/problem+json` and follow the standard R
 | `POST` | `/api/ops/failure-lab/run-scenario` | Ops | Execute an automated Money Integrity Failure Lab chaos scenario. |
 | `GET` | `/api/ops/failure-lab/reports` | Ops | Retrieve invariant audit reports and failure lab test outcomes. |
 | `GET` | `/api/ops/outbox/status` | Ops | Inspect transactional outbox backlog and queue lag. |
+
+---
+
+## 10. Internal Architecture & Event Delivery Note (Phase 16 & 17)
+- **HTTP Contracts Unchanged**: The Transactional Outbox and Kafka Publisher operate purely at the backend persistence, asynchronous messaging, and event publication layer. Public API request and response contracts for Transfers, Payments, Refunds, and Wallets remain completely unchanged.
+- **Kafka Event Delivery (Phase 17)**: Committed outbox events are claimed via `FOR UPDATE SKIP LOCKED` and published to Kafka topic `ledgerguard.domain-events.v1` in CloudEvents 1.0 structured JSON format with key `aggregate_id.toString()`.
+- **At-Least-Once Delivery**: Delivery guarantees are at-least-once. Stable event IDs (`outbox_events.id`) allow idempotent consumer deduplication. Aggregate ID key provides partition affinity, while message ordering within partition matches broker append order.

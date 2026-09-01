@@ -65,7 +65,12 @@ This document formalizes the domain concepts, state models, and fundamental inva
 ### Reliability & Operational Infrastructure
 
 - **Idempotency Record (`idempotency_records`)**: An atomic persistence record mapping `(actor_user_id, operation, idempotency_key)` to a cryptographic SHA-256 request fingerprint, lifecycle status (`IN_PROGRESS`, `COMPLETED`), and committed result identifier (`result_id UUID`). Completed records are immutable.
-- **Outbox Event (`outbox_events`)**: A reliable message buffer written inside the primary business database transaction and published asynchronously to Kafka via `FOR UPDATE SKIP LOCKED`.
+- **Outbox Event (`outbox_events`)**: An immutable, reliable domain event record persisted inside the primary PostgreSQL transaction alongside the financial state changes (transfers, payments, refunds).
+  - Structure: `(id UUID PK, aggregate_type VARCHAR, aggregate_id UUID, event_type VARCHAR, event_version INT, payload JSONB, status VARCHAR, occurred_at TIMESTAMPTZ, created_at TIMESTAMPTZ, published_at TIMESTAMPTZ NULL)`.
+  - Minimal Events: `TRANSFER_COMPLETED`, `PAYMENT_SUCCEEDED`, `REFUND_COMPLETED` (event_version = 1).
+  - Monetary fields in payload JSON are serialized as decimal strings (`"amountMinor": "10000"`) to guarantee precision safety.
+  - Lifecycle: `PENDING` on direct insertion (enforced via database trigger), transitioning to `PUBLISHED` upon asynchronous Kafka broker acknowledgment in Phase 17.
+  - Invariant: A committed financial outcome must never lose its event delivery intent, and an uncommitted/rolled-back transaction never leaves an outbox event.
 - **Provider Operation (`provider_operations`)**: Tracks the state of an external call initiated to the PSP simulator, including attempt history, latency, and provider reference IDs.
 - **Provider Event (`provider_events`)**: An immutable log of inbound webhooks received from the PSP simulator, enforcing signature verification and deduplication.
 - **Reconciliation Run (`reconciliation_runs`) & Reconciliation Item (`reconciliation_items`)**: Records the execution, findings, discrepancy classification (`MATCH`, `MISSING_INTERNAL`, `MISSING_EXTERNAL`, `AMOUNT_MISMATCH`), and resolution actions of automated reconciliation jobs.
@@ -135,5 +140,17 @@ $$\text{Available Balance} = \text{Posted Balance} - \sum \text{Active Holds}$$
 ### Invariant 6: Cumulative Refund Cap & Reversal Bounds
 - **Cumulative Cap**: $\sum \text{Refunds} \le \text{Payment.grossAmountMinor}$. Attempting a refund where $\text{alreadyRefunded} + \text{requestedRefund} > \text{grossAmountMinor}$ is rejected with HTTP 409 `REFUND_LIMIT_EXCEEDED` at both application and database trigger levels.
 - **Parent Payment Lock**: Concurrency control locks the parent `payments` row (`SELECT ... FOR UPDATE`) before calculating cumulative refunds.
-- **Original Immutability**: The original `Payment` and original `journal_transaction` remain strictly immutable and in `SUCCEEDED`/`POSTED` status.
 - **Merchant Liability & Negative Available Balance**: Refunds represent merchant obligations to customers; merchant balance checks are not performed. When refunds occur on a merchant wallet with active holds or zero posted balance, negative posted and negative available balances are representable and valid.
+
+### Invariant 7: Transactional Outbox & At-Least-Once Event Delivery
+- **Dual-Write Safety**: Financial mutations, idempotency records, and outbox event intents commit atomically inside the same PostgreSQL ACID transaction boundary. Outbox is an asynchronous integration intent mechanism; the PostgreSQL double-entry journal remains the sole authoritative financial source of truth.
+- **Delivery Guarantee**: The outbox delivery model is strictly **AT-LEAST-ONCE**. End-to-end exactly-once delivery is not claimed.
+- **Event Identity & Retries**: Outbox events possess stable, immutable UUID identifiers (`outbox_events.id`). Retries following broker timeouts or post-ACK database rollback windows produce duplicate Kafka messages with the exact same event ID, enabling idempotent deduplication at consumer inboxes.
+- **Partition Affinity & Ordering**:
+  - `aggregate_id` message key guarantees **partition affinity** (all events for a given aggregate are routed to the same Kafka partition).
+  - Kafka guarantees record ordering within a partition in the order records are appended to the broker log.
+  - LedgerGuard does **NOT** claim global ordering across partitions.
+  - LedgerGuard does **NOT** claim strict original database outbox ordering across concurrent workers for multiple events of the same aggregate (unless explicitly serialized).
+  - Current Phase 17 domain producers (`Transfer`, `Payment`, `Refund`) emit exactly ONE terminal event per aggregate lifecycle (`TRANSFER_COMPLETED`, `PAYMENT_SUCCEEDED`, `REFUND_COMPLETED`).
+- **Producer Idempotence Scope**: Kafka producer idempotence (`enable.idempotence=true`, `acks=all`) prevents duplicate writes during transport retries within a single producer session. It does not eliminate application-level duplicates caused by post-ACK database rollback windows.
+- **Send Timeout Delivery Ambiguity**: A timeout on `future.get(timeout)` is an ambiguous delivery outcome from the publisher's perspective. The PostgreSQL transaction rolls back, leaving the row `PENDING` for future retry, while the message may or may not have reached the broker.

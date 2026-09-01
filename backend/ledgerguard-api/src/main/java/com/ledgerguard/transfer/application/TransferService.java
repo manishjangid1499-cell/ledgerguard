@@ -16,6 +16,9 @@ import com.ledgerguard.ledger.domain.LedgerAccount;
 import com.ledgerguard.ledger.domain.LedgerBalanceSnapshot;
 import com.ledgerguard.ledger.infrastructure.LedgerAccountRepository;
 import com.ledgerguard.ledger.infrastructure.LedgerBalanceSnapshotRepository;
+import com.ledgerguard.outbox.application.OutboxService;
+import com.ledgerguard.outbox.domain.TransferCompletedEvent;
+import com.ledgerguard.outbox.domain.TransferCompletedPayload;
 import com.ledgerguard.transfer.domain.InsufficientFundsException;
 import com.ledgerguard.transfer.domain.Transfer;
 import com.ledgerguard.transfer.domain.TransferDestinationNotFoundException;
@@ -35,7 +38,7 @@ import java.util.UUID;
  * <p>
  * Combines authenticated actor validation, idempotency coordination, deterministic snapshot row locking,
  * atomic sufficient-funds validation, double-entry ledger posting, automatic balance snapshot maintenance,
- * and immutable transfer business record persistence in a single atomic database transaction.
+ * immutable transfer business record persistence, and transactional outbox event persistence in a single atomic database transaction.
  */
 @Service
 public class TransferService {
@@ -48,6 +51,7 @@ public class TransferService {
     private final LedgerPostingService ledgerPostingService;
     private final IdempotencyService idempotencyService;
     private final TransferRepository transferRepository;
+    private final OutboxService outboxService;
 
     public TransferService(
             LedgerAccountRepository ledgerAccountRepository,
@@ -55,7 +59,8 @@ public class TransferService {
             BalanceHoldRepository balanceHoldRepository,
             LedgerPostingService ledgerPostingService,
             IdempotencyService idempotencyService,
-            TransferRepository transferRepository
+            TransferRepository transferRepository,
+            OutboxService outboxService
     ) {
         this.ledgerAccountRepository = ledgerAccountRepository;
         this.ledgerBalanceSnapshotRepository = ledgerBalanceSnapshotRepository;
@@ -63,6 +68,7 @@ public class TransferService {
         this.ledgerPostingService = ledgerPostingService;
         this.idempotencyService = idempotencyService;
         this.transferRepository = transferRepository;
+        this.outboxService = outboxService;
     }
 
     /**
@@ -181,6 +187,21 @@ public class TransferService {
                     Instant.now()
             );
             transferRepository.saveAndFlush(transfer);
+
+            // E. Append TRANSFER_COMPLETED domain event to transactional outbox
+            outboxService.append(TransferCompletedEvent.of(
+                    UUID.randomUUID(),
+                    transfer.getId(),
+                    transfer.getCreatedAt(),
+                    new TransferCompletedPayload(
+                            transfer.getId().toString(),
+                            transfer.getSourceLedgerAccountId().toString(),
+                            transfer.getDestinationLedgerAccountId().toString(),
+                            String.valueOf(transfer.getAmountMinor()),
+                            transfer.getCurrency(),
+                            postingResult.journalTransactionId().toString()
+                    )
+            ));
 
             return transferId;
         });

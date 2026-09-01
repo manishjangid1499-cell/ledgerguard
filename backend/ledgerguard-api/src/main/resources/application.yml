@@ -20,8 +20,26 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  kafka:
+    bootstrap-servers: ${LEDGERGUARD_KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
 
 ledgerguard:
+  kafka:
+    domain-events-topic: ${LEDGERGUARD_DOMAIN_EVENTS_TOPIC:ledgerguard.domain-events.v1}
+    partitions: ${LEDGERGUARD_DOMAIN_EVENTS_PARTITIONS:3}
+    replication-factor: ${LEDGERGUARD_DOMAIN_EVENTS_REPLICATION_FACTOR:1}
+  outbox:
+    publisher:
+      enabled: ${LEDGERGUARD_OUTBOX_PUBLISHER_ENABLED:true}
+      fixed-delay-ms: ${LEDGERGUARD_OUTBOX_PUBLISHER_FIXED_DELAY_MS:1000}
+      batch-size: ${LEDGERGUARD_OUTBOX_PUBLISHER_BATCH_SIZE:50}
+      send-timeout-ms: ${LEDGERGUARD_OUTBOX_PUBLISHER_SEND_TIMEOUT_MS:10000}
   security:
     jwt:
       issuer: ledgerguard

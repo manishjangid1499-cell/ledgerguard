@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Awaiting Phase 16
-- **Status:** Phase 15 Complete (Verified)
+- **Current Phase:** Awaiting Phase 18
+- **Status:** Phase 17 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -21,10 +21,12 @@
   - **Phase 13 — Merchant Payments Domain** (Completed: 2026-09-01)
   - **Phase 14 — Full & Partial Payment Refunds** (Completed: 2026-09-01)
   - **Phase 15 — Balance Holds & Available-Balance Model** (Completed: 2026-09-01)
-- **Current Work:** Phase 15 completed. Implemented temporary balance reservations (`BalanceHold`), Flyway migration `V8__create_balance_holds.sql`, database triggers enforcing immutability and capacity under snapshot row locks `FOR UPDATE`, available balance decomposition (`availableBalance = postedBalance - sum(ACTIVE holds)`), spending paths integration (`TransferService` and `PaymentService`), scheduled background hold expiration (`HoldExpirationScheduler`), frontend `WalletCard.tsx` 3-balance display, and full test suite across 5 Maven modules (295 tests passing).
-- **Next Phase:** Phase 16
+  - **Phase 16 — Transactional Outbox Persistence** (Completed: 2026-09-01)
+  - **Phase 17 — Kafka Outbox Publisher & Event Contracts** (Completed: 2026-09-01)
+- **Current Work:** Phase 17 completed. Implemented at-least-once transactional outbox publisher to Apache Kafka (`spring-kafka` integration, `ProducerFactory` / `KafkaTemplate` with `acks=all` and `enable.idempotence=true`, `OutboxPublisherService` using PostgreSQL `FOR UPDATE SKIP LOCKED` claim query, `OutboxPublisherWorker` scheduler, CloudEvents 1.0 structured envelope record `DomainEventEnvelope`, topic provisioning `KafkaTopicConfig` for `ledgerguard.domain-events.v1`, lifecycle transition to `PUBLISHED` post-broker ACK, and comprehensive Testcontainers integration tests). Full Maven verification passing across all 5 modules (334 tests).
+- **Next Phase:** Phase 18 — Idempotent Notification Worker & Consumer Inbox
 - **Last Verified:** 2026-09-01
-- **Git Branch:** `feat/phase-15-balance-holds` (workspace uncommitted)
+- **Git Branch:** `feat/phase-17-kafka-outbox-publisher` (workspace uncommitted)
 
 ---
 

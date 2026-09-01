@@ -5,6 +5,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.kafka.KafkaContainer;
 
 import java.security.SecureRandom;
 import java.util.Base64;
@@ -19,6 +20,9 @@ public abstract class AbstractIntegrationTest {
                     .withUsername("test_user")
                     .withPassword("test_pass");
 
+    public static final KafkaContainer KAFKA_CONTAINER =
+            new KafkaContainer("apache/kafka:4.3.1");
+
     private static final String RUNTIME_JWT_SECRET;
 
     static {
@@ -26,6 +30,7 @@ public abstract class AbstractIntegrationTest {
         new SecureRandom().nextBytes(randomBytes);
         RUNTIME_JWT_SECRET = Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
         POSTGRES_CONTAINER.start();
+        KAFKA_CONTAINER.start();
     }
 
     @DynamicPropertySource
@@ -33,6 +38,7 @@ public abstract class AbstractIntegrationTest {
         registry.add("spring.datasource.url", POSTGRES_CONTAINER::getJdbcUrl);
         registry.add("spring.datasource.username", POSTGRES_CONTAINER::getUsername);
         registry.add("spring.datasource.password", POSTGRES_CONTAINER::getPassword);
+        registry.add("spring.kafka.bootstrap-servers", KAFKA_CONTAINER::getBootstrapServers);
         registry.add("ledgerguard.security.jwt.secret", () -> RUNTIME_JWT_SECRET);
     }
 }
