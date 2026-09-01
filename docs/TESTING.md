@@ -52,9 +52,9 @@ To validate correctness under real financial conditions, tests must run against 
   - **Balance Holds Immutability & Lifecycle (Phase 15)**: Direct JDBC tests verifying trigger rejection of direct non-`ACTIVE` inserts, mutations of immutable identity fields, invalid status transitions, and `DELETE` operations. Hold release, consumption, and multi-instance safe background expiration verified against live PostgreSQL Testcontainers instances.
   - **Idempotency Races**: Multi-threaded concurrent executions with identical `(actor_user_id, operation, idempotency_key, fingerprint)` verifying that exactly 1 underlying operation executes and duplicates receive replayed cached results; concurrent conflicting fingerprints reject losers without duplicate execution.
   - **Idempotency Immutability & Rollback**: Direct JDBC tests verifying trigger rejection of direct `COMPLETED` inserts, metadata updates, status reversals, and deletions; operation rollback cleanly rolls back uncommitted `IN_PROGRESS` claims allowing retry.
-  - **Transactional Outbox**: Validating that database rollbacks drop outbox rows, and committed transactions persist events in `PENDING` state.
-  - **Outbox Poller with `SKIP LOCKED`**: Multiple worker instances claiming distinct pending events without duplicate processing.
-  - **Kafka Consumer Inbox**: Redelivery of duplicate Kafka messages asserts zero duplicate domain side-effects.
+  - **Transactional Outbox Persistence (Phase 16)**: Validating that database rollbacks drop outbox rows, and committed transactions persist events in `PENDING` state with `published_at NULL`. Direct JDBC tests verifying trigger rejection of direct `PUBLISHED` inserts, non-object JSON payloads, content mutations, and deletion of `PENDING` rows. Explicit domain event emission verified for `TRANSFER_COMPLETED`, `PAYMENT_SUCCEEDED`, and `REFUND_COMPLETED`, asserting zero duplicate events on idempotency replay, zero events on failed financial operations, exact decimal string monetary serialization (safe above `MAX_SAFE_INTEGER`), and full business transaction rollback when outbox append fails.
+  - **Outbox Poller with `SKIP LOCKED`**: Multiple worker instances claiming distinct pending events without duplicate processing (Phase 17).
+  - **Kafka Consumer Inbox**: Redelivery of duplicate Kafka messages asserts zero duplicate domain side-effects (Phase 18).
 
 ### Layer 4: Webhook, Financial API & Security Integration Tests
 - **Scope**: HTTP layer security, role-based authorization, financial read endpoints, and signature validation.

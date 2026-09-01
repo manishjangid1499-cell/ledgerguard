@@ -401,3 +401,9 @@ All API error responses use `application/problem+json` and follow the standard R
 | `POST` | `/api/ops/failure-lab/run-scenario` | Ops | Execute an automated Money Integrity Failure Lab chaos scenario. |
 | `GET` | `/api/ops/failure-lab/reports` | Ops | Retrieve invariant audit reports and failure lab test outcomes. |
 | `GET` | `/api/ops/outbox/status` | Ops | Inspect transactional outbox backlog and queue lag. |
+
+---
+
+## 10. Internal Architecture & Event Delivery Note (Phase 16)
+- **HTTP Contracts Unchanged**: The Transactional Outbox introduced in Phase 16 operates purely at the persistence and database transaction layer. Public API request and response contracts for Transfers, Payments, Refunds, and Wallets remain completely unchanged.
+- **Internal Scope**: Outbox events are not exposed via customer or merchant HTTP endpoints. Events (`TRANSFER_COMPLETED`, `PAYMENT_SUCCEEDED`, `REFUND_COMPLETED`) are appended atomically within local PostgreSQL transactions and will be published asynchronously to Kafka starting in Phase 17.

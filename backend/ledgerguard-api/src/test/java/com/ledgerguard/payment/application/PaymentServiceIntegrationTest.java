@@ -77,6 +77,9 @@ class PaymentServiceIntegrationTest extends AbstractIntegrationTest {
     private PaymentRepository paymentRepository;
 
     @Autowired
+    private com.ledgerguard.outbox.infrastructure.OutboxEventRepository outboxEventRepository;
+
+    @Autowired
     private LedgerPostingService ledgerPostingService;
 
     @BeforeEach
@@ -561,6 +564,12 @@ class PaymentServiceIntegrationTest extends AbstractIntegrationTest {
 
         LedgerBalanceSnapshot customerSnap = ledgerBalanceSnapshotRepository.findById(customerWallet.getId()).orElseThrow();
         assertThat(customerSnap.getBalanceMinor()).isEqualTo(90000L);
+
+        // Assert exactly 1 PAYMENT_SUCCEEDED outbox event exists for the 8 concurrent requests
+        long outboxEventCount = outboxEventRepository.findAll().stream()
+                .filter(e -> e.getAggregateId().equals(canonicalPaymentId) && "PAYMENT_SUCCEEDED".equals(e.getEventType()))
+                .count();
+        assertThat(outboxEventCount).isEqualTo(1);
     }
 
     @Test

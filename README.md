@@ -93,7 +93,7 @@ After each failure injection, the engine mathematically proves that:
 - **Balance Holds & Available-Balance Model**: Temporary fund reservations (`balance_holds`) separating immutable posted ledger history from spendable capacity without altering double-entry journals or snapshots, database triggers enforcing immutability and capacity under snapshot row locks `FOR UPDATE`, available balance decomposition (`availableBalance = postedBalance - sum(ACTIVE holds)`), spending paths validation, and multi-instance safe background expiration (`HoldExpirationScheduler`).
 - **Concurrency Control**: Deterministic account lock ordering (lower identifier first) to prevent opposing-transfer circular-wait deadlocks, serialize refund attempts on parent payment rows, serialize hold reservations on snapshot rows, and prevent double-spending under concurrent workloads.
 - **Authoritative Idempotency**: Atomic database-backed request deduplication keys with cryptographic payload fingerprinting.
-- **Transactional Outbox & Inbox**: Multi-worker `SKIP LOCKED` event publishing to Kafka with idempotent consumer processing.
+- **Transactional Outbox & Inbox**: Multi-worker transactional outbox persistence (`outbox_events`) ensuring atomic financial outcome event durability within the same PostgreSQL transaction, with multi-worker `SKIP LOCKED` publisher to Kafka in Phase 17 and idempotent consumer inbox processing in Phase 18.
 - **Three-Level Reconciliation**: Journal invariant verification, snapshot vs. ledger verification, and internal ledger vs. external PSP state matching.
 - **Observability**: Micrometer metrics, Prometheus, Grafana dashboards, OpenTelemetry distributed tracing, and structured logging.
 
@@ -112,8 +112,8 @@ After each failure injection, the engine mathematically proves that:
 
 ## 7. Current Project Status
 
-- **Current State:** Phase 15 Completed — Balance Holds & Available-Balance Model: Built temporary balance reservations (`BalanceHold`), Flyway migration `V8__create_balance_holds.sql`, database triggers enforcing immutability and capacity under snapshot row locks `FOR UPDATE`, available balance decomposition (`availableBalance = postedBalance - sum(ACTIVE holds)`), spending paths integration (`TransferService` and `PaymentService`), scheduled background hold expiration (`HoldExpirationScheduler`), frontend `WalletCard.tsx` 3-balance display, and full test suite across 5 Maven modules (295 tests passing).
-- **Next Step:** Phase 16.
+- **Current State:** Phase 16 Completed — Transactional Outbox Persistence: Implemented transactional outbox persistence foundation (`outbox_events`), Flyway migration `V9__create_outbox_events.sql`, database trigger enforcing lifecycle transitions (`PENDING -> PUBLISHED`), content immutability, deletion safety, partial index on `(created_at, id) WHERE status = 'PENDING'`, `OutboxService` with `Propagation.MANDATORY` and Jackson `ObjectMapper` decimal-string monetary serialization, explicit domain event integration in `TransferService` (`TRANSFER_COMPLETED`), `PaymentService` (`PAYMENT_SUCCEEDED`), and `RefundService` (`REFUND_COMPLETED`), and complete test suite across all 5 Maven modules (319 tests passing).
+- **Next Step:** Phase 17 — Kafka Outbox Publisher & Event Contracts.
 - **Roadmap:** Detailed phase-by-phase progress is tracked in [docs/STATUS.md](docs/STATUS.md).
 
 ---

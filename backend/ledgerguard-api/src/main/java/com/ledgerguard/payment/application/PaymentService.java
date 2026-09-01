@@ -16,6 +16,9 @@ import com.ledgerguard.ledger.domain.LedgerAccount;
 import com.ledgerguard.ledger.domain.LedgerBalanceSnapshot;
 import com.ledgerguard.ledger.infrastructure.LedgerAccountRepository;
 import com.ledgerguard.ledger.infrastructure.LedgerBalanceSnapshotRepository;
+import com.ledgerguard.outbox.application.OutboxService;
+import com.ledgerguard.outbox.domain.PaymentSucceededEvent;
+import com.ledgerguard.outbox.domain.PaymentSucceededPayload;
 import com.ledgerguard.payment.domain.FeeCalculation;
 import com.ledgerguard.payment.domain.Payment;
 import com.ledgerguard.payment.domain.PaymentDestinationNotFoundException;
@@ -38,8 +41,8 @@ import java.util.UUID;
  * <p>
  * Combines customer identity derivation, merchant account validation, platform fee calculation,
  * idempotency coordination, deterministic snapshot row locking, atomic sufficient-funds validation,
- * double-entry ledger posting, and immutable payment business record persistence in a single
- * atomic database transaction.
+ * double-entry ledger posting, immutable payment business record persistence, and transactional
+ * outbox event persistence in a single atomic database transaction.
  */
 @Service
 public class PaymentService {
@@ -52,6 +55,7 @@ public class PaymentService {
     private final LedgerPostingService ledgerPostingService;
     private final IdempotencyService idempotencyService;
     private final PaymentRepository paymentRepository;
+    private final OutboxService outboxService;
 
     public PaymentService(
             LedgerAccountRepository ledgerAccountRepository,
@@ -59,7 +63,8 @@ public class PaymentService {
             BalanceHoldRepository balanceHoldRepository,
             LedgerPostingService ledgerPostingService,
             IdempotencyService idempotencyService,
-            PaymentRepository paymentRepository
+            PaymentRepository paymentRepository,
+            OutboxService outboxService
     ) {
         this.ledgerAccountRepository = ledgerAccountRepository;
         this.ledgerBalanceSnapshotRepository = ledgerBalanceSnapshotRepository;
@@ -67,6 +72,7 @@ public class PaymentService {
         this.ledgerPostingService = ledgerPostingService;
         this.idempotencyService = idempotencyService;
         this.paymentRepository = paymentRepository;
+        this.outboxService = outboxService;
     }
 
     /**
@@ -233,6 +239,23 @@ public class PaymentService {
             // F. Transition to SUCCEEDED state with posted journal reference and flush
             payment.markSucceeded(postingResult.journalTransactionId(), Instant.now());
             paymentRepository.saveAndFlush(payment);
+
+            // G. Append PAYMENT_SUCCEEDED domain event to transactional outbox
+            outboxService.append(PaymentSucceededEvent.of(
+                    UUID.randomUUID(),
+                    payment.getId(),
+                    payment.getCompletedAt() != null ? payment.getCompletedAt() : payment.getCreatedAt(),
+                    new PaymentSucceededPayload(
+                            payment.getId().toString(),
+                            payment.getCustomerLedgerAccountId().toString(),
+                            payment.getMerchantLedgerAccountId().toString(),
+                            String.valueOf(payment.getGrossAmountMinor()),
+                            String.valueOf(payment.getFeeAmountMinor()),
+                            String.valueOf(payment.getMerchantNetAmountMinor()),
+                            payment.getCurrency(),
+                            postingResult.journalTransactionId().toString()
+                    )
+            ));
 
             return paymentId;
         });

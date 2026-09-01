@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Awaiting Phase 16
-- **Status:** Phase 15 Complete (Verified)
+- **Current Phase:** Awaiting Phase 17
+- **Status:** Phase 16 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -21,10 +21,11 @@
   - **Phase 13 — Merchant Payments Domain** (Completed: 2026-09-01)
   - **Phase 14 — Full & Partial Payment Refunds** (Completed: 2026-09-01)
   - **Phase 15 — Balance Holds & Available-Balance Model** (Completed: 2026-09-01)
-- **Current Work:** Phase 15 completed. Implemented temporary balance reservations (`BalanceHold`), Flyway migration `V8__create_balance_holds.sql`, database triggers enforcing immutability and capacity under snapshot row locks `FOR UPDATE`, available balance decomposition (`availableBalance = postedBalance - sum(ACTIVE holds)`), spending paths integration (`TransferService` and `PaymentService`), scheduled background hold expiration (`HoldExpirationScheduler`), frontend `WalletCard.tsx` 3-balance display, and full test suite across 5 Maven modules (295 tests passing).
-- **Next Phase:** Phase 16
+  - **Phase 16 — Transactional Outbox Persistence** (Completed: 2026-09-01)
+- **Current Work:** Phase 16 completed. Implemented transactional outbox persistence foundation (`outbox_events`), Flyway migration `V9__create_outbox_events.sql`, database trigger enforcing lifecycle transitions (`PENDING -> PUBLISHED`), content immutability, deletion safety, partial index on `(created_at, id) WHERE status = 'PENDING'`, `OutboxService` with `Propagation.MANDATORY` and Jackson `ObjectMapper` decimal-string monetary serialization, explicit domain event integration in `TransferService` (`TRANSFER_COMPLETED`), `PaymentService` (`PAYMENT_SUCCEEDED`), and `RefundService` (`REFUND_COMPLETED`), and complete test suite across all 5 Maven modules (319 tests passing).
+- **Next Phase:** Phase 17 — Kafka Outbox Publisher & Event Contracts
 - **Last Verified:** 2026-09-01
-- **Git Branch:** `feat/phase-15-balance-holds` (workspace uncommitted)
+- **Git Branch:** `feat/phase-16-transactional-outbox` (workspace uncommitted)
 
 ---
 
