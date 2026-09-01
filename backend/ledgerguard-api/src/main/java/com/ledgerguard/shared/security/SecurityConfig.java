@@ -146,6 +146,8 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
                         // Transfers endpoint
                         .requestMatchers(HttpMethod.POST, "/api/transfers").hasAnyRole("CUSTOMER", "MERCHANT")
+                        // Refunds endpoint
+                        .requestMatchers(HttpMethod.POST, "/api/payments/*/refund").hasRole("MERCHANT")
                         // Payments endpoint
                         .requestMatchers(HttpMethod.POST, "/api/payments").hasRole("CUSTOMER")
                         // Operations routes

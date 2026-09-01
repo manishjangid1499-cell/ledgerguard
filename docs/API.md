@@ -306,50 +306,87 @@ All API error responses use `application/problem+json` and follow the standard R
 
 ---
 
-## 8. Planned Domain Endpoints Roadmap (Phases 14–33)
+## 8. Payment Refund Endpoints (`/api/payments/{paymentId}/refund`)
 
-### 8.1 Wallets & Balances (`/api/wallets`)
+### 8.1 Execute Payment Refund
+- **Method / Path**: `POST /api/payments/{paymentId}/refund`
+- **Access**: `MERCHANT` (Only the authenticated owner of the payment's merchant wallet)
+- **Headers**:
+  - `Authorization: Bearer <token>`
+  - `Idempotency-Key: <1-128 chars>` (Required)
+- **Request Body**:
+  ```json
+  {
+    "amountMinor": 2500
+  }
+  ```
+- **Validation**:
+  - `amountMinor`: Non-null, strictly positive integer (`> 0`).
+  - `paymentId`: Must reference an existing payment where `status = 'SUCCEEDED'`.
+  - Unrelated merchant attempting refund receives `404 Not Found` (anti-enumeration / IDOR protection).
+  - Cumulative refund limit: $\text{alreadyRefunded} + \text{requestedRefund} \le \text{grossAmountMinor}$. If exceeded, returns `409 Conflict` with `REFUND_LIMIT_EXCEEDED`.
+- **Response**:
+  - Status: `201 Created` (first execution) / `200 OK` (idempotent replay)
+  - Body:
+  ```json
+  {
+    "refundId": "0b15e219-c16e-4ad2-a9b8-085795cb70f0",
+    "paymentId": "d38bb39b-eec7-4632-8418-8f8319f3a611",
+    "refundAmountMinor": "2500",
+    "merchantDebitAmountMinor": "2475",
+    "feeDebitAmountMinor": "25",
+    "currency": "INR",
+    "journalTransactionId": "a90bb6e2-26cb-4cf8-a92c-567c2ce91244",
+    "createdAt": "2026-09-01T12:00:00.000Z",
+    "replayed": false
+  }
+  ```
+- **Compensating Journal Posting**:
+  - Customer Wallet: `CREDIT refundAmountMinor`
+  - Merchant Wallet: `DEBIT merchantDebitAmountMinor` (omitted if 0)
+  - Platform Fee Account: `DEBIT feeDebitAmountMinor` (omitted if 0)
+  - Total Debits == Total Credits.
+
+---
+
+## 9. Planned Domain Endpoints Roadmap (Phases 15–33)
+
+### 9.1 Wallets & Balances (`/api/wallets`)
 | Method | Endpoint | Access | Purpose |
 | :--- | :--- | :--- | :--- |
 | `GET` | `/api/wallets/{walletId}/holds` | Customer / Merchant / Ops | List active and historical balance holds on the wallet. |
 
-### 8.2 Merchant Payments Read APIs (`/api/payments`)
+### 9.2 Merchant Payments Read APIs (`/api/payments`)
 | Method | Endpoint | Access | Purpose |
 | :--- | :--- | :--- | :--- |
 | `GET` | `/api/payments/{paymentId}` | Customer / Merchant / Ops | Retrieve payment status, metadata, and refund history. |
 | `GET` | `/api/payments` | Merchant / Ops | List received merchant payments. |
 
-### 5.4 Refunds (`/api/refunds`)
-| Method | Endpoint | Access | Purpose |
-| :--- | :--- | :--- | :--- |
-| `POST` | `/api/payments/{paymentId}/refunds` | Merchant / Ops | Initiate a full or partial refund against a settled payment. *Requires `Idempotency-Key`*. |
-| `GET` | `/api/payments/{paymentId}/refunds` | Merchant / Customer / Ops | List all refunds associated with a payment. |
-
-### 5.5 External Funding & Deposits (`/api/funding`)
+### 9.3 External Funding & Deposits (`/api/funding`)
 | Method | Endpoint | Access | Purpose |
 | :--- | :--- | :--- | :--- |
 | `POST` | `/api/funding/initiate` | Customer | Request external wallet top-up via simulated PSP gateway. |
 | `GET` | `/api/funding/{fundingId}` | Customer (Owner) / Ops | Check status of in-flight or settled funding operation. |
 
-### 5.6 External Payouts & Withdrawals (`/api/payouts`)
+### 9.4 External Payouts & Withdrawals (`/api/payouts`)
 | Method | Endpoint | Access | Purpose |
 | :--- | :--- | :--- | :--- |
 | `POST` | `/api/payouts/initiate` | Customer / Merchant | Initiate withdrawal to external bank account (creates balance hold). |
 | `GET` | `/api/payouts/{payoutId}` | Owner / Ops | Check payout settlement status. |
 
-### 5.7 Webhooks & Ingress (`/api/webhooks`)
+### 9.5 Webhooks & Ingress (`/api/webhooks`)
 | Method | Endpoint | Access | Purpose |
 | :--- | :--- | :--- | :--- |
 | `POST` | `/api/webhooks/psp` | PSP Signature Verified | Receive asynchronous status events from PSP Simulator. |
 
-### 5.8 Ledger & Journal Inspector (`/api/ledger`)
+### 9.6 Ledger & Journal Inspector (`/api/ledger`)
 | Method | Endpoint | Access | Purpose |
 | :--- | :--- | :--- | :--- |
 | `GET` | `/api/ledger/transactions` | Authenticated (Owner Filtered) / Ops | Query immutable journal transactions and balanced debit/credit entries. |
 | `GET` | `/api/ledger/transactions/{id}` | Owner / Ops | Inspect double-entry details of a specific journal transaction. |
 | `GET` | `/api/ledger/accounts/{id}/statement` | Owner / Ops | Generate an account statement across a date range. |
 
-### 5.9 Reconciliation & Operations (`/api/reconciliation`, `/api/ops`)
+### 9.7 Reconciliation & Operations (`/api/reconciliation`, `/api/ops`)
 | Method | Endpoint | Access | Purpose |
 | :--- | :--- | :--- | :--- |
 | `POST` | `/api/reconciliation/run` | Ops | Trigger on-demand three-level reconciliation run. |

@@ -344,6 +344,38 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .body(problemDetail);
     }
 
+    @ExceptionHandler(com.ledgerguard.refund.domain.RefundLimitExceededException.class)
+    public ResponseEntity<ProblemDetail> handleRefundLimitExceeded(com.ledgerguard.refund.domain.RefundLimitExceededException ex, WebRequest request) {
+        log.warn("Refund limit exceeded: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT,
+                "Refund amount exceeds the remaining refundable amount."
+        );
+        problemDetail.setTitle("Refund limit exceeded");
+        enrichProblemDetail(problemDetail, ApiErrorCode.REFUND_LIMIT_EXCEEDED, request);
+
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
+    @ExceptionHandler(com.ledgerguard.refund.domain.PaymentNotRefundableException.class)
+    public ResponseEntity<ProblemDetail> handlePaymentNotRefundable(com.ledgerguard.refund.domain.PaymentNotRefundableException ex, WebRequest request) {
+        log.warn("Payment not refundable: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT,
+                ex.getMessage()
+        );
+        problemDetail.setTitle("Payment not refundable");
+        enrichProblemDetail(problemDetail, ApiErrorCode.PAYMENT_NOT_REFUNDABLE, request);
+
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
     @ExceptionHandler(com.ledgerguard.ledger.application.LedgerPostingException.class)
     public ResponseEntity<ProblemDetail> handleLedgerPostingException(com.ledgerguard.ledger.application.LedgerPostingException ex, WebRequest request) {
         log.warn("Ledger posting rejected: {}", ex.getMessage());

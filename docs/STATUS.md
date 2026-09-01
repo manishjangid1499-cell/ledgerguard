@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Awaiting Phase 14
-- **Status:** Phase 13 Complete (Verified)
+- **Current Phase:** Awaiting Phase 15
+- **Status:** Phase 14 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -19,10 +19,11 @@
   - **Phase 11 — Concurrency Control, Deterministic Locking & Overdraft Prevention** (Completed: 2026-08-31)
   - **Phase 12 — Wallet, Transfer & Ledger Frontend Experience** (Completed: 2026-08-31)
   - **Phase 13 — Merchant Payments Domain** (Completed: 2026-09-01)
-- **Current Work:** Phase 13 completed. Implemented merchant payment domain (`Payment` business records, Flyway `V6__create_payments.sql`, explicit state machine `CREATED -> PROCESSING -> SUCCEEDED / FAILED`, 100 bps integer arithmetic fee policy, canonical idempotency `merchant-payment:v1`, deterministic row locking across up to 3 accounts, double-entry ledger postings, snapshot updates, and `POST /api/payments` endpoint).
-- **Next Phase:** Phase 14 — Full & Partial Refunds
+  - **Phase 14 — Full & Partial Payment Refunds** (Completed: 2026-09-01)
+- **Current Work:** Phase 14 completed. Implemented immutable `Refund` business records, Flyway `V7__create_refunds.sql`, cumulative refund cap database trigger and application validation, parent payment row serialization via `PESSIMISTIC_WRITE`, proportional telescoping fee reversal policy (`original-payment-pro-rata:v1`), compensating double-entry journal postings (`CREDIT customer refundAmount`, `DEBIT merchant merchantDebitAmount`, `DEBIT platform_fees feeDebitAmount`), snapshot updates, and `POST /api/payments/{paymentId}/refund` endpoint.
+- **Next Phase:** Phase 15 — Balance Holds & Available-Balance Model
 - **Last Verified:** 2026-09-01
-- **Git Branch:** `feat/phase-13-merchant-payments` (workspace uncommitted)
+- **Git Branch:** `feat/phase-14-refunds` (workspace uncommitted)
 
 ---
 
