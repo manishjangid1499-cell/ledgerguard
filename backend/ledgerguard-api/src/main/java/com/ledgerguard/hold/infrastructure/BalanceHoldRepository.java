@@ -18,7 +18,9 @@ public interface BalanceHoldRepository extends JpaRepository<BalanceHold, UUID> 
     @Query("SELECT COALESCE(SUM(h.amountMinor), 0) FROM BalanceHold h WHERE h.ledgerAccountId = :ledgerAccountId AND h.status = com.ledgerguard.hold.domain.HoldStatus.ACTIVE")
     long sumActiveAmountByLedgerAccountId(@Param("ledgerAccountId") UUID ledgerAccountId);
 
-    @Query("SELECT h FROM BalanceHold h WHERE h.status = com.ledgerguard.hold.domain.HoldStatus.ACTIVE AND h.expiresAt <= :now")
+    @Query(value = "SELECT h.* FROM balance_holds h WHERE h.status = 'ACTIVE' AND h.expires_at <= :now " +
+            "AND NOT EXISTS (SELECT 1 FROM payouts p WHERE p.balance_hold_id = h.id AND p.status = 'PROCESSING')",
+            nativeQuery = true)
     List<BalanceHold> findDueActiveHolds(@Param("now") Instant now);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -26,7 +28,10 @@ public interface BalanceHoldRepository extends JpaRepository<BalanceHold, UUID> 
     Optional<BalanceHold> findByIdForUpdate(@Param("id") UUID id);
 
     @Modifying
-    @Query("UPDATE BalanceHold h SET h.status = com.ledgerguard.hold.domain.HoldStatus.EXPIRED, h.terminalAt = :now, h.updatedAt = :now WHERE h.id = :id AND h.status = com.ledgerguard.hold.domain.HoldStatus.ACTIVE")
+    @Query(value = "UPDATE balance_holds SET status = 'EXPIRED', terminal_at = :now, updated_at = :now " +
+            "WHERE id = :id AND status = 'ACTIVE' " +
+            "AND NOT EXISTS (SELECT 1 FROM payouts p WHERE p.balance_hold_id = balance_holds.id AND p.status = 'PROCESSING')",
+            nativeQuery = true)
     int expireHoldConditional(@Param("id") UUID id, @Param("now") Instant now);
 
     List<BalanceHold> findAllByLedgerAccountId(UUID ledgerAccountId);

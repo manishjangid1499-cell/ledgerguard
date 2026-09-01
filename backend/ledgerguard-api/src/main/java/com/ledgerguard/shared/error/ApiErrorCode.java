@@ -26,6 +26,7 @@ public final class ApiErrorCode {
     public static final String REFUND_LIMIT_EXCEEDED = "REFUND_LIMIT_EXCEEDED";
     public static final String PAYMENT_NOT_REFUNDABLE = "PAYMENT_NOT_REFUNDABLE";
     public static final String INVALID_FUNDING = "INVALID_FUNDING";
+    public static final String INVALID_PAYOUT = "INVALID_PAYOUT";
 
     private ApiErrorCode() {
         // Utility class
