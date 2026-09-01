@@ -1,10 +1,8 @@
 package com.ledgerguard.psp;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
 
-@SpringBootTest
-class PspSimulatorApplicationTests {
+class PspSimulatorApplicationTests extends AbstractPspSimulatorIntegrationTest {
 
     @Test
     void contextLoads() {

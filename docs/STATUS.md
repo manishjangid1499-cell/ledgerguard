@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Awaiting Phase 19
-- **Status:** Phase 18 Complete (Verified)
+- **Current Phase:** Awaiting Phase 20
+- **Status:** Phase 19 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -24,10 +24,11 @@
   - **Phase 16 — Transactional Outbox Persistence** (Completed: 2026-09-01)
   - **Phase 17 — Kafka Outbox Publisher & Event Contracts** (Completed: 2026-09-01)
   - **Phase 18 — Notification Worker & Idempotent Inbox Consumer** (Completed: 2026-09-01)
-- **Current Work:** Phase 18 completed. Implemented independent `notification-worker` Kafka consumer service consuming `ledgerguard.domain-events.v1` with database-backed idempotent inbox deduplication (`processed_events` table with atomic `INSERT ... ON CONFLICT (event_id) DO NOTHING` claim, durable `notification_deliveries` business side effect sharing the same PostgreSQL transaction committing at most one delivery row per event ID), DLT error handling with `DefaultErrorHandler` and `DeadLetterPublishingRecoverer` (with `failIfSendResultIsError=true` and bounded wait timeout) routing poison/unsupported messages to `ledgerguard.domain-events.v1.DLT`, wire contract independence without Java class sharing, and comprehensive Testcontainers integration tests. Full Maven verification passing across all 5 modules (352 tests).
-- **Next Phase:** Phase 19 — External PSP & Banking Simulator
+  - **Phase 19 — External PSP & Banking Simulator** (Completed: 2026-09-01)
+- **Current Work:** Phase 19 completed. Implemented independent standalone `psp-simulator` module with dedicated PostgreSQL database (`psp_simulator`), independent Flyway V1 migration (`provider_operations`, `provider_webhooks`, strict constraints and partial scheduler index), atomic database insert idempotency (`tryInsertOperation` with `ON CONFLICT (client_operation_id) DO NOTHING`), durable clientOperationId and webhookUrl conflict detection (409 Conflict), in-memory per-client `ScenarioRegistry`, deterministic fault injection (`NORMAL_SUCCESS`, `TIMEOUT_AFTER_SUCCESS`, `DELAYED_WEBHOOK`, `DUPLICATE_WEBHOOK`, `TEMPORARY_500`), asynchronous scheduled webhook dispatcher using `RestClient` and `FOR UPDATE SKIP LOCKED`, status lookup API, and comprehensive PostgreSQL / HTTP Testcontainers integration test suite (15 tests). All 366 tests pass across all modules with 0 regressions (ledgerguard-api: 332, psp-simulator: 15, notification-worker: 18, failure-lab: 1).
+- **Next Phase:** Phase 20 — External Wallet Funding (Top-Ups)
 - **Last Verified:** 2026-09-01
-- **Git Branch:** `feat/phase-18-notification-worker` (workspace uncommitted)
+- **Git Branch:** `feat/phase-19-psp-simulator` (workspace uncommitted)
 
 ---
 

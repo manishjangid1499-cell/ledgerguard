@@ -1,5 +1,39 @@
+server:
+  port: 8081
+
 spring:
   application:
     name: psp-simulator
-server:
-  port: 8081
+
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${PSP_DB_NAME:psp_simulator}
+    username: ${PSP_DB_USER:psp_simulator_app}
+    password: ${PSP_DB_PASSWORD:local_dev_psp_password}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: PspSimulatorHikariPool
+      maximum-pool-size: 10
+      minimum-idle: 2
+      idle-timeout: 300000
+      connection-timeout: 20000
+
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    show-sql: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+    validate-on-migrate: true
+
+ledgerguard:
+  psp:
+    webhook:
+      poll-interval-ms: 500
+      batch-size: 50
+      connect-timeout-seconds: 5
+      read-timeout-seconds: 5

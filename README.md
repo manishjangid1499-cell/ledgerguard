@@ -112,8 +112,8 @@ After each failure injection, the engine mathematically proves that:
 
 ## 7. Current Project Status
 
-- **Current State:** Phase 18 Completed — Notification Worker & Idempotent Inbox Consumer: Implemented independent `notification-worker` background Kafka consumer service with dedicated `notification_worker` database (Flyway `V1__create_notification_worker_tables.sql`), database-backed idempotent inbox deduplication via `processed_events` using atomic `INSERT ... ON CONFLICT (event_id) DO NOTHING` claims, durable `notification_deliveries` business side effects sharing the same PostgreSQL transaction committing at most one delivery row per event ID, DLT error handling with `DefaultErrorHandler` and `DeadLetterPublishingRecoverer` (with `failIfSendResultIsError=true` and bounded wait timeout) routing poison/unsupported messages to `ledgerguard.domain-events.v1.DLT`, wire contract independence without Java class sharing, and comprehensive Testcontainers integration tests (352 tests passing across all 5 Maven modules).
-- **Next Step:** Phase 19 — External PSP & Banking Simulator.
+- **Current State:** Phase 16 Completed — Transactional Outbox Persistence: Implemented transactional outbox persistence foundation (`outbox_events`), Flyway migration `V9__create_outbox_events.sql`, database trigger enforcing lifecycle transitions (`PENDING -> PUBLISHED`), content immutability, deletion safety, partial index on `(created_at, id) WHERE status = 'PENDING'`, `OutboxService` with `Propagation.MANDATORY` and Jackson `ObjectMapper` decimal-string monetary serialization, explicit domain event integration in `TransferService` (`TRANSFER_COMPLETED`), `PaymentService` (`PAYMENT_SUCCEEDED`), and `RefundService` (`REFUND_COMPLETED`), and complete test suite across all 5 Maven modules (319 tests passing).
+- **Next Step:** Phase 17 — Kafka Outbox Publisher & Event Contracts.
 - **Roadmap:** Detailed phase-by-phase progress is tracked in [docs/STATUS.md](docs/STATUS.md).
 
 ---
