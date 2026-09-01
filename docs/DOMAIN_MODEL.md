@@ -152,5 +152,18 @@ $$\text{Available Balance} = \text{Posted Balance} - \sum \text{Active Holds}$$
   - LedgerGuard does **NOT** claim global ordering across partitions.
   - LedgerGuard does **NOT** claim strict original database outbox ordering across concurrent workers for multiple events of the same aggregate (unless explicitly serialized).
   - Current Phase 17 domain producers (`Transfer`, `Payment`, `Refund`) emit exactly ONE terminal event per aggregate lifecycle (`TRANSFER_COMPLETED`, `PAYMENT_SUCCEEDED`, `REFUND_COMPLETED`).
-- **Producer Idempotence Scope**: Kafka producer idempotence (`enable.idempotence=true`, `acks=all`) prevents duplicate writes during transport retries within a single producer session. It does not eliminate application-level duplicates caused by post-ACK database rollback windows.
 - **Send Timeout Delivery Ambiguity**: A timeout on `future.get(timeout)` is an ambiguous delivery outcome from the publisher's perspective. The PostgreSQL transaction rolls back, leaving the row `PENDING` for future retry, while the message may or may not have reached the broker.
+
+### Invariant 8: Idempotent Consumer Side Effects & Inbox Deduplication
+- **Consumer Core Invariant**:
+$$\text{\bf THE SAME EVENT ID MAY BE DELIVERED MANY TIMES, BUT AT MOST ONE NOTIFICATION DELIVERY ROW CAN BE COMMITTED.}$$
+- **Delivery & Side-Effect Semantics**:
+  - **Kafka Delivery**: Strictly **AT-LEAST-ONCE**; Kafka does not guarantee end-to-end exactly-once delivery.
+  - **Consumer Durable Side Effect**: Strictly **IDEMPOTENT**, with at most one committed `notification_deliveries` row per event ID.
+  - **Successfully Processed Event**: Exactly one committed `notification_deliveries` row is created.
+  - **DLT Routed / Failed Event**: Zero successful `notification_deliveries` rows may exist.
+- **Consumer Deduplication Identity**: Logical deduplication is strictly anchored to `event_id` (CloudEvents `id`), never Kafka topic/partition/offset or `aggregate_id`.
+- **Atomic Database Claim**: `processed_events` is claimed via atomic `INSERT ... ON CONFLICT (event_id) DO NOTHING`.
+- **Atomic Side Effect Coupling**: The inbox claim and the durable business side effect (`notification_deliveries`) execute and commit within the *exact same database transaction* in `notification_worker`. If delivery creation fails, the transaction rolls back, releasing the claim so Kafka retries can reprocess the event.
+- **Duplicate Clean Bypass**: Duplicate Kafka deliveries detect existing claims (`inserted == 0`), bypass side effect generation, and acknowledge the offset without routing to DLT.
+- **Dead-Letter Handling (DLT)**: Poison messages (malformed JSON, unsupported event types or versions) route to `ledgerguard.domain-events.v1.DLT` via `DefaultErrorHandler` + `DeadLetterPublishingRecoverer` (configured with `failIfSendResultIsError=true` and bounded wait timeout) after bounded retries, preventing partition head-of-line blocking while ensuring failed messages never create `processed_events` or `notification_deliveries` rows. If DLT publication itself fails, the recoverer throws an exception, preventing silent source record loss and ensuring source offsets do not advance without durable recovery.
