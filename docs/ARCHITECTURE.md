@@ -244,3 +244,17 @@ To maintain focus on correctness and avoid resume-driven architecture, the follo
   3. `FundingSettlementService` (`@Transactional`): Locks the `FundingOperation` row (`FOR UPDATE`), validates the PSP response identity and amount integrity, acquires deterministic snapshot row locks, posts a balanced double-entry journal transaction (DEBIT system `PSP_CLEARING` account, CREDIT customer wallet account), and marks `FundingOperation` as `SUCCEEDED`.
 - **Authoritative Provider Invariant**: External funds enter the LedgerGuard internal ledger if and only if authoritative confirmation exists from the external provider (`status = 'SUCCEEDED'`).
 - **Ambiguity & Timeout Semantics**: On provider timeouts or 5xx server errors, the funding operation safely remains in `PROCESSING` status with 0 wallet credit. Subsequent client retries with the same `Idempotency-Key` replay the request to the PSP using the existing `clientOperationId`, settling atomically once provider confirmation succeeds.
+
+---
+
+## 14. External Payouts / Withdrawals Architecture (Phase 21)
+
+- **Balance Hold Reservation Before Network**:
+  1. `PayoutCreationService` (`@Transactional`): Atomically validates wallet ownership and spendable available balance, registers the idempotency record, creates an `ACTIVE` `BalanceHold` (preventing double-spend of in-flight funds), and commits a durable `Payout` record in `PROCESSING` status referencing the hold ID.
+  2. `PspClient` (Non-transactional): Calls the external PSP simulator (`operationType = DEBIT`) using `Payout.id` as the stable provider `clientOperationId`. No database transaction or locks are open during this outbound HTTP call.
+  3. Authoritative Branching:
+     - **Confirmed Success (`SUCCEEDED`)** -> `PayoutSettlementService` (`@Transactional`): Acquires pessimistic lock on Payout and deterministic snapshot locks, transitions the `BalanceHold` to `CONSUMED`, posts a balanced double-entry journal (DEBIT source wallet, CREDIT system `PSP_CLEARING` account), and marks `Payout` as `SUCCEEDED`.
+     - **Definite Failure (`FAILED`)** -> `PayoutFailureService` (`@Transactional`): Releases the `BalanceHold` (`RELEASED`), marks `Payout` as `FAILED`, with 0 journal entries.
+     - **Ambiguous Outcome (Timeout / Network / Malformed)**: Payout remains `PROCESSING`, `BalanceHold` remains `ACTIVE`, 0 ledger entries, and HTTP 202 Accepted is returned.
+- **Hold Expiration Protection**: Generic background hold expiration queries explicitly filter out `ACTIVE` holds linked to in-flight `PROCESSING` payouts to ensure in-flight money remains reserved until authoritative provider resolution.
+- **Flyway V11 Database Integrity**: PostgreSQL table `payouts` with lifecycle trigger `trg_fn_enforce_payouts_lifecycle_and_immutability()` enforcing that terminal `SUCCEEDED` payouts must link to a `CONSUMED` hold and a valid posted double-entry settlement journal, while `FAILED` payouts must link to a `RELEASED` hold with 0 journal. Terminal states are strictly immutable.

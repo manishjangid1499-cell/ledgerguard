@@ -94,6 +94,7 @@ After each failure injection, the engine mathematically proves that:
 - **Concurrency Control**: Deterministic account lock ordering (lower identifier first) to prevent opposing-transfer circular-wait deadlocks, serialize refund attempts on parent payment rows, serialize hold reservations on snapshot rows, and prevent double-spending under concurrent workloads.
 - **Authoritative Idempotency**: Atomic database-backed request deduplication keys with cryptographic payload fingerprinting.
 - **Transactional Outbox & Inbox**: Multi-worker transactional outbox persistence (`outbox_events`) ensuring atomic financial outcome event durability within the same PostgreSQL transaction, with multi-worker `SKIP LOCKED` publisher to Kafka in Phase 17 and idempotent consumer inbox processing in Phase 18.
+- **External Funding & Payouts Domain**: Integration with external PSP simulator for wallet top-ups (Phase 20) and outbound payouts/withdrawals (Phase 21) using pre-network balance hold reservation, decoupled non-transactional HTTP client calls, confirmed-success hold consumption and double-entry settlement (`DEBIT source wallet, CREDIT PSP_CLEARING`), definite-failure hold release, and in-flight hold expiration protection.
 - **Three-Level Reconciliation**: Journal invariant verification, snapshot vs. ledger verification, and internal ledger vs. external PSP state matching.
 - **Observability**: Micrometer metrics, Prometheus, Grafana dashboards, OpenTelemetry distributed tracing, and structured logging.
 
@@ -112,8 +113,8 @@ After each failure injection, the engine mathematically proves that:
 
 ## 7. Current Project Status
 
-- **Current State:** Phase 20 Completed — External Wallet Funding / Top-Ups: Implemented external wallet funding integration with standalone PSP simulator: Flyway V10 migration for `funding_operations` with strict check constraints and PostgreSQL lifecycle/immutability trigger; three-phase decoupled execution pipeline (`FundingCreationService` -> `PspClient` outside DB transaction -> `FundingSettlementService` with pessimistic lock, snapshot locks, and double-entry settlement `PSP_CLEARING` DEBIT to `CUSTOMER` CREDIT); non-transactional `FundingService` orchestrator; `FundingController` with `@PreAuthorize("hasRole('CUSTOMER')")`, string-serialized money responses, HTTP 201/200/202 status codes; comprehensive test suite (26 new tests, 391 total across workspace with 0 failures, 0 errors).
-- **Next Step:** Phase 21 — External Payouts / Withdrawals.
+- **Current State:** Phase 21 Completed — External Payouts / Withdrawals: Implemented outbound wallet payouts to external PSP using Flyway V11 migration for `payouts` table, check constraints, and immutability trigger; pre-network balance hold reservation; non-transactional PSP client execution (`operationType = DEBIT`); confirmed-success settlement (`CONSUMED` hold, double-entry settlement journal DEBIT source wallet, CREDIT `PSP_CLEARING`); definite-failure hold release (`RELEASED` hold, 0 journal under simulator pre-acceptance failure contract); ambiguous outcome retention (payout `PROCESSING`, hold `ACTIVE` past expiration, 0 journal, 202 Accepted, zero new PSP calls on replayed `PROCESSING`); in-flight hold expiration protection; comprehensive test suite (25 new tests in API, 417 total across workspace with 0 failures, 0 errors).
+- **Next Step:** Phase 22.
 - **Roadmap:** Detailed phase-by-phase progress is tracked in [docs/STATUS.md](docs/STATUS.md).
 
 ---

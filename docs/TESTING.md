@@ -144,3 +144,27 @@ The following database-level behaviors are central to LedgerGuard's correctness 
   - **Concurrent Idempotency**: 20 concurrent threads with identical request and idempotency key produce exactly 1 `FundingOperation`, 1 settlement journal, and 1 credit.
   - **High-Precision Money**: Handles large integer values ($> \text{Number.MAX\_SAFE\_INTEGER}$) without precision loss.
   - **Fails Closed on Missing/Multiple Clearing Accounts**: Rejects settlement if 0 or $>1$ active `PSP_CLEARING` accounts exist.
+
+---
+
+## 6. External Payouts / Withdrawals Testing Strategy (Phase 21)
+
+- **Database Constraint Verification (`PayoutDatabaseConstraintTest`)**:
+  - Direct insert with `PROCESSING` succeeds for active INR customer or merchant account owned by initiator, linking to an `ACTIVE` hold.
+  - Direct insert with `SUCCEEDED` or `FAILED` rejected by trigger.
+  - Direct insert with wrong account type (`PSP_CLEARING`), wrong currency, wrong owner, closed account, or invalid amounts ($\le 0$) rejected.
+  - Valid transition `PROCESSING -> SUCCEEDED` requires `provider_operation_id`, `completed_at`, a `CONSUMED` hold, and an existing balanced `POSTED` settlement journal (DEBIT source wallet, CREDIT `PSP_CLEARING`).
+  - Valid transition `PROCESSING -> FAILED` requires a `RELEASED` hold and zero settlement journal.
+  - Transition rejected if settlement journal has mismatched amounts, wrong accounts, or if hold status is not `CONSUMED` (for SUCCEEDED) / `RELEASED` (for FAILED).
+  - Completed payout operations (`SUCCEEDED`, `FAILED`) are immutable and cannot be updated or deleted.
+- **Service & Integration Invariant Verification (`PayoutServiceIntegrationTest`, `PayoutControllerIntegrationTest`)**:
+  - **Normal Settlement (Customer & Merchant)**: Verifies pre-network hold reservation (`ACTIVE`), authoritative provider `SUCCEEDED` response, hold consumption (`CONSUMED`), and atomic DEBIT source wallet to CREDIT `PSP_CLEARING` settlement journal.
+  - **Definite Provider Failure (`TEMPORARY_500` / `FAILED`)**: Definite provider failure releases hold (`RELEASED`), marks payout `FAILED`, with 0 journal entries and 0 balance reduction.
+  - **Ambiguity & Network Timeouts (`TIMEOUT_AFTER_SUCCESS`)**: Read timeout preserves payout `PROCESSING` status, retains `ACTIVE` hold, posts 0 journal, and returns HTTP 202 Accepted.
+  - **Matching Replay Policy**:
+    - Replay of `SUCCEEDED` payout -> returns 200 OK with `replayed=true` (0 PSP calls, 0 journal).
+    - Replay of `FAILED` payout -> returns 200 OK with `replayed=true` (0 PSP calls, 0 journal).
+    - Replay of `PROCESSING` payout -> returns 202 Accepted with `replayed=true` (0 new PSP calls in Phase 21).
+  - **Hold Expiration Protection**: Background generic hold expiration queries explicitly ignore holds linked to `PROCESSING` payouts, ensuring in-flight withdrawals are never cancelled prematurely.
+  - **Insufficient Funds / Capacity**: Payout creation rejected if `availableBalanceMinor < requestedAmountMinor`.
+  - **Concurrent Idempotency**: Concurrent requests with identical `(actor, idempotency_key)` execute hold reservation and payout pipeline safely with single execution.

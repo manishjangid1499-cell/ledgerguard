@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Awaiting Phase 21
-- **Status:** Phase 20 Complete (Verified)
+- **Current Phase:** Awaiting Phase 22
+- **Status:** Phase 21 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -26,10 +26,10 @@
   - **Phase 18 — Notification Worker & Idempotent Inbox Consumer** (Completed: 2026-09-01)
   - **Phase 19 — External PSP & Banking Simulator** (Completed: 2026-09-01)
   - **Phase 20 — External Wallet Funding / Top-Ups** (Completed: 2026-09-01)
-- **Current Work:** Phase 20 completed. Implemented external wallet funding integration with standalone PSP simulator: Flyway V10 migration for `funding_operations` with strict check constraints and PostgreSQL lifecycle/immutability trigger; three-phase decoupled execution pipeline (`FundingCreationService` -> `PspClient` outside DB transaction -> `FundingSettlementService` with pessimistic lock, snapshot locks, and double-entry settlement `PSP_CLEARING` DEBIT to `CUSTOMER` CREDIT); non-transactional `FundingService` orchestrator; `FundingController` with `@PreAuthorize("hasRole('CUSTOMER')")`, string-serialized money responses, HTTP 201/200/202 status codes; comprehensive test suite (26 new tests, 391 total across workspace with 0 failures, 0 errors).
-- **Next Phase:** Phase 21 — External Payouts / Withdrawals
-- **Last Verified:** 2026-09-01
-- **Git Branch:** `feat/phase-20-external-funding` (workspace uncommitted)
+- **Current Work:** Phase 21 completed. Implemented outbound wallet payouts / withdrawals to external PSP: Flyway V11 migration for `payouts` with strict check constraints and PostgreSQL lifecycle/immutability trigger (`trg_fn_enforce_payouts_lifecycle_and_immutability`); balance hold reservation before network call via `PayoutCreationService`; `PspClient` DEBIT operation outside DB transaction; confirmed-success settlement via `PayoutSettlementService` (locks snapshots, consumes hold atomically, posts double-entry settlement journal DEBIT source wallet to CREDIT `PSP_CLEARING`, marks payout `SUCCEEDED`); definite-failure release via `PayoutFailureService` (under the Phase 19 simulator contract where `TEMPORARY_500` represents a known pre-acceptance failure, releases hold, marks payout `FAILED`, 0 journal); ambiguous outcome handling (timeouts and transport errors preserve `PROCESSING` status, retain active hold even past `expires_at`, return HTTP 202 without polling/retrying until Phase 23); in-flight payout protection in generic hold expiration queries and conditional updates; zero new PSP calls on matching `PROCESSING` replay; `PayoutController` with `@PreAuthorize("hasAnyRole('CUSTOMER','MERCHANT')")`, string-serialized money responses, HTTP 201/200/202 status codes; comprehensive test suite (25 new tests in API, 417 total across workspace with 0 failures, 0 errors).
+- **Next Phase:** Phase 22
+- **Last Verified:** 2026-09-02
+- **Git Branch:** `feat/phase-21-external-payouts` (workspace uncommitted)
 
 ---
 

@@ -166,3 +166,14 @@ $$\text{Available Balance} = \text{Posted Balance} - \sum \text{Active Holds}$$
   - `TEMPORARY_500`: Known failure before provider acceptance. Zero database rows are created.
   - `TIMEOUT_AFTER_SUCCESS`: Ambiguous outcome to caller. Provider operation and webhook are committed durably *prior* to transport delay. Subsequent status query or retry safely confirms success.
 - **Webhook Delivery Independence**: Webhook delivery status (`SCHEDULED`, `DELIVERED`, `FAILED`) is decoupled from provider operation status (`SUCCEEDED`). A network failure delivering a webhook marks the webhook `FAILED` without failing or rolling back the `SUCCEEDED` provider operation.
+
+### Invariant 9: External Wallet Funding / Top-Ups (Phase 20)
+- **Authoritative Confirmation**: External wallet funding credits the customer wallet if and only if authoritative confirmation exists from the external provider (`status = 'SUCCEEDED'`).
+- **Pessimistic Locking & Idempotent Replay**: Matching retries acquire pessimistic lock on `funding_operations`, return existing state without duplicate PSP calls or double-posting, and fail with HTTP 409 Conflict on payload mismatch.
+
+### Invariant 10: External Payouts / Withdrawals & Hold Lifecycle (Phase 21)
+- **Pre-Network Balance Hold Reservation**: Outbound payouts create an `ACTIVE` `BalanceHold` before initiating external PSP communication. Money is never deducted from the posted balance until authoritative provider confirmation is received.
+- **Confirmed-Success Consumption**: When PSP returns `SUCCEEDED`, the `BalanceHold` transitions to `CONSUMED`, and a balanced double-entry settlement journal (DEBIT source wallet, CREDIT `PSP_CLEARING`) posts atomically.
+- **Definite-Failure Hold Release**: When PSP returns a definite failure (`FAILED`), the `BalanceHold` transitions to `RELEASED`, the payout marks `FAILED`, and zero double-entry journal entries are created.
+- **Ambiguous In-Flight Preservation**: On network timeouts, transport errors, or unparseable responses, the payout remains `PROCESSING`, the hold remains `ACTIVE`, and no journal entries are posted.
+- **Hold Expiration Immunity**: Holds linked to `PROCESSING` payouts are excluded from generic background hold expiration to prevent premature release of funds while an external payout is in flight.

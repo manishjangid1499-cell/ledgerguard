@@ -408,6 +408,22 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .body(problemDetail);
     }
 
+    @ExceptionHandler(com.ledgerguard.payout.domain.PayoutValidationException.class)
+    public ResponseEntity<ProblemDetail> handlePayoutValidation(com.ledgerguard.payout.domain.PayoutValidationException ex, WebRequest request) {
+        log.warn("Payout validation rejected: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                ex.getMessage()
+        );
+        problemDetail.setTitle("Payout validation failed");
+        enrichProblemDetail(problemDetail, ApiErrorCode.INVALID_PAYOUT, request);
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
     @ExceptionHandler(com.ledgerguard.funding.domain.PspClearingAccountException.class)
     public ResponseEntity<ProblemDetail> handlePspClearingAccountException(com.ledgerguard.funding.domain.PspClearingAccountException ex, WebRequest request) {
         log.error("PSP clearing account configuration error: {}", ex.getMessage(), ex);

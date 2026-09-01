@@ -525,3 +525,55 @@ All API error responses use `application/problem+json` and follow the standard R
   "replayed": false
 }
 ```
+
+---
+
+## 13. External Payouts / Withdrawals API (`/api/payouts`) — Phase 21
+
+### 13.1 Request Outbound Payout / Withdrawal
+| Method | Endpoint | Status Code | Required Role | Purpose |
+| :--- | :--- | :--- | :--- | :--- |
+| `POST` | `/api/payouts` | `201 Created` / `200 OK` / `202 Accepted` | `CUSTOMER`, `MERCHANT` | Request external wallet payout/withdrawal via balance hold reservation and external PSP. |
+
+- **Headers:**
+  - `Authorization: Bearer <jwt>`
+  - `Idempotency-Key: <UUID>` (Required, max 128 characters)
+- **Status Codes:**
+  - `201 Created`: Authoritative provider `SUCCEEDED` confirmation received; hold consumed and double-entry settlement journal posted (`DEBIT` source wallet, `CREDIT` `PSP_CLEARING`).
+  - `200 OK`: Idempotent replay of already settled `SUCCEEDED` or `FAILED` payout (0 additional PSP calls, 0 additional ledger movements).
+  - `202 Accepted`: Ambiguous provider outcome (timeout or malformed response). Payout preserved in `PROCESSING` status with balance hold remaining `ACTIVE`. Definite provider failures (`FAILED` response) release hold and return 200/201 with `FAILED` payout status.
+
+#### Request Schema:
+```json
+{
+  "amountMinor": "10000"
+}
+```
+
+#### Response Schema (201 Created / 200 OK - Succeeded):
+```json
+{
+  "payoutId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "status": "SUCCEEDED",
+  "amountMinor": "10000",
+  "currency": "INR",
+  "balanceHoldId": "7cb417e2-45e3-4d69-a359-2c708fa8d10a",
+  "providerOperationId": "c8b417e2-45e3-4d69-a359-2c708fa8d10b",
+  "journalTransactionId": "f1b417e2-45e3-4d69-a359-2c708fa8d10c",
+  "replayed": false
+}
+```
+
+#### Response Schema (202 Accepted - In Flight / Ambiguous):
+```json
+{
+  "payoutId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "status": "PROCESSING",
+  "amountMinor": "10000",
+  "currency": "INR",
+  "balanceHoldId": "7cb417e2-45e3-4d69-a359-2c708fa8d10a",
+  "providerOperationId": null,
+  "journalTransactionId": null,
+  "replayed": false
+}
+```
