@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Awaiting Phase 13
-- **Status:** Phase 12 Complete (Verified)
+- **Current Phase:** Awaiting Phase 14
+- **Status:** Phase 13 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -18,10 +18,11 @@
   - **Phase 10 — Atomic Internal Transfers** (Completed: 2026-08-31)
   - **Phase 11 — Concurrency Control, Deterministic Locking & Overdraft Prevention** (Completed: 2026-08-31)
   - **Phase 12 — Wallet, Transfer & Ledger Frontend Experience** (Completed: 2026-08-31)
-- **Current Work:** Phase 12 completed. Built authenticated backend read APIs (`GET /api/wallets/me`, `GET /api/transfers`, `GET /api/transfers/{transferId}`) with string-serialized minor units for JavaScript safe arithmetic. Implemented frontend React financial dashboard (`WalletCard`, `TransferForm`, `RecentTransfersTable`, `JournalInspector`, `TransferDetailPage`), exact BigInt INR parser/formatter (`money.ts`), and logical retry idempotency tracking without double-deduction.
-- **Next Phase:** Phase 13 — Merchant Payments Domain
-- **Last Verified:** 2026-08-31
-- **Git Branch:** `feat/phase-12-financial-frontend` (workspace uncommitted)
+  - **Phase 13 — Merchant Payments Domain** (Completed: 2026-09-01)
+- **Current Work:** Phase 13 completed. Implemented merchant payment domain (`Payment` business records, Flyway `V6__create_payments.sql`, explicit state machine `CREATED -> PROCESSING -> SUCCEEDED / FAILED`, 100 bps integer arithmetic fee policy, canonical idempotency `merchant-payment:v1`, deterministic row locking across up to 3 accounts, double-entry ledger postings, snapshot updates, and `POST /api/payments` endpoint).
+- **Next Phase:** Phase 14 — Full & Partial Refunds
+- **Last Verified:** 2026-09-01
+- **Git Branch:** `feat/phase-13-merchant-payments` (workspace uncommitted)
 
 ---
 
@@ -74,7 +75,7 @@
 | **Phase 10** | Atomic Internal Transfers | **Completed** | 2026-08-31 |
 | **Phase 11** | Concurrency Control, Deterministic Locking & Overdraft Prevention | **Completed** | 2026-08-31 |
 | **Phase 12** | Wallet, Transfer & Ledger Frontend Experience | **Completed** | 2026-08-31 |
-| **Phase 13** | Merchant Payments Domain | Planned | — |
+| **Phase 13** | Merchant Payments Domain | **Completed** | 2026-09-01 |
 | **Phase 14** | Full & Partial Refunds | Planned | — |
 | **Phase 15** | Balance Holds & Available Balance Model | Planned | — |
 | **Phase 16** | Transactional Outbox Persistence | Planned | — |

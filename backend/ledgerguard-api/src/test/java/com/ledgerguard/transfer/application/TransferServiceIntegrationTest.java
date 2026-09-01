@@ -985,7 +985,7 @@ class TransferServiceIntegrationTest extends AbstractIntegrationTest {
 
     private LedgerAccount createSystemAccount(AccountType type) {
         List<LedgerAccount> existing = ledgerAccountRepository.findAll().stream()
-                .filter(a -> a.getAccountType() == type && a.getOwnerUserId() == null)
+                .filter(a -> a.getAccountType() == type && a.getOwnerUserId() == null && a.getStatus() == AccountStatus.ACTIVE)
                 .toList();
         if (!existing.isEmpty()) {
             return existing.get(0);

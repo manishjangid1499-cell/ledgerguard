@@ -62,6 +62,8 @@ To validate correctness under real financial conditions, tests must run against 
   - Scoped wallet history and detail lookup: `GET /api/transfers` returns only actor-involved transfers (as source or destination); unrelated transfers are excluded.
   - Privacy preservation: `GET /api/transfers/{id}` returns HTTP 404 Not Found (not 403) for unrelated users, preventing disclosure of another user's transfer existence.
   - Double-entry journal inspector: verifies that transfer details expose immutable `POSTED` double-entry entries with balanced debits and credits matching the transfer amount.
+  - Merchant Payments API (`POST /api/payments`): restricted to `CUSTOMER` role (403 for `MERCHANT` and `OPS`, 401 for unauthenticated); verifies 201 Created on new payment, 200 OK on idempotent replay, 400 on invalid payload or non-positive amount, 404 on missing/non-MERCHANT payee, and 409 on idempotency key payload conflict.
+  - Payment Database Constraints (`PaymentDatabaseConstraintTest`): direct JDBC tests verifying trigger rejection of direct `SUCCEEDED`/`PROCESSING`/`FAILED` inserts, rejection of direct transitions to `SUCCEEDED` pointing to DRAFT or missing journals, immutability of terminal records, and delete rejection.
   - Serialization precision: verifies that minor-unit amounts and balances are serialized as decimal JSON strings, preserving precision even for values exceeding JavaScript `Number.MAX_SAFE_INTEGER` (`9,007,199,254,740,991`).
   - Validation of HMAC-SHA256 signatures on inbound PSP webhooks; rejection of tampered or expired payloads.
 

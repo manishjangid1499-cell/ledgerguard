@@ -89,6 +89,7 @@ After each failure injection, the engine mathematically proves that:
 
 - **Identity & Authentication**: Embedded Spring Security architecture, BCrypt password hashing, short-lived HS256 JWT access tokens, high-entropy opaque refresh tokens with SHA-256 hash persistence, dedicated `HttpOnly` / `SameSite=Strict` cookie strategy, and pessimistic row locking for atomic token rotation.
 - **Immutable Double-Entry Accounting**: Balanced debit/credit entries; posted transactions are permanent and corrected only through compensating entries.
+- **Merchant Payments Domain**: Customer-to-merchant commercial transactions, explicit lifecycle state machine (`CREATED -> PROCESSING -> SUCCEEDED / FAILED`), 100 bps integer arithmetic platform fee policy, and multi-line double-entry journal postings (`DEBIT customer gross`, `CREDIT merchant net`, `CREDIT platform_fees fee`).
 - **Concurrency Control**: Deterministic account lock ordering (lower identifier first) to prevent opposing-transfer circular-wait deadlocks and prevent double-spending under concurrent workloads.
 - **Authoritative Idempotency**: Atomic database-backed request deduplication keys with cryptographic payload fingerprinting.
 - **Transactional Outbox & Inbox**: Multi-worker `SKIP LOCKED` event publishing to Kafka with idempotent consumer processing.
@@ -110,8 +111,8 @@ After each failure injection, the engine mathematically proves that:
 
 ## 7. Current Project Status
 
-- **Current State:** Phase 9 Completed — PostgreSQL-Backed Idempotency Infrastructure: Core coordination service (`IdempotencyService`), Flyway V4 migration (`idempotency_records`), scoped uniqueness `(actor_user_id, operation, idempotency_key)`, deterministic SHA-256 request fingerprints, atomic slot claiming via `INSERT ... ON CONFLICT DO NOTHING`, pessimistic row-level coordination, same-transaction execution under `@Transactional REQUIRED`, fail-safe rollback of uncommitted claims, and database trigger-enforced immutability on completed records.
-- **Next Step:** Phase 10 — Atomic Internal Transfers.
+- **Current State:** Phase 13 Completed — Merchant Payments Domain: Built immutable `Payment` business records, Flyway `V6__create_payments.sql`, explicit state machine (`CREATED -> PROCESSING -> SUCCEEDED / FAILED`), integer floor division platform fee policy (100 bps / 1%), canonical idempotency (`merchant-payment:v1`), deterministic row locking across all participating balance snapshots, multi-line double-entry journal postings, snapshot updates, and `POST /api/payments` endpoint.
+- **Next Step:** Phase 14 — Full & Partial Refunds.
 - **Roadmap:** Detailed phase-by-phase progress is tracked in [docs/STATUS.md](docs/STATUS.md).
 
 ---
