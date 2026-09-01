@@ -21,6 +21,7 @@ public final class ApiErrorCode {
     public static final String IDEMPOTENCY_CONFLICT = "IDEMPOTENCY_CONFLICT";
     public static final String IDEMPOTENCY_OPERATION_IN_PROGRESS = "IDEMPOTENCY_OPERATION_IN_PROGRESS";
     public static final String INVALID_TRANSFER = "INVALID_TRANSFER";
+    public static final String INVALID_PAYMENT = "INVALID_PAYMENT";
     public static final String INSUFFICIENT_FUNDS = "INSUFFICIENT_FUNDS";
 
     private ApiErrorCode() {

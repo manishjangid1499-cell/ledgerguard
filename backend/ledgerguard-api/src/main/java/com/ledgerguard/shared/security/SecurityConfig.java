@@ -146,6 +146,8 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
                         // Transfers endpoint
                         .requestMatchers(HttpMethod.POST, "/api/transfers").hasAnyRole("CUSTOMER", "MERCHANT")
+                        // Payments endpoint
+                        .requestMatchers(HttpMethod.POST, "/api/payments").hasRole("CUSTOMER")
                         // Operations routes
                         .requestMatchers("/api/ops/**").hasRole("OPS")
                         // Protected API endpoints

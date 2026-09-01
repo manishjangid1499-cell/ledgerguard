@@ -49,7 +49,8 @@ This document formalizes the domain concepts, state models, and fundamental inva
 ### Business Transactions
 
 - **Transfer (`transfers`)**: A peer-to-peer internal fund movement between two `CUSTOMER_WALLET` accounts, debited from the sender and credited to the recipient atomically.
-- **Payment (`payments`)**: A commercial transaction between a `CUSTOMER_WALLET` and a `MERCHANT_WALLET`, with dedicated metadata, payment lifecycle states (`CREATED`, `PROCESSING`, `SUCCEEDED`, `FAILED`), and optional platform fee splits.
+- **Payment (`payments`)**: A commercial transaction between a `CUSTOMER_WALLET` and a `MERCHANT_WALLET`, with dedicated metadata, payment lifecycle states (`CREATED`, `PROCESSING`, `SUCCEEDED`, `FAILED`), and platform fee split (100 bps / 1% via integer arithmetic with floor rounding). Transitions to `SUCCEEDED` atomically post double-entry journals (`DEBIT customer gross`, `CREDIT merchant net`, `CREDIT platform_fees fee`).
+- **Platform Fee Policy (`com.ledgerguard.payment.domain.PlatformFeePolicy`)**: Calculates platform fees at 100 basis points (1.00%) using integer floor division: `(grossAmountMinor * 100) / 10000`. When `feeAmountMinor == 0` (e.g. gross < 100 minor units), no zero-amount `PLATFORM_FEES` journal entry is posted. Floating point arithmetic is strictly forbidden.
 - **Refund (`refunds`)**: A full or partial reversal of a previously settled payment. Refunds generate new compensating journal entries and enforce the invariant that $\sum \text{Refunds} \le \text{Original Payment Amount}$.
 - **Funding Operation (`funding_operations`)**: An inflow of funds from an external bank or PSP into a `CUSTOMER_WALLET` (PSP Clearing $\to$ Customer Wallet).
 - **Payout (`payouts`)**: An outflow of funds from a `CUSTOMER_WALLET` or `MERCHANT_WALLET` to an external bank account (Wallet $\to$ PSP Clearing), secured with balance holds during transit.

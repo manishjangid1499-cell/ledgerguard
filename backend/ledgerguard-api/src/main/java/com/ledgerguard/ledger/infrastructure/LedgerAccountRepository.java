@@ -15,4 +15,6 @@ public interface LedgerAccountRepository extends JpaRepository<LedgerAccount, UU
     List<LedgerAccount> findByOwnerUserId(UUID ownerUserId);
 
     Optional<LedgerAccount> findByAccountType(AccountType accountType);
+
+    List<LedgerAccount> findAllByAccountType(AccountType accountType);
 }

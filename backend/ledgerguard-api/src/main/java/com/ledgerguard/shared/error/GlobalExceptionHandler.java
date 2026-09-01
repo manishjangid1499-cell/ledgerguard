@@ -296,6 +296,54 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .body(problemDetail);
     }
 
+    @ExceptionHandler(com.ledgerguard.payment.domain.PaymentDestinationNotFoundException.class)
+    public ResponseEntity<ProblemDetail> handlePaymentDestinationNotFound(com.ledgerguard.payment.domain.PaymentDestinationNotFoundException ex, WebRequest request) {
+        log.warn("Payment destination not found: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.NOT_FOUND,
+                ex.getMessage()
+        );
+        problemDetail.setTitle("Resource not found");
+        enrichProblemDetail(problemDetail, ApiErrorCode.RESOURCE_NOT_FOUND, request);
+
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
+    @ExceptionHandler(com.ledgerguard.payment.domain.PaymentValidationException.class)
+    public ResponseEntity<ProblemDetail> handlePaymentValidation(com.ledgerguard.payment.domain.PaymentValidationException ex, WebRequest request) {
+        log.warn("Payment validation rejected: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                ex.getMessage()
+        );
+        problemDetail.setTitle("Payment validation failed");
+        enrichProblemDetail(problemDetail, ApiErrorCode.INVALID_PAYMENT, request);
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
+    @ExceptionHandler(com.ledgerguard.payment.domain.PlatformFeeAccountException.class)
+    public ResponseEntity<ProblemDetail> handlePlatformFeeAccountException(com.ledgerguard.payment.domain.PlatformFeeAccountException ex, WebRequest request) {
+        log.error("Platform fee account configuration error: {}", ex.getMessage(), ex);
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "Internal platform configuration error."
+        );
+        problemDetail.setTitle("Internal Server Error");
+        enrichProblemDetail(problemDetail, ApiErrorCode.INTERNAL_ERROR, request);
+
+        return ResponseEntity
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
     @ExceptionHandler(com.ledgerguard.ledger.application.LedgerPostingException.class)
     public ResponseEntity<ProblemDetail> handleLedgerPostingException(com.ledgerguard.ledger.application.LedgerPostingException ex, WebRequest request) {
         log.warn("Ledger posting rejected: {}", ex.getMessage());

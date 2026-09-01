@@ -263,17 +263,59 @@ All API error responses use `application/problem+json` and follow the standard R
 
 ---
 
-## 7. Planned Domain Endpoints Roadmap (Phases 13–33)
+## 7. Merchant Payment Endpoints (`/api/payments`) — Implemented in Phase 13
 
-### 7.1 Wallets & Balances (`/api/wallets`)
+### 7.1 `POST /api/payments`
+- **Access**: Authenticated `CUSTOMER` only (`MERCHANT` and `OPS` return 403 Forbidden).
+- **Headers**:
+  - `Authorization: Bearer <access_token>`
+  - `Idempotency-Key: <unique-string-1-to-128-chars>` (Required)
+- **Request Body**:
+  ```json
+  {
+    "merchantLedgerAccountId": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+    "amountMinor": "10000",
+    "currency": "INR"
+  }
+  ```
+- **Response (201 Created / 200 OK on Idempotent Replay)**:
+  ```json
+  {
+    "id": "e4b2d184-3c6f-4f2a-89a1-7e8c3b2a1e0f",
+    "customerUserId": "82185e28-975f-488d-a034-342e13db43c4",
+    "customerLedgerAccountId": "6ba7b810-9dad-11d1-80b4-00c04fd430c7",
+    "merchantLedgerAccountId": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+    "grossAmountMinor": "10000",
+    "feeAmountMinor": "100",
+    "merchantNetAmountMinor": "9900",
+    "currency": "INR",
+    "status": "SUCCEEDED",
+    "journalTransactionId": "d5a3412d-8903-4c4e-8159-7d39751804aa",
+    "createdAt": "2026-09-01T12:00:00.000Z",
+    "completedAt": "2026-09-01T12:00:00.050Z"
+  }
+  ```
+- **Platform Fee Allocation**:
+  - 100 bps (1%) computed via integer arithmetic with floor rounding (`(gross * 100) / 10000`).
+  - Zero floating point arithmetic.
+  - Multi-line balanced posting:
+    - Customer Wallet: `DEBIT grossAmountMinor`
+    - Merchant Wallet: `CREDIT merchantNetAmountMinor`
+    - Platform Fee Account: `CREDIT feeAmountMinor` (omitted when `feeAmountMinor == 0`).
+  - Total Debits == Total Credits.
+
+---
+
+## 8. Planned Domain Endpoints Roadmap (Phases 14–33)
+
+### 8.1 Wallets & Balances (`/api/wallets`)
 | Method | Endpoint | Access | Purpose |
 | :--- | :--- | :--- | :--- |
 | `GET` | `/api/wallets/{walletId}/holds` | Customer / Merchant / Ops | List active and historical balance holds on the wallet. |
 
-### 5.3 Merchant Payments (`/api/payments`)
+### 8.2 Merchant Payments Read APIs (`/api/payments`)
 | Method | Endpoint | Access | Purpose |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/api/payments` | Customer | Authorize and execute a payment to a merchant wallet. *Requires `Idempotency-Key`*. |
 | `GET` | `/api/payments/{paymentId}` | Customer / Merchant / Ops | Retrieve payment status, metadata, and refund history. |
 | `GET` | `/api/payments` | Merchant / Ops | List received merchant payments. |
 
