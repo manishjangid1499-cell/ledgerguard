@@ -223,8 +223,9 @@ class OutboxServiceIntegrationTest extends AbstractIntegrationTest {
 
         // Assert 0 outbox events
         Integer count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM outbox_events WHERE event_type = 'TRANSFER_COMPLETED' AND payload->>'amountMinor' = '10000'",
-                Integer.class
+                "SELECT COUNT(*) FROM outbox_events WHERE event_type = 'TRANSFER_COMPLETED' AND payload->>'sourceLedgerAccountId' = ?",
+                Integer.class,
+                sourceWallet.getId().toString()
         );
         assertThat(count).isEqualTo(0);
     }
@@ -366,8 +367,9 @@ class OutboxServiceIntegrationTest extends AbstractIntegrationTest {
         ))).isInstanceOf(RefundLimitExceededException.class);
 
         Integer overCount = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM outbox_events WHERE payload->>'refundAmountMinor' = '6000'",
-                Integer.class
+                "SELECT COUNT(*) FROM outbox_events WHERE payload->>'paymentId' = ? AND payload->>'refundAmountMinor' = '6000'",
+                Integer.class,
+                payment.paymentId().toString()
         );
         assertThat(overCount).isEqualTo(0);
     }

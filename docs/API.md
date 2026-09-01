@@ -404,6 +404,7 @@ All API error responses use `application/problem+json` and follow the standard R
 
 ---
 
-## 10. Internal Architecture & Event Delivery Note (Phase 16)
-- **HTTP Contracts Unchanged**: The Transactional Outbox introduced in Phase 16 operates purely at the persistence and database transaction layer. Public API request and response contracts for Transfers, Payments, Refunds, and Wallets remain completely unchanged.
-- **Internal Scope**: Outbox events are not exposed via customer or merchant HTTP endpoints. Events (`TRANSFER_COMPLETED`, `PAYMENT_SUCCEEDED`, `REFUND_COMPLETED`) are appended atomically within local PostgreSQL transactions and will be published asynchronously to Kafka starting in Phase 17.
+## 10. Internal Architecture & Event Delivery Note (Phase 16 & 17)
+- **HTTP Contracts Unchanged**: The Transactional Outbox and Kafka Publisher operate purely at the backend persistence, asynchronous messaging, and event publication layer. Public API request and response contracts for Transfers, Payments, Refunds, and Wallets remain completely unchanged.
+- **Kafka Event Delivery (Phase 17)**: Committed outbox events are claimed via `FOR UPDATE SKIP LOCKED` and published to Kafka topic `ledgerguard.domain-events.v1` in CloudEvents 1.0 structured JSON format with key `aggregate_id.toString()`.
+- **At-Least-Once Delivery**: Delivery guarantees are at-least-once. Stable event IDs (`outbox_events.id`) allow idempotent consumer deduplication. Aggregate ID key provides partition affinity, while message ordering within partition matches broker append order.

@@ -144,4 +144,14 @@ public class OutboxEvent {
     public Instant getPublishedAt() {
         return publishedAt;
     }
+
+    public void markPublished(Instant timestamp) {
+        if (this.status != OutboxStatus.PENDING) {
+            throw new IllegalStateException("Only PENDING outbox events can transition to PUBLISHED, current status: " + this.status);
+        }
+        Objects.requireNonNull(timestamp, "publishedAt must not be null when transitioning to PUBLISHED");
+        Instant safePublishedAt = timestamp.isBefore(this.createdAt) ? this.createdAt : timestamp;
+        this.status = OutboxStatus.PUBLISHED;
+        this.publishedAt = safePublishedAt;
+    }
 }
