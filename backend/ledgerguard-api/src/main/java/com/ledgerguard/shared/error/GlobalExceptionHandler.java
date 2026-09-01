@@ -392,6 +392,38 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .body(problemDetail);
     }
 
+    @ExceptionHandler(com.ledgerguard.funding.domain.FundingValidationException.class)
+    public ResponseEntity<ProblemDetail> handleFundingValidation(com.ledgerguard.funding.domain.FundingValidationException ex, WebRequest request) {
+        log.warn("Funding validation rejected: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                ex.getMessage()
+        );
+        problemDetail.setTitle("Funding validation failed");
+        enrichProblemDetail(problemDetail, ApiErrorCode.INVALID_FUNDING, request);
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
+    @ExceptionHandler(com.ledgerguard.funding.domain.PspClearingAccountException.class)
+    public ResponseEntity<ProblemDetail> handlePspClearingAccountException(com.ledgerguard.funding.domain.PspClearingAccountException ex, WebRequest request) {
+        log.error("PSP clearing account configuration error: {}", ex.getMessage(), ex);
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "Internal platform configuration error."
+        );
+        problemDetail.setTitle("Internal Server Error");
+        enrichProblemDetail(problemDetail, ApiErrorCode.INTERNAL_ERROR, request);
+
+        return ResponseEntity
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
     @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
     public ResponseEntity<ProblemDetail> handleAccessDenied(org.springframework.security.access.AccessDeniedException ex, WebRequest request) {
         log.warn("Access denied: {}", ex.getMessage());

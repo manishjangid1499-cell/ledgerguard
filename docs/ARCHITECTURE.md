@@ -230,6 +230,17 @@ To maintain focus on correctness and avoid resume-driven architecture, the follo
 
 1. **Balance Equation**: $\text{Available Balance} = \text{Posted Balance} - \text{Active Holds}$.
 2. **Double-Entry Balance**: For every transaction $T$, $\sum_{e \in T} \text{Debit}(e) = \sum_{e \in T} \text{Credit}(e)$.
-3. **Immutability**: Once written, rows in `journal_transactions` and `journal_entries` cannot be updated or deleted.
+3. **Immutability**: Once written, rows in `journal_transactions`, `journal_entries`, and completed `funding_operations` cannot be updated or deleted.
 4. **Deterministic Lock Ordering**: When locking multiple accounts, acquire locks in ascending lexicographical or numerical order of account IDs to prevent circular-wait deadlocks between opposing transfers.
 5. **No Floating Point**: All monetary values are represented as `Money(Currency, long minorUnits)` on backend, and decimal strings / `BigInt` on frontend.
+
+---
+
+## 13. External Wallet Funding & Settlement Architecture (Phase 20)
+
+- **Decoupled Three-Phase Pipeline**:
+  1. `FundingCreationService` (`@Transactional`): Atomically registers the idempotency record and commits a durable `FundingOperation` row in `PROCESSING` status.
+  2. `PspClient` (Non-transactional): Makes the external HTTP POST to the PSP simulator using `FundingOperation.id` as the stable `clientOperationId`. Zero database connections or locks are held across this network call.
+  3. `FundingSettlementService` (`@Transactional`): Locks the `FundingOperation` row (`FOR UPDATE`), validates the PSP response identity and amount integrity, acquires deterministic snapshot row locks, posts a balanced double-entry journal transaction (DEBIT system `PSP_CLEARING` account, CREDIT customer wallet account), and marks `FundingOperation` as `SUCCEEDED`.
+- **Authoritative Provider Invariant**: External funds enter the LedgerGuard internal ledger if and only if authoritative confirmation exists from the external provider (`status = 'SUCCEEDED'`).
+- **Ambiguity & Timeout Semantics**: On provider timeouts or 5xx server errors, the funding operation safely remains in `PROCESSING` status with 0 wallet credit. Subsequent client retries with the same `Idempotency-Key` replay the request to the PSP using the existing `clientOperationId`, settling atomically once provider confirmation succeeds.

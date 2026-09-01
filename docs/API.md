@@ -40,6 +40,7 @@ All API error responses use `application/problem+json` and follow the standard R
 | `AUTHENTICATION_REQUIRED` | `401 Unauthorized` | Missing, invalid, or expired Bearer token on protected resource. |
 | `INVALID_CREDENTIALS` | `401 Unauthorized` | Invalid email or password; disabled user account. |
 | `INVALID_REFRESH_TOKEN` | `401 Unauthorized` | Refresh token is missing, malformed, expired, or revoked. |
+| `INVALID_FUNDING` | `400 Bad Request` | Funding request validation failed (invalid amount, non-integral value, or invalid headers). |
 | `ACCESS_DENIED` | `403 Forbidden` | Authenticated principal lacks necessary role/permission. |
 | `RESOURCE_NOT_FOUND` | `404 Not Found` | Requested route or resource does not exist. |
 | `INTERNAL_ERROR` | `500 Internal Server Error` | An unexpected server-side exception occurred. Sanitized safe detail returned. |
@@ -472,5 +473,55 @@ All API error responses use `application/problem+json` and follow the standard R
   "amountMinor": "10000",
   "currency": "INR",
   "occurredAt": "2026-09-01T12:00:00Z"
+}
+```
+
+---
+
+## 12. External Wallet Funding API (`/api/funding`) — Phase 20
+
+### 12.1 Fund Customer Wallet
+| Method | Endpoint | Status Code | Required Role | Purpose |
+| :--- | :--- | :--- | :--- | :--- |
+| `POST` | `/api/funding` | `201 Created` / `200 OK` / `202 Accepted` | `CUSTOMER` | Request external wallet funding top-up via external PSP. |
+
+- **Headers:**
+  - `Authorization: Bearer <customer_jwt>`
+  - `Idempotency-Key: <UUID>` (Required, max 128 characters)
+- **Status Codes:**
+  - `201 Created`: Authoritative provider confirmation received; customer wallet credited and double-entry journal posted on first attempt.
+  - `200 OK`: Idempotent replay of already settled funding operation (0 additional PSP calls, 0 additional ledger credits).
+  - `202 Accepted`: Provider call unconfirmed (timeout or 5xx server error). FundingOperation created and preserved in `PROCESSING` status with 0 wallet credit.
+
+#### Request Schema:
+```json
+{
+  "amountMinor": "10000"
+}
+```
+
+#### Response Schema (201 Created / 200 OK):
+```json
+{
+  "fundingId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "status": "SUCCEEDED",
+  "amountMinor": "10000",
+  "currency": "INR",
+  "providerOperationId": "c8b417e2-45e3-4d69-a359-2c708fa8d10b",
+  "journalTransactionId": "f1b417e2-45e3-4d69-a359-2c708fa8d10c",
+  "replayed": false
+}
+```
+
+#### Response Schema (202 Accepted):
+```json
+{
+  "fundingId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "status": "PROCESSING",
+  "amountMinor": "10000",
+  "currency": "INR",
+  "providerOperationId": null,
+  "journalTransactionId": null,
+  "replayed": false
 }
 ```

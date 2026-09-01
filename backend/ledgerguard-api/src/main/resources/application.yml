@@ -40,6 +40,10 @@ ledgerguard:
       fixed-delay-ms: ${LEDGERGUARD_OUTBOX_PUBLISHER_FIXED_DELAY_MS:1000}
       batch-size: ${LEDGERGUARD_OUTBOX_PUBLISHER_BATCH_SIZE:50}
       send-timeout-ms: ${LEDGERGUARD_OUTBOX_PUBLISHER_SEND_TIMEOUT_MS:10000}
+  psp:
+    base-url: ${PSP_BASE_URL:http://localhost:8081}
+    connect-timeout-ms: ${PSP_CONNECT_TIMEOUT_MS:2000}
+    read-timeout-ms: ${PSP_READ_TIMEOUT_MS:2000}
   security:
     jwt:
       issuer: ledgerguard
