@@ -404,8 +404,73 @@ All API error responses use `application/problem+json` and follow the standard R
 
 ---
 
-## 10. Internal Architecture & Event Delivery Note (Phase 16, 17 & 18)
-- **HTTP Contracts Unchanged**: The Transactional Outbox, Kafka Publisher, and Notification Worker operate purely at the backend persistence, asynchronous messaging, and event publication/consumption layer. Public API request and response contracts for Transfers, Payments, Refunds, and Wallets remain completely unchanged.
+## 10. Internal Architecture & Event Delivery Note (Phase 16 & 17)
+- **HTTP Contracts Unchanged**: The Transactional Outbox and Kafka Publisher operate purely at the backend persistence, asynchronous messaging, and event publication layer. Public API request and response contracts for Transfers, Payments, Refunds, and Wallets remain completely unchanged.
 - **Kafka Event Delivery (Phase 17)**: Committed outbox events are claimed via `FOR UPDATE SKIP LOCKED` and published to Kafka topic `ledgerguard.domain-events.v1` in CloudEvents 1.0 structured JSON format with key `aggregate_id.toString()`.
 - **At-Least-Once Delivery**: Delivery guarantees are at-least-once. Stable event IDs (`outbox_events.id`) allow idempotent consumer deduplication. Aggregate ID key provides partition affinity, while message ordering within partition matches broker append order.
-- **Notification Consumer (Phase 18)**: `notification-worker` consumes `ledgerguard.domain-events.v1` into its independent `notification_worker` database, enforcing idempotent deduplication via `processed_events` (`ON CONFLICT (event_id) DO NOTHING`) and persisting `notification_deliveries` records atomically without HTTP API exposure or recipient PII.
+
+---
+
+## 11. External PSP Simulator API (`psp-simulator:8081`) (Phase 19)
+
+### 11.1 Provider Operations API (`/api/provider/operations`)
+| Method | Endpoint | Status Code | Purpose |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/provider/operations` | `201 Created` / `200 OK` | Submit provider operation. Returns 201 on first creation; 200 on matching replay; 409 on conflicting replay. |
+| `GET` | `/api/provider/operations/{id}` | `200 OK` / `404 Not Found` | Retrieve provider operation by providerOperationId. |
+| `GET` | `/api/provider/operations/by-client/{clientOperationId}` | `200 OK` / `404 Not Found` | Retrieve provider operation by clientOperationId (used for status recovery). |
+
+#### Request Schema:
+```json
+{
+  "clientOperationId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "operationType": "CREDIT",
+  "amountMinor": "10000",
+  "currency": "INR",
+  "webhookUrl": "http://localhost:8080/api/webhooks/psp"
+}
+```
+
+#### Response Schema:
+```json
+{
+  "providerOperationId": "c8b417e2-45e3-4d69-a359-2c708fa8d10b",
+  "clientOperationId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "operationType": "CREDIT",
+  "status": "SUCCEEDED",
+  "amountMinor": "10000",
+  "currency": "INR",
+  "createdAt": "2026-09-01T12:00:00Z",
+  "completedAt": "2026-09-01T12:00:00Z"
+}
+```
+
+### 11.2 Simulator Scenario Control API (`/api/simulator/scenarios`)
+| Method | Endpoint | Status Code | Purpose |
+| :--- | :--- | :--- | :--- |
+| `PUT` | `/api/simulator/scenarios/{clientOperationId}` | `200 OK` | Inject deterministic fault scenario for a specific clientOperationId. |
+
+#### Request Schema:
+```json
+{
+  "scenario": "TIMEOUT_AFTER_SUCCESS",
+  "delayMs": 1000,
+  "temporaryFailureCount": 0
+}
+```
+*Supported Scenarios:* `NORMAL_SUCCESS`, `TIMEOUT_AFTER_SUCCESS`, `DELAYED_WEBHOOK`, `DUPLICATE_WEBHOOK`, `TEMPORARY_500`.
+
+### 11.3 Webhook Payload Schema
+```json
+{
+  "eventId": "e9b2075a-73ea-4dfc-ba1c-fbefc3547f2a",
+  "eventType": "PROVIDER_OPERATION_SUCCEEDED",
+  "providerOperationId": "c8b417e2-45e3-4d69-a359-2c708fa8d10b",
+  "clientOperationId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "operationType": "CREDIT",
+  "status": "SUCCEEDED",
+  "amountMinor": "10000",
+  "currency": "INR",
+  "occurredAt": "2026-09-01T12:00:00Z"
+}
+```

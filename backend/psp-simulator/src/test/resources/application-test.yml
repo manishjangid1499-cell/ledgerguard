@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: psp-simulator-test
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    show-sql: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+ledgerguard:
+  psp:
+    webhook:
+      poll-interval-ms: 100
+      batch-size: 50
+      connect-timeout-seconds: 2
+      read-timeout-seconds: 2

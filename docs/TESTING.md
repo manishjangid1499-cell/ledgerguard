@@ -54,7 +54,7 @@ To validate correctness under real financial conditions, tests must run against 
   - **Idempotency Immutability & Rollback**: Direct JDBC tests verifying trigger rejection of direct `COMPLETED` inserts, metadata updates, status reversals, and deletions; operation rollback cleanly rolls back uncommitted `IN_PROGRESS` claims allowing retry.
   - **Transactional Outbox Persistence (Phase 16)**: Validating that database rollbacks drop outbox rows, and committed transactions persist events in `PENDING` state with `published_at NULL`. Direct JDBC tests verifying trigger rejection of direct `PUBLISHED` inserts, non-object JSON payloads, content mutations, and deletion of `PENDING` rows. Explicit domain event emission verified for `TRANSFER_COMPLETED`, `PAYMENT_SUCCEEDED`, and `REFUND_COMPLETED`, asserting zero duplicate events on idempotency replay, zero events on failed financial operations, exact decimal string monetary serialization (safe above `MAX_SAFE_INTEGER`), and full business transaction rollback when outbox append fails.
   - **Kafka Outbox Publisher & Event Contracts (Phase 17)**: Bounded batch claiming via `SELECT ... FOR UPDATE SKIP LOCKED` verified with real Kafka Testcontainers. CloudEvents 1.0 structured envelope validation (`specversion: 1.0`, stable `id`, `occurred_at` timestamp, `aggregate_id` key, string-encoded monetary units), post-broker-ACK lifecycle transition to `PUBLISHED`, at-least-once crash window redelivery producing duplicate Kafka messages with identical event IDs, non-blocking disjoint multi-worker claiming, and rollback upon broker/send failure.
-  - **Notification Worker & Idempotent Inbox Consumer (Phase 18)**: Independent `notification_worker` database verified via Testcontainers PostgreSQL and Kafka. Validated atomic dedup claim via `INSERT ... ON CONFLICT (event_id) DO NOTHING`, exactly 1 durable `notification_deliveries` row per event ID across bursts of 10 duplicate Kafka records and 20 concurrent service calls, 20 distinct events all processed, same aggregate with distinct event IDs processed independently, delivery failure rollback consistency, DLT error routing for malformed JSON, unknown types, and unsupported versions, and unblocked partition progress after poison recovery.
+  - **Kafka Consumer Inbox**: Redelivery of duplicate Kafka messages asserts zero duplicate domain side-effects (Phase 18).
 
 ### Layer 4: Webhook, Financial API & Security Integration Tests
 - **Scope**: HTTP layer security, role-based authorization, financial read endpoints, and signature validation.
@@ -101,3 +101,24 @@ The following database-level behaviors are central to LedgerGuard's correctness 
 2. **`FOR UPDATE SKIP LOCKED`**: PostgreSQL's non-blocking row claiming mechanism for multi-worker outbox processing is specific to PostgreSQL and MySQL 8+.
 3. **Partial Indexes & Constraints**: Flyway migrations utilize PostgreSQL-specific constraints and index structures.
 4. **Read Committed & Serializable Isolation**: PostgreSQL's snapshot isolation semantics differ significantly from in-memory substitutes.
+
+---
+
+## 4. PSP Simulator Testing Strategy (Phase 19)
+
+- **Independent Flyway V1 & Schema Isolation**: `psp-simulator` integration tests run exclusively against real PostgreSQL Testcontainers instances (`psp_simulator_test` database), executing only PSP Flyway V1 migrations.
+- **Database Constraint Verification (`PspDatabaseConstraintTest`)**:
+  - `provider_operations`: Unique `client_operation_id`, positive `amount_minor`, strict `INR` currency constraint, valid enum checks (`CREDIT`, `DEBIT`, `SUCCEEDED`, scenarios), and enforced non-null `completed_at` on `SUCCEEDED`.
+  - `provider_webhooks`: Foreign key enforcement to `provider_operations`, positive `delivery_number`, non-object JSON rejection, valid status enums, unique `(event_id, delivery_number)` constraint, and permission of duplicate `event_id` with distinct `delivery_number` (required for duplicate webhook testing).
+- **HTTP Transport & Fault Verification (`PspSimulatorIntegrationTest`)**:
+  - `@SpringBootTest(webEnvironment = RANDOM_PORT)` with Spring `RestClient`.
+  - `NORMAL_SUCCESS`: Operation created (201 Created), 1 DB row, 1 webhook row, single webhook delivered with matching payload.
+  - `IDEMPOTENT_REPLAY`: Replaying same request returns 200 OK, identical `providerOperationId`, 1 DB operation, no duplicate webhook generation.
+  - `CONFLICTING_REPLAY`: Replaying `clientOperationId` with modified amount returns HTTP 409 Conflict without modifying existing record.
+  - `CONCURRENT_IDEMPOTENCY`: 20 concurrent threads with same `clientOperationId` yield exactly 1 DB operation and 1 webhook set; all threads receive successful responses with the identical operation ID.
+  - `TEMPORARY_500`: Returns HTTP 500 for $N$ configured attempts with 0 database rows created; subsequent attempt succeeds with 201 Created; subsequent replay returns 200 OK without re-triggering failures.
+  - `TIMEOUT_AFTER_SUCCESS`: Client read timeout (200ms) against server delay (800ms) causes client-side timeout; status query (`GET /api/provider/operations/by-client/{clientOperationId}`) proves operation was already committed and `SUCCEEDED` in the database prior to the timeout.
+  - `DELAYED_WEBHOOK`: Operation returns 201 immediately; webhook is delivered only after configured delay has elapsed.
+  - `DUPLICATE_WEBHOOK`: Operation schedules 2 delivery rows; receiver observes 2 HTTP callbacks carrying the exact same `eventId` and payload.
+  - `WEBHOOK_DELIVERY_FAILURE`: Unreachable webhook endpoint transitions delivery row to `FAILED` without affecting provider operation `SUCCEEDED` status.
+  - `SCENARIO_ISOLATION`: Injected scenario on Client A does not alter normal behavior on Client B.
