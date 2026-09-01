@@ -43,7 +43,7 @@ To validate correctness under real financial conditions, tests must run against 
   - **50+ Thread High Contention Stress Test**: 50 concurrent threads attempting transfers from an initial balance of 25,000 (1,000 each) proving exactly 25 succeed, 25 fail with `INSUFFICIENT_FUNDS`, and final balance is exactly 0.
   - **Reconstruction Verification**: Asserting that for every touched account in concurrency tests, `snapshot.balance_minor` matches exact sum of historical `journal_entries`.
   - **Key Unpoisoning / Retry After Funding**: Verifying that a transfer rejected for insufficient funds rolls back cleanly and permits the caller to retry the exact same `Idempotency-Key` and fingerprint once funds are deposited.
-  - **Concurrent Refunds (Phase 14 Roadmap)**: Multiple threads attempting simultaneous partial refunds against a single payment, verifying that total refunds never exceed the original payment.
+  - **Concurrent Refunds (Phase 14)**: Multi-threaded concurrent partial refund tests (e.g. 50 threads requesting 1,000 each against a 25,000 payment) verifying parent payment row lock `FOR UPDATE`, cumulative refund cap enforcement ($\sum \text{Refunds} \le \text{grossAmountMinor}$), exactly 25 successes / 25 failures with HTTP 409 `REFUND_LIMIT_EXCEEDED`, and full economic balance restoration.
 
 ### Layer 3: Integration Tests (Testcontainers)
 - **Scope**: Testing database repositories, Spring Data JPA mappings, and messaging pipelines.

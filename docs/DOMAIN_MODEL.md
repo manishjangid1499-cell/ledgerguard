@@ -51,7 +51,12 @@ This document formalizes the domain concepts, state models, and fundamental inva
 - **Transfer (`transfers`)**: A peer-to-peer internal fund movement between two `CUSTOMER_WALLET` accounts, debited from the sender and credited to the recipient atomically.
 - **Payment (`payments`)**: A commercial transaction between a `CUSTOMER_WALLET` and a `MERCHANT_WALLET`, with dedicated metadata, payment lifecycle states (`CREATED`, `PROCESSING`, `SUCCEEDED`, `FAILED`), and platform fee split (100 bps / 1% via integer arithmetic with floor rounding). Transitions to `SUCCEEDED` atomically post double-entry journals (`DEBIT customer gross`, `CREDIT merchant net`, `CREDIT platform_fees fee`).
 - **Platform Fee Policy (`com.ledgerguard.payment.domain.PlatformFeePolicy`)**: Calculates platform fees at 100 basis points (1.00%) using integer floor division: `(grossAmountMinor * 100) / 10000`. When `feeAmountMinor == 0` (e.g. gross < 100 minor units), no zero-amount `PLATFORM_FEES` journal entry is posted. Floating point arithmetic is strictly forbidden.
-- **Refund (`refunds`)**: A full or partial reversal of a previously settled payment. Refunds generate new compensating journal entries and enforce the invariant that $\sum \text{Refunds} \le \text{Original Payment Amount}$.
+- **Refund (`refunds`)**: An immutable business record representing a full or partial reversal of a previously settled `SUCCEEDED` payment. A refund produces a new compensating double-entry journal transaction (`CREDIT customer gross`, `DEBIT merchant merchantDebitAmount`, `DEBIT platform_fees feeDebitAmount`). A persisted `Refund` record guarantees the compensating operation completed synchronously. Unsuccessful attempts leave 0 `Refund` records.
+- **Refund Allocation Policy (`com.ledgerguard.refund.domain.RefundAllocationPolicy`)**: Telescoping proportional reversal algorithm (`original-payment-pro-rata:v1`) using integer floor division:
+  $$\text{targetCumulativeFee}(R) = \left\lfloor \frac{F \times R}{G} \right\rfloor$$
+  $$\text{feeDebitAmountMinor} = \text{targetCumulativeFee}(\text{alreadyRefunded} + \text{requestedRefund}) - \text{targetCumulativeFee}(\text{alreadyRefunded})$$
+  $$\text{merchantDebitAmountMinor} = \text{requestedRefund} - \text{feeDebitAmountMinor}$$
+  Guarantees exact sum equality ($\text{feeDebit} + \text{merchantDebit} = \text{refundAmount}$), full refund total fee restoration, and monotonicity. Zero-amount journal lines (e.g. 0-merchant debit on a 1-paise fee-only rounding refund) are omitted from journal postings.
 - **Funding Operation (`funding_operations`)**: An inflow of funds from an external bank or PSP into a `CUSTOMER_WALLET` (PSP Clearing $\to$ Customer Wallet).
 - **Payout (`payouts`)**: An outflow of funds from a `CUSTOMER_WALLET` or `MERCHANT_WALLET` to an external bank account (Wallet $\to$ PSP Clearing), secured with balance holds during transit.
 
@@ -93,6 +98,7 @@ erDiagram
 
     IDEMPOTENCY_RECORD ||--o| TRANSFER : "deduplicates"
     IDEMPOTENCY_RECORD ||--o| PAYMENT : "deduplicates"
+    IDEMPOTENCY_RECORD ||--o| REFUND : "deduplicates"
 
     JOURNAL_TRANSACTION ||--o{ OUTBOX_EVENT : "triggers"
 ```
@@ -107,7 +113,7 @@ $$\sum_{e \in T, e.\text{type} = \text{DEBIT}} e.\text{amount} = \sum_{e \in T, 
 An unbalanced transaction must be rejected by the posting engine with an immediate database rollback.
 
 ### Invariant 2: Immutability of Posted Financial History
-- No `UPDATE` or `DELETE` SQL operations are permitted on `journal_transactions` or `journal_entries`.
+- No `UPDATE` or `DELETE` SQL operations are permitted on `journal_transactions`, `journal_entries`, `payments`, or `refunds`.
 - Erroneous or canceled transactions must be reversed by creating a new `JOURNAL_TRANSACTION` with opposing credit/debit entries.
 
 ### Invariant 3: Single-Currency Transaction Consistency
@@ -123,3 +129,9 @@ All entries within a single `journal_transaction` must share the exact same curr
 - **Available Balance & Holds (Phase 15 Roadmap)**: In future phases with balance holds:
 $$\text{Available Balance} = \text{Posted Balance} - \sum \text{Active Holds} \ge 0$$
 - **Generic Ledger vs. Transfer Service Distinction**: `LedgerPostingService` remains a pure, generic double-entry primitive without overdraft constraints (generic accounting postings may legitimately produce negative balances, e.g., fees or system adjustments). Overdraft restrictions are enforced as application-layer business rules in `TransferService`.
+
+### Invariant 6: Cumulative Refund Cap & Reversal Bounds
+- **Cumulative Cap**: $\sum \text{Refunds} \le \text{Payment.grossAmountMinor}$. Attempting a refund where $\text{alreadyRefunded} + \text{requestedRefund} > \text{grossAmountMinor}$ is rejected with HTTP 409 `REFUND_LIMIT_EXCEEDED` at both application and database trigger levels.
+- **Parent Payment Lock**: Concurrency control locks the parent `payments` row (`SELECT ... FOR UPDATE`) before calculating cumulative refunds.
+- **Original Immutability**: The original `Payment` and original `journal_transaction` remain strictly immutable and in `SUCCEEDED`/`POSTED` status.
+- **Merchant Liability**: Refunds represent merchant obligations to customers; merchant balance checks are not performed, allowing merchant balances to become negative if funds have been withdrawn.

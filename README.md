@@ -89,8 +89,8 @@ After each failure injection, the engine mathematically proves that:
 
 - **Identity & Authentication**: Embedded Spring Security architecture, BCrypt password hashing, short-lived HS256 JWT access tokens, high-entropy opaque refresh tokens with SHA-256 hash persistence, dedicated `HttpOnly` / `SameSite=Strict` cookie strategy, and pessimistic row locking for atomic token rotation.
 - **Immutable Double-Entry Accounting**: Balanced debit/credit entries; posted transactions are permanent and corrected only through compensating entries.
-- **Merchant Payments Domain**: Customer-to-merchant commercial transactions, explicit lifecycle state machine (`CREATED -> PROCESSING -> SUCCEEDED / FAILED`), 100 bps integer arithmetic platform fee policy, and multi-line double-entry journal postings (`DEBIT customer gross`, `CREDIT merchant net`, `CREDIT platform_fees fee`).
-- **Concurrency Control**: Deterministic account lock ordering (lower identifier first) to prevent opposing-transfer circular-wait deadlocks and prevent double-spending under concurrent workloads.
+- **Merchant Payments & Refunds Domain**: Customer-to-merchant commercial transactions (`CREATED -> PROCESSING -> SUCCEEDED / FAILED`), 100 bps integer floor division platform fee policy, and synchronous full and partial payment refunds (`original-payment-pro-rata:v1` telescoping pro-rata fee reversal) backed by immutable compensating double-entry journals (`CREDIT customer refundAmount`, `DEBIT merchant merchantDebitAmount`, `DEBIT platform_fees feeDebitAmount`), cumulative refund cap enforcement, parent payment row serialization (`FOR UPDATE`), and original fee account resolution.
+- **Concurrency Control**: Deterministic account lock ordering (lower identifier first) to prevent opposing-transfer circular-wait deadlocks, serialize refund attempts on parent payment rows, and prevent double-spending under concurrent workloads.
 - **Authoritative Idempotency**: Atomic database-backed request deduplication keys with cryptographic payload fingerprinting.
 - **Transactional Outbox & Inbox**: Multi-worker `SKIP LOCKED` event publishing to Kafka with idempotent consumer processing.
 - **Three-Level Reconciliation**: Journal invariant verification, snapshot vs. ledger verification, and internal ledger vs. external PSP state matching.
@@ -111,8 +111,8 @@ After each failure injection, the engine mathematically proves that:
 
 ## 7. Current Project Status
 
-- **Current State:** Phase 13 Completed — Merchant Payments Domain: Built immutable `Payment` business records, Flyway `V6__create_payments.sql`, explicit state machine (`CREATED -> PROCESSING -> SUCCEEDED / FAILED`), integer floor division platform fee policy (100 bps / 1%), canonical idempotency (`merchant-payment:v1`), deterministic row locking across all participating balance snapshots, multi-line double-entry journal postings, snapshot updates, and `POST /api/payments` endpoint.
-- **Next Step:** Phase 14 — Full & Partial Refunds.
+- **Current State:** Phase 14 Completed — Full & Partial Payment Refunds: Built immutable `Refund` business records, Flyway `V7__create_refunds.sql`, cumulative refund cap database trigger and application validation, parent payment row serialization via `PESSIMISTIC_WRITE`, telescoping pro-rata fee reversal policy (`original-payment-pro-rata:v1`), original platform fee account resolution from immutable payment journals, compensating double-entry journal postings, snapshot updates, and `POST /api/payments/{paymentId}/refund` endpoint.
+- **Next Step:** Phase 15 — Balance Holds & Available-Balance Model.
 - **Roadmap:** Detailed phase-by-phase progress is tracked in [docs/STATUS.md](docs/STATUS.md).
 
 ---
