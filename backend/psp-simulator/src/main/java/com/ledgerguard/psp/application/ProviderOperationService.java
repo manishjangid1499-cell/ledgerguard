@@ -198,6 +198,7 @@ public class ProviderOperationService {
     private String buildWebhookPayload(UUID eventId, ProviderOperation operation, Instant occurredAt) {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("eventId", eventId.toString());
+        map.put("eventSequence", 1);
         map.put("eventType", "PROVIDER_OPERATION_SUCCEEDED");
         map.put("providerOperationId", operation.getId().toString());
         map.put("clientOperationId", operation.getClientOperationId().toString());

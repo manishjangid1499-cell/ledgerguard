@@ -44,17 +44,20 @@ public class FundingSettlementService {
     private final LedgerAccountRepository ledgerAccountRepository;
     private final LedgerBalanceSnapshotRepository ledgerBalanceSnapshotRepository;
     private final LedgerPostingService ledgerPostingService;
+    private final jakarta.persistence.EntityManager entityManager;
 
     public FundingSettlementService(
             FundingOperationRepository fundingOperationRepository,
             LedgerAccountRepository ledgerAccountRepository,
             LedgerBalanceSnapshotRepository ledgerBalanceSnapshotRepository,
-            LedgerPostingService ledgerPostingService
+            LedgerPostingService ledgerPostingService,
+            jakarta.persistence.EntityManager entityManager
     ) {
         this.fundingOperationRepository = fundingOperationRepository;
         this.ledgerAccountRepository = ledgerAccountRepository;
         this.ledgerBalanceSnapshotRepository = ledgerBalanceSnapshotRepository;
         this.ledgerPostingService = ledgerPostingService;
+        this.entityManager = entityManager;
     }
 
     /**
@@ -69,13 +72,21 @@ public class FundingSettlementService {
         Objects.requireNonNull(fundingId, "Funding ID must not be null");
         Objects.requireNonNull(pspResponse, "PSP operation response must not be null");
 
-        // 1. Lock FundingOperation row with pessimistic write lock
+        // 1. Lock FundingOperation row with pessimistic write lock and refresh entity state
         FundingOperation funding = fundingOperationRepository.findByIdForUpdate(fundingId)
                 .orElseThrow(() -> new IllegalStateException("FundingOperation not found for settlement: " + fundingId));
+        entityManager.refresh(funding);
 
         // 2. If already SUCCEEDED, another concurrent settlement attempt or replay already settled
         if (funding.getStatus() == FundingStatus.SUCCEEDED) {
-            log.info("FundingOperation {} is already SUCCEEDED, returning existing settlement", fundingId);
+            if (!Objects.equals(funding.getProviderOperationId(), pspResponse.providerOperationId())) {
+                throw new com.ledgerguard.provider.application.ProviderEventConflictException(
+                        "Conflicting providerOperationId for already SUCCEEDED funding: expected="
+                                + funding.getProviderOperationId() + ", incoming=" + pspResponse.providerOperationId());
+            }
+            validateProviderResponse(funding, pspResponse);
+            log.info("FundingOperation {} is already SUCCEEDED with matching providerOpId {}, returning existing settlement",
+                    fundingId, pspResponse.providerOperationId());
             return funding;
         }
 

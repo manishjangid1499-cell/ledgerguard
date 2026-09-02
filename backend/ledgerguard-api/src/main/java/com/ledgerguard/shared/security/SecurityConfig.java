@@ -142,6 +142,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // Public authentication endpoints
                         .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout").permitAll()
+                        // Public provider webhook ingress (authenticated via HMAC)
+                        .requestMatchers(HttpMethod.POST, "/api/provider/webhooks").permitAll()
                         // Public actuator health/info endpoints
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
                         // Transfers endpoint

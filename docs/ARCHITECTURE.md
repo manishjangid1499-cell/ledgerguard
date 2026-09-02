@@ -258,3 +258,36 @@ To maintain focus on correctness and avoid resume-driven architecture, the follo
      - **Ambiguous Outcome (Timeout / Network / Malformed)**: Payout remains `PROCESSING`, `BalanceHold` remains `ACTIVE`, 0 ledger entries, and HTTP 202 Accepted is returned.
 - **Hold Expiration Protection**: Generic background hold expiration queries explicitly filter out `ACTIVE` holds linked to in-flight `PROCESSING` payouts to ensure in-flight money remains reserved until authoritative provider resolution.
 - **Flyway V11 Database Integrity**: PostgreSQL table `payouts` with lifecycle trigger `trg_fn_enforce_payouts_lifecycle_and_immutability()` enforcing that terminal `SUCCEEDED` payouts must link to a `CONSUMED` hold and a valid posted double-entry settlement journal, while `FAILED` payouts must link to a `RELEASED` hold with 0 journal. Terminal states are strictly immutable.
+
+---
+
+## 15. Inbound PSP Webhook Subsystem & Event Inbox Architecture (Phase 22)
+
+- **Decoupled 3-Phase Webhook Ingress & Execution**:
+  1. **Phase A: Ingress Authentication (Non-Transactional)**
+     - Operates outside the database transaction to prevent connection starvation.
+     - Validates presence and format of `X-PSP-Webhook-Timestamp` and `X-PSP-Webhook-Signature` (`^sha256=[0-9a-f]{64}$`).
+     - Enforces overflow-safe UTC replay window ($\pm 300\text{s}$) and constant-time HMAC-SHA256 signature verification over exact canonical bytes (`UTF8(timestamp) + "." + rawBodyBytes`).
+     - Parses and validates JSON payload without trusting external provider claims.
+  2. **Phase B: Durable Ingress Persistence (`@Transactional(REQUIRES_NEW)`)**
+     - Employs conflict-safe atomic insert: `INSERT INTO provider_events (...) VALUES (...) ON CONFLICT DO NOTHING`.
+     - Deterministic classification:
+       - If inserted = 1: fresh event, proceed to Phase C.
+       - If inserted = 0: inspect existing records. If matching semantic identity exists, return idempotent duplicate (HTTP 200 OK, 0 duplicate processing). If existing sequence ownership or payload conflict exists, throw `ProviderEventConflictException` (HTTP 409 Conflict).
+  3. **Phase C: Ordered Cursor Execution (`@Transactional(REQUIRES_NEW)`)**
+     - Serializes per `providerOperationId` using PostgreSQL pessimistic write lock (`SELECT ... FOR UPDATE`).
+     - `provider_events` is the exclusive state and sequence source (zero secondary tables or cache).
+     - State cursor starts at `expectedSequence = 1`:
+       - Previously `APPLIED` contiguous events advance cursor and update `lastKnownProviderStatus`.
+       - Previously `IGNORED` contiguous events advance cursor without updating status.
+       - `PENDING` contiguous event evaluates state transition against `lastKnownProviderStatus`:
+         - Valid progression (e.g. `PROCESSING -> SUCCEEDED` or `PROCESSING -> FAILED`): invokes authoritative business handlers (`FundingSettlementService`, `PayoutSettlementService`, `PayoutFailureService`), updates `lastKnownProviderStatus`, marks event `APPLIED`.
+         - Same-terminal event progression (`SUCCEEDED -> SUCCEEDED` or `FAILED -> FAILED`): marks event `APPLIED` with zero additional financial mutation or journals.
+         - Illegal regression (e.g. `SUCCEEDED -> PROCESSING` or `FAILED -> SUCCEEDED`): marks event `IGNORED` with zero financial side-effects.
+       - Gap detection: if next sequence is missing ($>\text{expectedSequence}$), cursor immediately halts. The event remains `PENDING` and returns HTTP 202 ACCEPTED until earlier sequence numbers arrive.
+- **Flyway V12 Migration & Invariant Trigger**:
+  - Table `provider_events` with unique constraint on `(provider_operation_id, event_sequence)`.
+  - Trigger `trg_fn_enforce_provider_events_immutability()`:
+    - On INSERT: requires `processing_status = 'PENDING'` and `processed_at IS NULL`.
+    - On UPDATE: only allows `PENDING -> APPLIED` or `PENDING -> IGNORED` with non-null `processed_at`. Business columns and terminal statuses are immutable.
+    - On DELETE: strictly rejected.

@@ -168,3 +168,64 @@ The following database-level behaviors are central to LedgerGuard's correctness 
   - **Hold Expiration Protection**: Background generic hold expiration queries explicitly ignore holds linked to `PROCESSING` payouts, ensuring in-flight withdrawals are never cancelled prematurely.
   - **Insufficient Funds / Capacity**: Payout creation rejected if `availableBalanceMinor < requestedAmountMinor`.
   - **Concurrent Idempotency**: Concurrent requests with identical `(actor, idempotency_key)` execute hold reservation and payout pipeline safely with single execution.
+
+---
+
+## 7. Provider Webhook Ingress & Processing Testing Strategy (Phase 22)
+
+- **Database Constraint Verification (`ProviderEventDatabaseConstraintTest` — 17 Tests)**:
+  - Sequence constraint: `event_sequence >= 1`.
+  - Amount constraint: `amount_minor > 0`.
+  - Currency constraint: `currency = 'INR'`.
+  - Operation type constraint: `operation_type IN ('CREDIT', 'DEBIT')`.
+  - Provider status constraint: `provider_status IN ('PROCESSING', 'SUCCEEDED', 'FAILED')`.
+  - Processing status constraint: `processing_status IN ('PENDING', 'APPLIED', 'IGNORED')`.
+  - Event type match: `eventType` must match `providerStatus` (`PROVIDER_OPERATION_PROCESSING`, `PROVIDER_OPERATION_SUCCEEDED`, `PROVIDER_OPERATION_FAILED`).
+  - JSON payload validation: must be valid JSON object, not null or array.
+  - Lifecycle trigger enforcement:
+    - Direct insert with `APPLIED` or `IGNORED` strictly rejected by trigger.
+    - Direct insert with non-null `processed_at` strictly rejected.
+    - Valid insert requires `processing_status = 'PENDING'` and `processed_at IS NULL`.
+    - Update mutates immutable business columns rejected.
+    - Update `PENDING -> APPLIED` with non-null `processed_at` succeeds.
+    - Update `PENDING -> IGNORED` with non-null `processed_at` succeeds.
+    - Update on terminal status (`APPLIED` or `IGNORED`) rejected.
+    - Direct `DELETE` strictly rejected.
+  - Unique constraint on `(provider_operation_id, event_sequence)` enforced.
+- **Authentication & Ingress Security Verification (`ProviderWebhookAuthenticationIntegrationTest` — 13 Tests)**:
+  - Valid signature and timestamp returns HTTP 200 OK.
+  - Missing timestamp header returns HTTP 401 Unauthorized.
+  - Missing signature header returns HTTP 401 Unauthorized.
+  - Expired timestamp (>300s in past) returns HTTP 401 Unauthorized.
+  - Future timestamp (>300s in future) returns HTTP 401 Unauthorized.
+  - Malformed non-numeric timestamp returns HTTP 401 Unauthorized.
+  - Invalid signature format (uppercase hex or missing `sha256=`) returns HTTP 401 Unauthorized.
+  - Incorrect shared secret returns HTTP 401 Unauthorized.
+  - Tampered payload bytes (even single space) returns HTTP 401 Unauthorized.
+  - Secret leakage prevention: authentication failure responses never echo or expose the secret.
+  - Extreme timestamp values safely rejected: `Long.MAX_VALUE` and `Long.MIN_VALUE` handled without overflow/panic, returning HTTP 401 Unauthorized.
+  - Malformed signature formats rejected: missing `sha256=` prefix, 63 hex chars, 65 hex chars, and non-hex characters all rejected with HTTP 401 Unauthorized.
+  - Raw body sensitivity: semantically equivalent JSON with modified whitespace/formatting fails signature verification with HTTP 401 Unauthorized.
+  - Timestamp boundary validation: timestamps inside window ($\pm 290\text{s}$) accepted, timestamps outside window ($\pm 305\text{s}$) rejected with HTTP 401 Unauthorized.
+- **Deduplication, Ordering & Settlement Verification (`ProviderWebhookProcessingIntegrationTest` — 16 Tests)**:
+  - `CREDIT SUCCEEDED` settles funding operation and posts double-entry settlement journal.
+  - Identical redelivered webhook returns 200 OK without creating duplicate rows or journals.
+  - Same-terminal progression (`SUCCEEDED -> SUCCEEDED`) marks event `APPLIED` with zero new journals.
+  - `DEBIT SUCCEEDED` settles payout, consumes balance hold, marks event `APPLIED`.
+  - `DEBIT FAILED` releases balance hold, marks payout `FAILED`, 0 journals.
+  - `CREDIT FAILED` observation-only: marks event `APPLIED`, leaves funding `PROCESSING`, 0 journals.
+  - Out-of-order delivery: sequence 2 returns 202 ACCEPTED and remains `PENDING`; subsequent sequence 1 unblocks sequence 2 in order.
+  - Status regression (`SUCCEEDED -> PROCESSING`) marks event `IGNORED` with zero financial effect.
+  - Sequence ownership conflict (different eventId for same providerOpId and sequence) returns 409 Conflict.
+  - Changed payload for existing eventId returns 409 Conflict.
+  - 20 concurrent identical deliveries yield exactly 1 event row, 1 journal, and zero errors.
+  - Concurrent sequence ownership race: exactly 1 sequence owner succeeds, second request receives 409 Conflict, 0 duplicate settlements.
+  - Duplicate PENDING redelivery retries processing: duplicate redelivery of an event left `PENDING` due to crash window successfully retries and completes `PENDING -> APPLIED` settlement transition without duplicate journals.
+  - Conflicting provider operation for same clientOperationId: sequential delivery of event from different providerOperationId for already settled operation rejected with HTTP 409 Conflict (`PROVIDER_EVENT_CONFLICT`), journals $\le 1$.
+  - Concurrent conflicting provider operations: multi-threaded race with different providerOperationIds for same clientOperationId serializes under row lock, exactly one wins (200 OK), loser receives HTTP 409 Conflict (`PROVIDER_EVENT_CONFLICT`), exactly 1 journal posted.
+  - Different providerOperationId on settled payout returns HTTP 409 Conflict without duplicate hold release or settlement.
+- **Real External Callback End-to-End Verification (`ProviderRealCallbackE2EIntegrationTest` — 1 Test)**:
+  - LedgerGuard real-HTTP callback E2E using a faithful PSP test server: verifies `TIMEOUT_AFTER_SUCCESS` payout workflow over real HTTP sockets. `PayoutService.requestPayout` makes real HTTP DEBIT call via `PspClient`; faithful test server simulates synchronous read timeout (300ms) while committing `SUCCEEDED` remotely; Payout remains `PROCESSING` with `ACTIVE` hold; test server dispatches signed HTTP webhook callback to LedgerGuard's live HTTP server port (`server.port=8089`); LedgerGuard HTTP ingress receives, authenticates HMAC-SHA256, records event in `provider_events`, and processes settlement; Payout transitions to `SUCCEEDED`, hold is `CONSUMED`, exactly 1 journal posted.
+- **Actual PSP Simulator Outbound Signing & Storage Verification (`ProviderWebhookSigningIntegrationTest` — 2 Tests)**:
+  - Proves actual `psp-simulator` Spring application, `provider_webhooks` database table, and `ProviderWebhookDispatcher`: outbound webhook includes `eventSequence: 1` in stored payload and valid HMAC-SHA256 signature matching canonical bytes with delivery timestamp headers (`X-PSP-Webhook-Timestamp`, `X-PSP-Webhook-Signature`).
+  - `DUPLICATE_WEBHOOK` scenario dispatches byte-for-byte identical payloads with valid signatures computed per delivery timestamp.

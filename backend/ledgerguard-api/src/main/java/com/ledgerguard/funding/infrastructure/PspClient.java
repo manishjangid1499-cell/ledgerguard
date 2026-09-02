@@ -26,12 +26,15 @@ public class PspClient {
     private static final Logger log = LoggerFactory.getLogger(PspClient.class);
 
     private final RestClient restClient;
+    private final String webhookUrl;
 
     public PspClient(
             @Value("${ledgerguard.psp.base-url:http://localhost:8081}") String baseUrl,
             @Value("${ledgerguard.psp.connect-timeout-ms:2000}") int connectTimeoutMs,
-            @Value("${ledgerguard.psp.read-timeout-ms:2000}") int readTimeoutMs
+            @Value("${ledgerguard.psp.read-timeout-ms:2000}") int readTimeoutMs,
+            @Value("${ledgerguard.psp.webhook-url:http://localhost:8080/api/provider/webhooks}") String webhookUrl
     ) {
+        this.webhookUrl = webhookUrl;
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(Duration.ofMillis(connectTimeoutMs));
         requestFactory.setReadTimeout(Duration.ofMillis(readTimeoutMs));
@@ -64,7 +67,7 @@ public class PspClient {
                 operationType,
                 amountMinor,
                 currency,
-                null
+                webhookUrl
         );
 
         log.info("Sending PSP operation request: clientOperationId={}, type={}, amount={}, currency={}",

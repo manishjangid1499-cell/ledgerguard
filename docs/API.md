@@ -43,6 +43,8 @@ All API error responses use `application/problem+json` and follow the standard R
 | `INVALID_FUNDING` | `400 Bad Request` | Funding request validation failed (invalid amount, non-integral value, or invalid headers). |
 | `ACCESS_DENIED` | `403 Forbidden` | Authenticated principal lacks necessary role/permission. |
 | `RESOURCE_NOT_FOUND` | `404 Not Found` | Requested route or resource does not exist. |
+| `PROVIDER_AUTHENTICATION_FAILED` | `401 Unauthorized` | Webhook timestamp or HMAC-SHA256 signature verification failed. |
+| `PROVIDER_EVENT_CONFLICT` | `409 Conflict` | Webhook sequence ownership or payload conflict detected. |
 | `INTERNAL_ERROR` | `500 Internal Server Error` | An unexpected server-side exception occurred. Sanitized safe detail returned. |
 
 ### Error Response Schema Example
@@ -575,5 +577,55 @@ All API error responses use `application/problem+json` and follow the standard R
   "providerOperationId": null,
   "journalTransactionId": null,
   "replayed": false
+}
+```
+
+---
+
+## 14. Provider Inbound Webhooks API (`/api/provider/webhooks`) — Phase 22
+
+### 14.1 Inbound PSP Webhook Callback
+| Method | Endpoint | Status Code | Required Auth | Purpose |
+| :--- | :--- | :--- | :--- | :--- |
+| `POST` | `/api/provider/webhooks` | `200 OK` / `202 Accepted` | HMAC-SHA256 Signature | Process durable, authenticated external PSP callback event. |
+
+- **Security & Headers:**
+  - `X-PSP-Webhook-Timestamp`: Current UTC epoch seconds (must be within configured clock skew window, default 300s).
+  - `X-PSP-Webhook-Signature`: `sha256=<64 lowercase hex>` computed over canonical bytes `UTF8(timestamp) + "." + rawBodyBytes` using the shared secret.
+  - Publicly accessible endpoint without JWT; secured via HMAC-SHA256 signature verification.
+- **Status Codes:**
+  - `200 OK`: Webhook event processed and applied (e.g., funding settled, payout settled, payout failed released), or recognized as an idempotent duplicate of a previously recorded event.
+  - `202 Accepted`: Webhook event recorded durably in `provider_events` with `PENDING` status because either an out-of-order sequence gap exists (e.g. sequence 2 arrived before sequence 1) or the local operation entity is not yet committed/visible.
+  - `400 Bad Request`: Payload validation failed or required JSON fields are invalid.
+  - `401 Unauthorized`: Missing or malformed timestamp/signature headers, timestamp outside replay window, or HMAC signature mismatch. Secret is never echoed or leaked.
+  - `409 Conflict`: Conflict detected (different eventId attempting to claim existing provider sequence, or modified payload for existing eventId).
+
+#### Request Schema:
+```json
+{
+  "eventId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "eventSequence": 1,
+  "eventType": "PROVIDER_OPERATION_SUCCEEDED",
+  "providerOperationId": "c8b417e2-45e3-4d69-a359-2c708fa8d10b",
+  "clientOperationId": "a1b417e2-45e3-4d69-a359-2c708fa8d10a",
+  "operationType": "CREDIT",
+  "status": "SUCCEEDED",
+  "amountMinor": "10000",
+  "currency": "INR",
+  "occurredAt": "2026-09-02T12:00:00Z"
+}
+```
+
+#### Response Schema (200 OK):
+```json
+{
+  "status": "OK"
+}
+```
+
+#### Response Schema (202 Accepted):
+```json
+{
+  "status": "ACCEPTED"
 }
 ```

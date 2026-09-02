@@ -46,19 +46,22 @@ public class PayoutSettlementService {
     private final LedgerAccountRepository ledgerAccountRepository;
     private final LedgerBalanceSnapshotRepository ledgerBalanceSnapshotRepository;
     private final LedgerPostingService ledgerPostingService;
+    private final jakarta.persistence.EntityManager entityManager;
 
     public PayoutSettlementService(
             PayoutRepository payoutRepository,
             BalanceHoldRepository balanceHoldRepository,
             LedgerAccountRepository ledgerAccountRepository,
             LedgerBalanceSnapshotRepository ledgerBalanceSnapshotRepository,
-            LedgerPostingService ledgerPostingService
+            LedgerPostingService ledgerPostingService,
+            jakarta.persistence.EntityManager entityManager
     ) {
         this.payoutRepository = payoutRepository;
         this.balanceHoldRepository = balanceHoldRepository;
         this.ledgerAccountRepository = ledgerAccountRepository;
         this.ledgerBalanceSnapshotRepository = ledgerBalanceSnapshotRepository;
         this.ledgerPostingService = ledgerPostingService;
+        this.entityManager = entityManager;
     }
 
     @Transactional(propagation = Propagation.REQUIRED)
@@ -68,9 +71,16 @@ public class PayoutSettlementService {
 
         Payout payout = payoutRepository.findByIdForUpdate(payoutId)
                 .orElseThrow(() -> new PayoutValidationException("Payout not found: " + payoutId));
+        entityManager.refresh(payout);
 
         if (payout.getStatus() == PayoutStatus.SUCCEEDED) {
-            log.info("Payout {} already SUCCEEDED, returning existing result", payoutId);
+            if (!Objects.equals(payout.getProviderOperationId(), response.providerOperationId())) {
+                throw new com.ledgerguard.provider.application.ProviderEventConflictException(
+                        "Conflicting providerOperationId for already SUCCEEDED payout: expected="
+                                + payout.getProviderOperationId() + ", incoming=" + response.providerOperationId());
+            }
+            validatePspResponse(payout, response);
+            log.info("Payout {} already SUCCEEDED with matching providerOpId {}, returning existing result", payoutId, response.providerOperationId());
             return toResult(payout, false);
         }
 

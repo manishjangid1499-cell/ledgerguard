@@ -74,11 +74,25 @@ All authentication and authorization failures return standardized RFC 9457 Probl
 
 ---
 
-## 5. Webhook Security & Tampering Prevention
+## 5. Webhook Security & Tampering Prevention (Phase 22)
 
-- **HMAC Signature Verification**: Inbound webhooks from the PSP Simulator must include a cryptographic signature header (e.g., `X-Signature-SHA256`).
-- **Timestamp Windows & Replay Protection**: Webhook payloads include a timestamp header. Payloads older than a strict tolerance window (e.g., 5 minutes) are rejected to prevent replay attacks.
-- **Shared Secret Isolation**: Webhook signing secrets are stored in secure environment variables, never committed to source control.
+- **HMAC-SHA256 Signature Verification**: Inbound provider callbacks (`POST /api/provider/webhooks`) are authenticated via `X-PSP-Webhook-Signature: sha256=<64 lowercase hex>`. The signature is computed over canonical bytes:
+  $$\text{canonicalBytes} = \text{UTF-8}(\text{timestamp}) + \text{UTF-8(".")"} + \text{rawBodyBytes}$$
+  Signatures are validated using constant-time `MessageDigest.isEqual` to prevent timing attacks.
+- **Timestamp Windows & Replay Protection**:
+  - The inbound request must supply `X-PSP-Webhook-Timestamp` containing the UTC epoch seconds of transmission.
+  - The timestamp is validated using overflow-safe `Instant` arithmetic:
+    $$\text{earliest} = \text{now} - \text{maxSkew}; \quad \text{latest} = \text{now} + \text{maxSkew}$$
+  - Requests with timestamps outside the skew window (default 300 seconds) are rejected with `401 Unauthorized`.
+  - Non-numeric timestamps, out-of-range values, or malformed signature formats return `401 Unauthorized`.
+- **Shared Secret Integrity & Isolation**:
+  - Webhook secret is configured via `PSP_WEBHOOK_SECRET` / `ledgerguard.psp.webhook.secret`.
+  - Enforced at startup (`WebhookSecurityProperties` in API and `ProviderWebhookDispatcher` in PSP simulator) with strict `@PostConstruct` validation requiring at least 32 bytes (256 bits) of secret material.
+  - Authentication failure responses never echo, leak, or expose the shared secret.
+- **Durable Ingress & Deduplication**:
+  - Webhook requests are persisted durably in `provider_events` using PostgreSQL `ON CONFLICT DO NOTHING` before local business processing.
+  - Duplicate deliveries with matching semantic identity return `200 OK` with 0 duplicate financial executions.
+  - Conflicting payloads or illegal sequence claims return `409 Conflict`.
 
 ---
 
