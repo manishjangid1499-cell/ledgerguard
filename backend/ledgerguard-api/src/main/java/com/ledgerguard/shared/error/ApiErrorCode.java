@@ -27,6 +27,8 @@ public final class ApiErrorCode {
     public static final String PAYMENT_NOT_REFUNDABLE = "PAYMENT_NOT_REFUNDABLE";
     public static final String INVALID_FUNDING = "INVALID_FUNDING";
     public static final String INVALID_PAYOUT = "INVALID_PAYOUT";
+    public static final String PROVIDER_AUTHENTICATION_FAILED = "PROVIDER_AUTHENTICATION_FAILED";
+    public static final String PROVIDER_EVENT_CONFLICT = "PROVIDER_EVENT_CONFLICT";
 
     private ApiErrorCode() {
         // Utility class

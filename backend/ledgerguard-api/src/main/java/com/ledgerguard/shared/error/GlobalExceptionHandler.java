@@ -456,6 +456,54 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .body(problemDetail);
     }
 
+    @ExceptionHandler(com.ledgerguard.provider.application.ProviderAuthenticationException.class)
+    public ResponseEntity<ProblemDetail> handleProviderAuthentication(com.ledgerguard.provider.application.ProviderAuthenticationException ex, WebRequest request) {
+        log.warn("Provider webhook authentication failed");
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.UNAUTHORIZED,
+                "Webhook authentication failed."
+        );
+        problemDetail.setTitle("Unauthorized");
+        enrichProblemDetail(problemDetail, ApiErrorCode.PROVIDER_AUTHENTICATION_FAILED, request);
+
+        return ResponseEntity
+                .status(HttpStatus.UNAUTHORIZED)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
+    @ExceptionHandler(com.ledgerguard.provider.application.ProviderEventValidationException.class)
+    public ResponseEntity<ProblemDetail> handleProviderEventValidation(com.ledgerguard.provider.application.ProviderEventValidationException ex, WebRequest request) {
+        log.warn("Provider webhook payload validation failed: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                ex.getMessage()
+        );
+        problemDetail.setTitle("Validation failed");
+        enrichProblemDetail(problemDetail, ApiErrorCode.VALIDATION_FAILED, request);
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
+    @ExceptionHandler(com.ledgerguard.provider.application.ProviderEventConflictException.class)
+    public ResponseEntity<ProblemDetail> handleProviderEventConflict(com.ledgerguard.provider.application.ProviderEventConflictException ex, WebRequest request) {
+        log.warn("Provider webhook event conflict: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT,
+                ex.getMessage()
+        );
+        problemDetail.setTitle("Provider event conflict");
+        enrichProblemDetail(problemDetail, ApiErrorCode.PROVIDER_EVENT_CONFLICT, request);
+
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetail> handleUnhandledException(Exception ex, WebRequest request) {
         log.error("Unhandled server exception: {}", ex.getMessage(), ex);

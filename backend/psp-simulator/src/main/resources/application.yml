@@ -37,3 +37,4 @@ ledgerguard:
       batch-size: 50
       connect-timeout-seconds: 5
       read-timeout-seconds: 5
+      secret: ${PSP_WEBHOOK_SECRET:}

@@ -113,8 +113,8 @@ After each failure injection, the engine mathematically proves that:
 
 ## 7. Current Project Status
 
-- **Current State:** Phase 21 Completed — External Payouts / Withdrawals: Implemented outbound wallet payouts to external PSP using Flyway V11 migration for `payouts` table, check constraints, and immutability trigger; pre-network balance hold reservation; non-transactional PSP client execution (`operationType = DEBIT`); confirmed-success settlement (`CONSUMED` hold, double-entry settlement journal DEBIT source wallet, CREDIT `PSP_CLEARING`); definite-failure hold release (`RELEASED` hold, 0 journal under simulator pre-acceptance failure contract); ambiguous outcome retention (payout `PROCESSING`, hold `ACTIVE` past expiration, 0 journal, 202 Accepted, zero new PSP calls on replayed `PROCESSING`); in-flight hold expiration protection; comprehensive test suite (25 new tests in API, 417 total across workspace with 0 failures, 0 errors).
-- **Next Step:** Phase 22.
+- **Current State:** Phase 22 Completed — PSP Webhook Signatures, Deduplication & Ordering: Implemented secure inbound provider callback boundary using Flyway V12 migration for `provider_events` durable inbox table, lifecycle trigger (`PENDING` on INSERT, immutable business fields, transitions restricted to `PENDING -> APPLIED` or `PENDING -> IGNORED`, deletes rejected); HMAC-SHA256 signature verification over canonical bytes (`UTF8(timestamp) + "." + rawBodyBytes`) with constant-time comparison and fail-fast startup validation of >=32-byte secret (`ledgerguard.psp.webhook.secret`); overflow-safe UTC replay window validation (300s skew); conflict-safe atomic ingress via `INSERT ... ON CONFLICT DO NOTHING`; ordered sequence cursor processing starting at 1 under row locks; safe terminal and status regression handling; cross-provider stream conflict isolation; comprehensive test suite (49 new tests across workspace, 466 total tests passing with 0 failures, 0 errors).
+- **Next Step:** Phase 23 — Payment Reconciliation & Provider Polling Engine.
 - **Roadmap:** Detailed phase-by-phase progress is tracked in [docs/STATUS.md](docs/STATUS.md).
 
 ---

@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Awaiting Phase 22
-- **Status:** Phase 21 Complete (Verified)
+- **Current Phase:** Awaiting Phase 23
+- **Status:** Phase 22 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -26,10 +26,23 @@
   - **Phase 18 — Notification Worker & Idempotent Inbox Consumer** (Completed: 2026-09-01)
   - **Phase 19 — External PSP & Banking Simulator** (Completed: 2026-09-01)
   - **Phase 20 — External Wallet Funding / Top-Ups** (Completed: 2026-09-01)
-- **Current Work:** Phase 21 completed. Implemented outbound wallet payouts / withdrawals to external PSP: Flyway V11 migration for `payouts` with strict check constraints and PostgreSQL lifecycle/immutability trigger (`trg_fn_enforce_payouts_lifecycle_and_immutability`); balance hold reservation before network call via `PayoutCreationService`; `PspClient` DEBIT operation outside DB transaction; confirmed-success settlement via `PayoutSettlementService` (locks snapshots, consumes hold atomically, posts double-entry settlement journal DEBIT source wallet to CREDIT `PSP_CLEARING`, marks payout `SUCCEEDED`); definite-failure release via `PayoutFailureService` (under the Phase 19 simulator contract where `TEMPORARY_500` represents a known pre-acceptance failure, releases hold, marks payout `FAILED`, 0 journal); ambiguous outcome handling (timeouts and transport errors preserve `PROCESSING` status, retain active hold even past `expires_at`, return HTTP 202 without polling/retrying until Phase 23); in-flight payout protection in generic hold expiration queries and conditional updates; zero new PSP calls on matching `PROCESSING` replay; `PayoutController` with `@PreAuthorize("hasAnyRole('CUSTOMER','MERCHANT')")`, string-serialized money responses, HTTP 201/200/202 status codes; comprehensive test suite (25 new tests in API, 417 total across workspace with 0 failures, 0 errors).
-- **Next Phase:** Phase 22
+  - **Phase 21 — External Payouts & Balance Holds** (Completed: 2026-09-02)
+  - **Phase 22 — PSP Webhook Signatures, Deduplication & Ordering** (Completed: 2026-09-02)
+- **Current Work:** Phase 22 completed. Implemented secure inbound provider callback boundary:
+  - HMAC-SHA256 signature verification over exact canonical bytes (`UTF8(timestamp) + "." + rawBodyBytes`) with constant-time equality and minimum 32-byte secret validation on startup (`ledgerguard.psp.webhook.secret`).
+  - Overflow-safe UTC timestamp replay window validation (default 300s clock skew window).
+  - Durable PostgreSQL inbox Flyway V12 migration (`provider_events` table) with trigger-enforced lifecycle (`PENDING` on INSERT, immutable business payload, transitions restricted to `PENDING -> APPLIED` or `PENDING -> IGNORED`, deletes rejected).
+  - Non-poisoning atomic ingress via `INSERT ... ON CONFLICT DO NOTHING` and Step A/B/C deterministic classification (idempotent duplicate -> 200 OK, sequence ownership conflict -> 409 Conflict, payload conflict -> 409 Conflict).
+  - Sequence-ordered cursor processing starting at sequence 1, draining contiguous events under per-provider-operation pessimistic row lock. Out-of-order delivery holds events `PENDING` (returns 202 ACCEPTED) until missing gaps arrive.
+  - Same-terminal event progression (`SUCCEEDED -> SUCCEEDED`, `FAILED -> FAILED`) marked `APPLIED` with zero duplicate financial side-effects.
+  - Provider state regressions (`SUCCEEDED -> PROCESSING`, etc.) marked `IGNORED` with zero financial side-effects.
+  - Reused `FundingSettlementService`, `PayoutSettlementService`, and `PayoutFailureService` for authoritative local financial execution without duplicate journals.
+  - Pre-Phase-22 historical SUCCEEDED operations remain unaffected; newly created operations use stable configured `webhookUrl`; ambiguous pre-22 PROCESSING operations with null URL deferred to reconciliation without V13 hacks.
+  - Updated PSP simulator with fail-fast >=32-byte secret startup validation and signed outbound payloads with `eventSequence: 1` and headers.
+  - Comprehensive test suite: 17 DB constraint tests, 13 auth integration tests, 16 processing integration tests, 1 real-HTTP callback E2E test using a faithful PSP test server in `ledgerguard-api` (total 430 tests), plus 2 webhook signing tests in `psp-simulator` (total 17 tests), 18 in `notification-worker`, 1 in `failure-lab` (total 466 workspace tests, 100% passing).
+- **Next Phase:** Phase 23 — Payment Reconciliation & Provider Polling Engine
 - **Last Verified:** 2026-09-02
-- **Git Branch:** `feat/phase-21-external-payouts` (workspace uncommitted)
+- **Git Branch:** `feat/phase-22-secure-provider-webhooks` (workspace uncommitted)
 
 ---
 

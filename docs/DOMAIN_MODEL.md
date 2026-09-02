@@ -175,5 +175,17 @@ $$\text{Available Balance} = \text{Posted Balance} - \sum \text{Active Holds}$$
 - **Pre-Network Balance Hold Reservation**: Outbound payouts create an `ACTIVE` `BalanceHold` before initiating external PSP communication. Money is never deducted from the posted balance until authoritative provider confirmation is received.
 - **Confirmed-Success Consumption**: When PSP returns `SUCCEEDED`, the `BalanceHold` transitions to `CONSUMED`, and a balanced double-entry settlement journal (DEBIT source wallet, CREDIT `PSP_CLEARING`) posts atomically.
 - **Definite-Failure Hold Release**: When PSP returns a definite failure (`FAILED`), the `BalanceHold` transitions to `RELEASED`, the payout marks `FAILED`, and zero double-entry journal entries are created.
-- **Ambiguous In-Flight Preservation**: On network timeouts, transport errors, or unparseable responses, the payout remains `PROCESSING`, the hold remains `ACTIVE`, and no journal entries are posted.
 - **Hold Expiration Immunity**: Holds linked to `PROCESSING` payouts are excluded from generic background hold expiration to prevent premature release of funds while an external payout is in flight.
+
+### Invariant 11: Provider Webhook Ingress, Deduplication & Ordering (Phase 22)
+- **Authenticity Before Mutation**: An external callback must never move money until its authenticity, identity, sequence order, and business content have all been verified.
+- **PostgreSQL-Exclusive Sequence Source**: `provider_events` is the sole durable source of truth for provider sequence ordering and state transitions. No secondary state tables, in-memory caches, or Redis keys are used.
+- **Strict Contiguous Progression**: For each `providerOperationId`, the ordered cursor begins at `expectedSequence = 1`. Processing halts immediately on any sequence gap ($>\text{expectedSequence}$), leaving out-of-order events safely `PENDING` until missing sequence numbers arrive.
+- **Terminal Progression & Idempotency**:
+  - `SUCCEEDED -> SUCCEEDED`: Legal duplicate/progression. Event marked `APPLIED`, 0 duplicate financial side-effects, 0 duplicate journals.
+  - `FAILED -> FAILED`: Legal duplicate/progression. Event marked `APPLIED`, 0 additional hold releases, 0 journals.
+- **Status Regressions**: Provider state regressions (`SUCCEEDED -> PROCESSING`, `SUCCEEDED -> FAILED`, `FAILED -> PROCESSING`, `FAILED -> SUCCEEDED`) are marked `IGNORED` and move zero money.
+- **Lifecycle & Trigger Immutability**:
+  - All incoming events enter `provider_events` strictly as `PENDING` with `processed_at IS NULL`.
+  - Allowed status transitions: `PENDING -> APPLIED` or `PENDING -> IGNORED` (both requiring non-null `processed_at`).
+  - Terminal statuses and business columns are strictly immutable; `DELETE` is permanently prohibited at the database trigger level (`trg_fn_enforce_provider_events_immutability`).
