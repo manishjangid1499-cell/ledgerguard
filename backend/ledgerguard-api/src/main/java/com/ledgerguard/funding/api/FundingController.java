@@ -54,7 +54,10 @@ public class FundingController {
         FundingResult result = fundingService.fundWallet(command);
         FundingResponse response = FundingResponse.from(result);
 
-        if (result.status() == FundingStatus.PROCESSING) {
+        if (result.status() == FundingStatus.CREATED
+                || result.status() == FundingStatus.PROCESSING
+                || result.status() == FundingStatus.UNKNOWN
+                || result.status() == FundingStatus.RECONCILIATION_REQUIRED) {
             return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
         }
 

@@ -64,18 +64,26 @@ class PayoutDatabaseConstraintTest extends AbstractIntegrationTest {
                 pspClearingAccountId, now, now
         );
 
-        // 3. Set snapshot balances
+        // 3. Fund customer wallet with initial ledger balance
+        UUID initTxnId = UUID.randomUUID();
         jdbcTemplate.update(
-                "UPDATE ledger_balance_snapshots SET balance_minor = 100000 WHERE ledger_account_id = ?",
-                customerAccountId
+                "INSERT INTO journal_transactions (id, status, currency, created_at, posted_at) " +
+                        "VALUES (?, 'DRAFT', 'INR', ?, NULL)",
+                initTxnId, now
         );
         jdbcTemplate.update(
-                "UPDATE ledger_balance_snapshots SET balance_minor = 100000 WHERE ledger_account_id = ?",
-                merchantAccountId
+                "INSERT INTO journal_entries (id, journal_transaction_id, ledger_account_id, direction, amount_minor) " +
+                        "VALUES (?, ?, ?, 'DEBIT', 100000)",
+                UUID.randomUUID(), initTxnId, pspClearingAccountId
         );
         jdbcTemplate.update(
-                "UPDATE ledger_balance_snapshots SET balance_minor = 100000 WHERE ledger_account_id = ?",
-                pspClearingAccountId
+                "INSERT INTO journal_entries (id, journal_transaction_id, ledger_account_id, direction, amount_minor) " +
+                        "VALUES (?, ?, ?, 'CREDIT', 100000)",
+                UUID.randomUUID(), initTxnId, customerAccountId
+        );
+        jdbcTemplate.update(
+                "UPDATE journal_transactions SET status = 'POSTED', posted_at = ? WHERE id = ?",
+                now, initTxnId
         );
     }
 
@@ -92,42 +100,51 @@ class PayoutDatabaseConstraintTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("Direct insertion of PROCESSING payout with matching ACTIVE hold succeeds")
-    void insertProcessingPayoutSucceeds() {
+    @DisplayName("Direct insertion of CREATED payout with matching ACTIVE hold succeeds")
+    void insertCreatedPayoutSucceeds() {
         UUID payoutId = UUID.randomUUID();
         UUID holdId = createActiveHold(customerAccountId, 10000L);
         Timestamp now = Timestamp.from(Instant.now());
 
         int rows = jdbcTemplate.update(
                 "INSERT INTO payouts (id, initiated_by_user_id, source_ledger_account_id, balance_hold_id, amount_minor, currency, status, created_at) " +
-                        "VALUES (?, ?, ?, ?, 10000, 'INR', 'PROCESSING', ?)",
+                        "VALUES (?, ?, ?, ?, 10000, 'INR', 'CREATED', ?)",
                 payoutId, userId, customerAccountId, holdId, now
         );
         assertThat(rows).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("Direct insertion with status SUCCEEDED or FAILED is rejected")
-    void directInsertTerminalStatusRejected() {
+    @DisplayName("Direct insertion with status PROCESSING, SUCCEEDED or FAILED is rejected")
+    void directInsertNonCreatedStatusRejected() {
         UUID payoutId1 = UUID.randomUUID();
         UUID payoutId2 = UUID.randomUUID();
+        UUID payoutId3 = UUID.randomUUID();
         UUID holdId1 = createActiveHold(customerAccountId, 10000L);
         UUID holdId2 = createActiveHold(customerAccountId, 10000L);
+        UUID holdId3 = createActiveHold(customerAccountId, 10000L);
         Timestamp now = Timestamp.from(Instant.now());
+
+        // Insertion as PROCESSING
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                "INSERT INTO payouts (id, initiated_by_user_id, source_ledger_account_id, balance_hold_id, amount_minor, currency, status, created_at) " +
+                        "VALUES (?, ?, ?, ?, 10000, 'INR', 'PROCESSING', ?)",
+                payoutId1, userId, customerAccountId, holdId1, now
+        )).isInstanceOf(Exception.class).hasMessageContaining("must be inserted with status CREATED");
 
         // Insertion as SUCCEEDED
         assertThatThrownBy(() -> jdbcTemplate.update(
                 "INSERT INTO payouts (id, initiated_by_user_id, source_ledger_account_id, balance_hold_id, amount_minor, currency, status, provider_operation_id, completed_at, created_at) " +
                         "VALUES (?, ?, ?, ?, 10000, 'INR', 'SUCCEEDED', ?, ?, ?)",
-                payoutId1, userId, customerAccountId, holdId1, UUID.randomUUID(), now, now
-        )).isInstanceOf(Exception.class).hasMessageContaining("must be inserted with status PROCESSING");
+                payoutId2, userId, customerAccountId, holdId2, UUID.randomUUID(), now, now
+        )).isInstanceOf(Exception.class).hasMessageContaining("must be inserted with status CREATED");
 
         // Insertion as FAILED
         assertThatThrownBy(() -> jdbcTemplate.update(
                 "INSERT INTO payouts (id, initiated_by_user_id, source_ledger_account_id, balance_hold_id, amount_minor, currency, status, completed_at, created_at) " +
                         "VALUES (?, ?, ?, ?, 10000, 'INR', 'FAILED', ?, ?)",
-                payoutId2, userId, customerAccountId, holdId2, now, now
-        )).isInstanceOf(Exception.class).hasMessageContaining("must be inserted with status PROCESSING");
+                payoutId3, userId, customerAccountId, holdId3, now, now
+        )).isInstanceOf(Exception.class).hasMessageContaining("must be inserted with status CREATED");
     }
 
     @Test
@@ -140,14 +157,14 @@ class PayoutDatabaseConstraintTest extends AbstractIntegrationTest {
         // Wrong initiator owner
         assertThatThrownBy(() -> jdbcTemplate.update(
                 "INSERT INTO payouts (id, initiated_by_user_id, source_ledger_account_id, balance_hold_id, amount_minor, currency, status, created_at) " +
-                        "VALUES (?, ?, ?, ?, 10000, 'INR', 'PROCESSING', ?)",
+                        "VALUES (?, ?, ?, ?, 10000, 'INR', 'CREATED', ?)",
                 payoutId, merchantUserId, customerAccountId, holdId, now
         )).isInstanceOf(Exception.class).hasMessageContaining("does not match initiator");
 
         // Wrong account type (PSP_CLEARING)
         assertThatThrownBy(() -> jdbcTemplate.update(
                 "INSERT INTO payouts (id, initiated_by_user_id, source_ledger_account_id, balance_hold_id, amount_minor, currency, status, created_at) " +
-                        "VALUES (?, ?, ?, ?, 10000, 'INR', 'PROCESSING', ?)",
+                        "VALUES (?, ?, ?, ?, 10000, 'INR', 'CREATED', ?)",
                 payoutId, userId, pspClearingAccountId, holdId, now
         )).isInstanceOf(Exception.class).hasMessageContaining("must be of type CUSTOMER or MERCHANT");
     }
@@ -162,7 +179,7 @@ class PayoutDatabaseConstraintTest extends AbstractIntegrationTest {
         // Amount mismatch between hold (10000) and payout (5000)
         assertThatThrownBy(() -> jdbcTemplate.update(
                 "INSERT INTO payouts (id, initiated_by_user_id, source_ledger_account_id, balance_hold_id, amount_minor, currency, status, created_at) " +
-                        "VALUES (?, ?, ?, ?, 5000, 'INR', 'PROCESSING', ?)",
+                        "VALUES (?, ?, ?, ?, 5000, 'INR', 'CREATED', ?)",
                 payoutId, userId, customerAccountId, holdId, now
         )).isInstanceOf(Exception.class).hasMessageContaining("does not match payout amount");
     }
@@ -176,8 +193,13 @@ class PayoutDatabaseConstraintTest extends AbstractIntegrationTest {
 
         jdbcTemplate.update(
                 "INSERT INTO payouts (id, initiated_by_user_id, source_ledger_account_id, balance_hold_id, amount_minor, currency, status, created_at) " +
-                        "VALUES (?, ?, ?, ?, 10000, 'INR', 'PROCESSING', ?)",
+                        "VALUES (?, ?, ?, ?, 10000, 'INR', 'CREATED', ?)",
                 payoutId, userId, customerAccountId, holdId, now
+        );
+
+        jdbcTemplate.update(
+                "UPDATE payouts SET status = 'PROCESSING', next_provider_poll_at = ? WHERE id = ?",
+                now, payoutId
         );
 
         // 1. Create POSTED journal (first DRAFT, then entries, then POSTED)
@@ -205,7 +227,7 @@ class PayoutDatabaseConstraintTest extends AbstractIntegrationTest {
         // Attempt SUCCEEDED update while hold is still ACTIVE -> fails
         UUID providerOpId = UUID.randomUUID();
         assertThatThrownBy(() -> jdbcTemplate.update(
-                "UPDATE payouts SET status = 'SUCCEEDED', provider_operation_id = ?, journal_transaction_id = ?, completed_at = ? WHERE id = ?",
+                "UPDATE payouts SET status = 'SUCCEEDED', provider_operation_id = ?, journal_transaction_id = ?, completed_at = ?, next_provider_poll_at = NULL WHERE id = ?",
                 providerOpId, journalTxnId, now, payoutId
         )).isInstanceOf(Exception.class).hasMessageContaining("must be CONSUMED");
 
@@ -217,7 +239,7 @@ class PayoutDatabaseConstraintTest extends AbstractIntegrationTest {
 
         // Now SUCCEEDED update succeeds
         int updated = jdbcTemplate.update(
-                "UPDATE payouts SET status = 'SUCCEEDED', provider_operation_id = ?, journal_transaction_id = ?, completed_at = ? WHERE id = ?",
+                "UPDATE payouts SET status = 'SUCCEEDED', provider_operation_id = ?, journal_transaction_id = ?, completed_at = ?, next_provider_poll_at = NULL WHERE id = ?",
                 providerOpId, journalTxnId, now, payoutId
         );
         assertThat(updated).isEqualTo(1);
@@ -232,13 +254,18 @@ class PayoutDatabaseConstraintTest extends AbstractIntegrationTest {
 
         jdbcTemplate.update(
                 "INSERT INTO payouts (id, initiated_by_user_id, source_ledger_account_id, balance_hold_id, amount_minor, currency, status, created_at) " +
-                        "VALUES (?, ?, ?, ?, 10000, 'INR', 'PROCESSING', ?)",
+                        "VALUES (?, ?, ?, ?, 10000, 'INR', 'CREATED', ?)",
                 payoutId, userId, customerAccountId, holdId, now
+        );
+
+        jdbcTemplate.update(
+                "UPDATE payouts SET status = 'PROCESSING', next_provider_poll_at = ? WHERE id = ?",
+                now, payoutId
         );
 
         // Attempt FAILED update while hold is still ACTIVE -> fails
         assertThatThrownBy(() -> jdbcTemplate.update(
-                "UPDATE payouts SET status = 'FAILED', completed_at = ? WHERE id = ?",
+                "UPDATE payouts SET status = 'FAILED', completed_at = ?, next_provider_poll_at = NULL WHERE id = ?",
                 now, payoutId
         )).isInstanceOf(Exception.class).hasMessageContaining("must be RELEASED");
 
@@ -250,7 +277,7 @@ class PayoutDatabaseConstraintTest extends AbstractIntegrationTest {
 
         // Now FAILED update succeeds
         int updated = jdbcTemplate.update(
-                "UPDATE payouts SET status = 'FAILED', completed_at = ? WHERE id = ?",
+                "UPDATE payouts SET status = 'FAILED', completed_at = ?, next_provider_poll_at = NULL WHERE id = ?",
                 now, payoutId
         );
         assertThat(updated).isEqualTo(1);
@@ -265,8 +292,13 @@ class PayoutDatabaseConstraintTest extends AbstractIntegrationTest {
 
         jdbcTemplate.update(
                 "INSERT INTO payouts (id, initiated_by_user_id, source_ledger_account_id, balance_hold_id, amount_minor, currency, status, created_at) " +
-                        "VALUES (?, ?, ?, ?, 10000, 'INR', 'PROCESSING', ?)",
+                        "VALUES (?, ?, ?, ?, 10000, 'INR', 'CREATED', ?)",
                 payoutId, userId, customerAccountId, holdId, now
+        );
+
+        jdbcTemplate.update(
+                "UPDATE payouts SET status = 'PROCESSING', next_provider_poll_at = ? WHERE id = ?",
+                now, payoutId
         );
 
         jdbcTemplate.update(
@@ -274,7 +306,7 @@ class PayoutDatabaseConstraintTest extends AbstractIntegrationTest {
                 now, now, holdId
         );
         jdbcTemplate.update(
-                "UPDATE payouts SET status = 'FAILED', completed_at = ? WHERE id = ?",
+                "UPDATE payouts SET status = 'FAILED', completed_at = ?, next_provider_poll_at = NULL WHERE id = ?",
                 now, payoutId
         );
 

@@ -77,7 +77,7 @@ All API error responses use `application/problem+json` and follow the standard R
 
 ---
 
-## 4. Authentication & Identity Endpoints (`/api/auth`) — Implemented in Phase 4
+## 4. Authentication & Identity Endpoints (`/api/auth`) â€” Implemented in Phase 4
 
 ### 4.1 `POST /api/auth/register`
 - **Access**: Public
@@ -155,7 +155,7 @@ All API error responses use `application/problem+json` and follow the standard R
 
 ---
 
-## 5. Transfers Endpoints (`/api/transfers`) — Implemented in Phase 10
+## 5. Transfers Endpoints (`/api/transfers`) â€” Implemented in Phase 10
 
 ### 5.1 `POST /api/transfers`
 - **Access**: `CUSTOMER`, `MERCHANT` (authenticated; OPS forbidden)
@@ -272,7 +272,7 @@ All API error responses use `application/problem+json` and follow the standard R
 
 ---
 
-## 7. Merchant Payment Endpoints (`/api/payments`) — Implemented in Phase 13
+## 7. Merchant Payment Endpoints (`/api/payments`) â€” Implemented in Phase 13
 
 ### 7.1 `POST /api/payments`
 - **Access**: Authenticated `CUSTOMER` only (`MERCHANT` and `OPS` return 403 Forbidden).
@@ -358,7 +358,7 @@ All API error responses use `application/problem+json` and follow the standard R
 
 ---
 
-## 9. Planned Domain Endpoints Roadmap (Phases 15–33)
+## 9. Planned Domain Endpoints Roadmap (Phases 15â€“33)
 
 ### 9.1 Wallets & Balances (`/api/wallets`)
 | Method | Endpoint | Access | Purpose |
@@ -480,7 +480,7 @@ All API error responses use `application/problem+json` and follow the standard R
 
 ---
 
-## 12. External Wallet Funding API (`/api/funding`) — Phase 20
+## 12. External Wallet Funding API (`/api/funding`) â€” Phase 20
 
 ### 12.1 Fund Customer Wallet
 | Method | Endpoint | Status Code | Required Role | Purpose |
@@ -530,7 +530,7 @@ All API error responses use `application/problem+json` and follow the standard R
 
 ---
 
-## 13. External Payouts / Withdrawals API (`/api/payouts`) — Phase 21
+## 13. External Payouts / Withdrawals API (`/api/payouts`) â€” Phase 21
 
 ### 13.1 Request Outbound Payout / Withdrawal
 | Method | Endpoint | Status Code | Required Role | Purpose |
@@ -582,7 +582,7 @@ All API error responses use `application/problem+json` and follow the standard R
 
 ---
 
-## 14. Provider Inbound Webhooks API (`/api/provider/webhooks`) — Phase 22
+## 14. Provider Inbound Webhooks API (`/api/provider/webhooks`) â€” Phase 22
 
 ### 14.1 Inbound PSP Webhook Callback
 | Method | Endpoint | Status Code | Required Auth | Purpose |
@@ -629,3 +629,31 @@ All API error responses use `application/problem+json` and follow the standard R
   "status": "ACCEPTED"
 }
 ```
+
+---
+
+## 14. External Operation Status Semantics (Phase 23)
+
+### Funding Operations (`POST /api/funding`) and Payouts (`POST /api/payouts`)
+
+The returned `status` field reflects the current durable lifecycle state of the operation. Clients must treat non-terminal statuses as pending.
+
+| `status` | HTTP | Description |
+| :--- | :--- | :--- |
+| `CREATED` | Internal | Durable intent record. Provider POST not yet attempted. (Not returned by API directly.) |
+| `PROCESSING` | `202 Accepted` | Provider submission claimed. Outcome pending. Payout hold `ACTIVE`. |
+| `UNKNOWN` | `202 Accepted` | Network outcome in doubt (timeout, ambiguous 5xx). Money may be in flight. Payout hold `ACTIVE`. |
+| `RECONCILIATION_REQUIRED` | `202 Accepted` | Polling exhausted; requires reconciliation. Payout hold `ACTIVE`. |
+| `SUCCEEDED` | `201 Created` (funding) / `202 Accepted` (payout) | Authoritative settlement confirmed. Journal posted. Payout hold `CONSUMED`. |
+| `FAILED` | `202 Accepted` | Definite failure. No journal. Payout hold `RELEASED` or `EXPIRED`. |
+
+### Critical Status Interpretation Rules
+
+- **`UNKNOWN != FAILED`**: `UNKNOWN` does not mean the provider rejected the operation. It means LedgerGuard does not know what the provider did. Treat `UNKNOWN` as pending.
+- **`202 Accepted` for ambiguous outcomes**: A `202` response always means "the request has been durably recorded; outcome may be pending." It is NOT an error.
+- **Polling for resolution**: Clients should use the returned `fundingId` or `payoutId` to query status via future read endpoints (Phase 24+). Retrying a `POST` with the same `Idempotency-Key` on an `UNKNOWN` or `RECONCILIATION_REQUIRED` operation returns the current state without triggering a duplicate provider call.
+- **HTTP 409 on conflicting replay**: If the PSP returns a conflicting replay error (RFC-9457 `urn:ledgerguard:psp:error:conflicting-replay`), LedgerGuard durably transitions the operation to `RECONCILIATION_REQUIRED` and returns `409 Conflict`.
+
+### V13 Migration Notes
+
+Phase 23 added `UNKNOWN` and `RECONCILIATION_REQUIRED` status values to `funding_operations` and `payouts` tables via Flyway V13 migration. No breaking changes to existing API request/response field names. Existing `SUCCEEDED` and `FAILED` semantics are unchanged.

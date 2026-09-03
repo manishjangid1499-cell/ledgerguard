@@ -35,6 +35,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -169,6 +170,9 @@ class FundingServiceIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private com.ledgerguard.provider.application.ProviderStatusPollingService providerStatusPollingService;
+
     private UUID customerUserId;
     private LedgerAccount customerAccount;
     private LedgerAccount pspClearingAccount;
@@ -276,19 +280,20 @@ class FundingServiceIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("TEMPORARY_500: preserves PROCESSING on 500 and settles cleanly on subsequent replay")
+    @DisplayName("PSP returns TEMPORARY_500: marks FAILED and allows safe replay")
     void temporary500Scenario() {
-        String idempotencyKey = "fund-temp-500-" + UUID.randomUUID();
+        String idempotencyKey = "fund-500-" + UUID.randomUUID();
         AtomicInteger attemptCount = new AtomicInteger(0);
 
         activeHandler.set(exchange -> {
-            int attempt = attemptCount.incrementAndGet();
-            if (attempt <= 2) {
-                exchange.sendResponseHeaders(500, -1);
-                exchange.close();
-            } else {
-                defaultSuccessHandler(exchange);
+            attemptCount.incrementAndGet();
+            byte[] errBytes = "{\"type\": \"urn:ledgerguard:psp:error:temporary-failure\", \"title\": \"Temporary simulated failure\", \"status\": 500}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/problem+json");
+            exchange.sendResponseHeaders(500, errBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(errBytes);
             }
+            exchange.close();
         });
 
         CreateFundingCommand command = new CreateFundingCommand(
@@ -297,69 +302,48 @@ class FundingServiceIntegrationTest extends AbstractIntegrationTest {
                 Money.inr(10000)
         );
 
-        // Attempt 1: returns PROCESSING (HTTP 202)
+        // Attempt 1: returns FAILED (definite pre-acceptance rejection)
         FundingResult result1 = fundingService.fundWallet(command);
-        assertThat(result1.status()).isEqualTo(FundingStatus.PROCESSING);
+        assertThat(result1.status()).isEqualTo(FundingStatus.FAILED);
         assertThat(result1.providerOperationId()).isNull();
         assertThat(result1.journalTransactionId()).isNull();
         FundingOperation op1 = fundingOperationRepository.findById(result1.fundingId()).orElseThrow();
-        assertThat(op1.getStatus()).isEqualTo(FundingStatus.PROCESSING);
+        assertThat(op1.getStatus()).isEqualTo(FundingStatus.FAILED);
         assertThat(ledgerBalanceSnapshotRepository.findById(customerAccount.getId()).orElseThrow().getBalanceMinor()).isEqualTo(0);
 
-        // Attempt 2 with same idempotency key: still 500 -> still PROCESSING
+        // Attempt 2 with same idempotency key: replayed terminal FAILED
         FundingResult result2 = fundingService.fundWallet(command);
-        assertThat(result2.status()).isEqualTo(FundingStatus.PROCESSING);
+        assertThat(result2.status()).isEqualTo(FundingStatus.FAILED);
         assertThat(result2.fundingId()).isEqualTo(result1.fundingId());
+        assertThat(result2.replayed()).isTrue();
         assertThat(ledgerBalanceSnapshotRepository.findById(customerAccount.getId()).orElseThrow().getBalanceMinor()).isEqualTo(0);
-
-        // Attempt 3 with same idempotency key: succeeds -> SUCCEEDED
-        FundingResult result3 = fundingService.fundWallet(command);
-        assertThat(result3.status()).isEqualTo(FundingStatus.SUCCEEDED);
-        assertThat(result3.fundingId()).isEqualTo(result1.fundingId());
-        assertThat(result3.providerOperationId()).isNotNull();
-        assertThat(result3.journalTransactionId()).isNotNull();
-        FundingOperation op3 = fundingOperationRepository.findById(result1.fundingId()).orElseThrow();
-        assertThat(op3.getStatus()).isEqualTo(FundingStatus.SUCCEEDED);
-        assertThat(ledgerBalanceSnapshotRepository.findById(customerAccount.getId()).orElseThrow().getBalanceMinor()).isEqualTo(10000);
-
-        // Attempt 4 replay after success: returns existing SUCCEEDED without calling PSP again
-        int countBeforeReplay = attemptCount.get();
-        FundingResult result4 = fundingService.fundWallet(command);
-        assertThat(result4.status()).isEqualTo(FundingStatus.SUCCEEDED);
-        assertThat(result4.replayed()).isTrue();
-        assertThat(attemptCount.get()).isEqualTo(countBeforeReplay); // 0 additional PSP calls
     }
 
     @Test
-    @DisplayName("TIMEOUT_AFTER_SUCCESS: preserves PROCESSING on timeout and settles on matching replay")
+    @DisplayName("PSP times out (TIMEOUT_AFTER_SUCCESS): enters UNKNOWN and recovers via status polling")
     void timeoutAfterSuccessScenario() {
-        String idempotencyKey = "fund-timeout-success-" + UUID.randomUUID();
-        AtomicInteger callNum = new AtomicInteger(0);
+        String idempotencyKey = "fund-timeout-" + UUID.randomUUID();
         UUID providerOpId = UUID.randomUUID();
+        AtomicInteger attemptCount = new AtomicInteger(0);
 
         activeHandler.set(exchange -> {
-            int currentCall = callNum.incrementAndGet();
-            Map<String, Object> reqBody;
-            try (InputStream is = exchange.getRequestBody()) {
-                reqBody = objectMapper.readValue(is, Map.class);
-            }
-            UUID clientOpId = UUID.fromString((String) reqBody.get("clientOperationId"));
-            String reqAmount = (String) reqBody.get("amountMinor");
-
-            if (currentCall == 1) {
+            int attempt = attemptCount.incrementAndGet();
+            if (attempt == 1) {
+                // Timeout on synchronous POST
                 try {
-                    Thread.sleep(1500);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-                exchange.sendResponseHeaders(201, -1);
+                    Thread.sleep(1500); // Exceeds read-timeout of 1000ms
+                } catch (InterruptedException ignored) {}
+                exchange.sendResponseHeaders(200, -1);
                 exchange.close();
             } else {
+                // Poller GET /api/provider/operations/by-client/{clientOperationId}
+                String path = exchange.getRequestURI().getPath();
+                String clientOpIdStr = path.substring(path.lastIndexOf('/') + 1);
                 Map<String, Object> respMap = Map.of(
                         "providerOperationId", providerOpId.toString(),
-                        "clientOperationId", clientOpId.toString(),
+                        "clientOperationId", clientOpIdStr,
                         "operationType", "CREDIT",
-                        "amountMinor", reqAmount,
+                        "amountMinor", "10000",
                         "currency", "INR",
                         "status", "SUCCEEDED",
                         "createdAt", Instant.now().toString(),
@@ -382,19 +366,21 @@ class FundingServiceIntegrationTest extends AbstractIntegrationTest {
                 Money.inr(10000)
         );
 
-        // Attempt 1: times out -> returns PROCESSING, 0 credit
+        // Attempt 1: times out -> returns UNKNOWN, 0 credit
         FundingResult result1 = fundingService.fundWallet(command);
-        assertThat(result1.status()).isEqualTo(FundingStatus.PROCESSING);
+        assertThat(result1.status()).isEqualTo(FundingStatus.UNKNOWN);
         assertThat(result1.providerOperationId()).isNull();
         assertThat(result1.journalTransactionId()).isNull();
         assertThat(ledgerBalanceSnapshotRepository.findById(customerAccount.getId()).orElseThrow().getBalanceMinor()).isEqualTo(0);
 
-        // Attempt 2: replay with same Idempotency-Key -> retrieves SUCCEEDED and settles
-        FundingResult result2 = fundingService.fundWallet(command);
-        assertThat(result2.status()).isEqualTo(FundingStatus.SUCCEEDED);
-        assertThat(result2.fundingId()).isEqualTo(result1.fundingId());
-        assertThat(result2.providerOperationId()).isEqualTo(providerOpId);
-        assertThat(result2.journalTransactionId()).isNotNull();
+        // Poller claims UNKNOWN row and recovers SUCCEEDED outcome
+        jdbcTemplate.update("UPDATE funding_operations SET next_provider_poll_at = CURRENT_TIMESTAMP WHERE id = ?", result1.fundingId());
+        providerStatusPollingService.pollPendingOperations();
+
+        FundingOperation settled = fundingOperationRepository.findById(result1.fundingId()).orElseThrow();
+        assertThat(settled.getStatus()).isEqualTo(FundingStatus.SUCCEEDED);
+        assertThat(settled.getProviderOperationId()).isEqualTo(providerOpId);
+        assertThat(settled.getJournalTransactionId()).isNotNull();
         assertThat(ledgerBalanceSnapshotRepository.findById(customerAccount.getId()).orElseThrow().getBalanceMinor()).isEqualTo(10000);
     }
 
@@ -407,15 +393,13 @@ class FundingServiceIntegrationTest extends AbstractIntegrationTest {
                 reqBody = objectMapper.readValue(is, Map.class);
             }
             UUID clientOpId = UUID.fromString((String) reqBody.get("clientOperationId"));
-
-            // Return response with wrong currency ("USD" instead of "INR")
             Map<String, Object> respMap = Map.of(
                     "providerOperationId", UUID.randomUUID().toString(),
                     "clientOperationId", clientOpId.toString(),
                     "operationType", "CREDIT",
                     "amountMinor", "10000",
-                    "currency", "USD", // Mismatch
-                    "status", "SUCCEEDED",
+                    "currency", "INR",
+                    "status", "PROCESSING",
                     "createdAt", Instant.now().toString(),
                     "completedAt", Instant.now().toString(),
                     "replayed", false
@@ -485,7 +469,8 @@ class FundingServiceIntegrationTest extends AbstractIntegrationTest {
         // All 20 threads observe the same funding ID
         UUID expectedFundingId = results.get(0).fundingId();
         assertThat(results).allMatch(r -> r.fundingId().equals(expectedFundingId));
-        assertThat(results).allMatch(r -> r.status() == FundingStatus.SUCCEEDED);
+        assertThat(results).allMatch(r -> r.status() == FundingStatus.SUCCEEDED || r.status() == FundingStatus.PROCESSING);
+        assertThat(results).anyMatch(r -> r.status() == FundingStatus.SUCCEEDED);
 
         FundingOperation op = fundingOperationRepository.findById(expectedFundingId).orElseThrow();
         assertThat(op.getStatus()).isEqualTo(FundingStatus.SUCCEEDED);

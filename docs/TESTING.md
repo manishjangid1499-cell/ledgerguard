@@ -173,7 +173,7 @@ The following database-level behaviors are central to LedgerGuard's correctness 
 
 ## 7. Provider Webhook Ingress & Processing Testing Strategy (Phase 22)
 
-- **Database Constraint Verification (`ProviderEventDatabaseConstraintTest` — 17 Tests)**:
+- **Database Constraint Verification (`ProviderEventDatabaseConstraintTest` â€” 17 Tests)**:
   - Sequence constraint: `event_sequence >= 1`.
   - Amount constraint: `amount_minor > 0`.
   - Currency constraint: `currency = 'INR'`.
@@ -192,7 +192,7 @@ The following database-level behaviors are central to LedgerGuard's correctness 
     - Update on terminal status (`APPLIED` or `IGNORED`) rejected.
     - Direct `DELETE` strictly rejected.
   - Unique constraint on `(provider_operation_id, event_sequence)` enforced.
-- **Authentication & Ingress Security Verification (`ProviderWebhookAuthenticationIntegrationTest` — 13 Tests)**:
+- **Authentication & Ingress Security Verification (`ProviderWebhookAuthenticationIntegrationTest` â€” 13 Tests)**:
   - Valid signature and timestamp returns HTTP 200 OK.
   - Missing timestamp header returns HTTP 401 Unauthorized.
   - Missing signature header returns HTTP 401 Unauthorized.
@@ -207,7 +207,7 @@ The following database-level behaviors are central to LedgerGuard's correctness 
   - Malformed signature formats rejected: missing `sha256=` prefix, 63 hex chars, 65 hex chars, and non-hex characters all rejected with HTTP 401 Unauthorized.
   - Raw body sensitivity: semantically equivalent JSON with modified whitespace/formatting fails signature verification with HTTP 401 Unauthorized.
   - Timestamp boundary validation: timestamps inside window ($\pm 290\text{s}$) accepted, timestamps outside window ($\pm 305\text{s}$) rejected with HTTP 401 Unauthorized.
-- **Deduplication, Ordering & Settlement Verification (`ProviderWebhookProcessingIntegrationTest` — 16 Tests)**:
+- **Deduplication, Ordering & Settlement Verification (`ProviderWebhookProcessingIntegrationTest` â€” 16 Tests)**:
   - `CREDIT SUCCEEDED` settles funding operation and posts double-entry settlement journal.
   - Identical redelivered webhook returns 200 OK without creating duplicate rows or journals.
   - Same-terminal progression (`SUCCEEDED -> SUCCEEDED`) marks event `APPLIED` with zero new journals.
@@ -224,8 +224,47 @@ The following database-level behaviors are central to LedgerGuard's correctness 
   - Conflicting provider operation for same clientOperationId: sequential delivery of event from different providerOperationId for already settled operation rejected with HTTP 409 Conflict (`PROVIDER_EVENT_CONFLICT`), journals $\le 1$.
   - Concurrent conflicting provider operations: multi-threaded race with different providerOperationIds for same clientOperationId serializes under row lock, exactly one wins (200 OK), loser receives HTTP 409 Conflict (`PROVIDER_EVENT_CONFLICT`), exactly 1 journal posted.
   - Different providerOperationId on settled payout returns HTTP 409 Conflict without duplicate hold release or settlement.
-- **Real External Callback End-to-End Verification (`ProviderRealCallbackE2EIntegrationTest` — 1 Test)**:
+- **Real External Callback End-to-End Verification (`ProviderRealCallbackE2EIntegrationTest` â€” 1 Test)**:
   - LedgerGuard real-HTTP callback E2E using a faithful PSP test server: verifies `TIMEOUT_AFTER_SUCCESS` payout workflow over real HTTP sockets. `PayoutService.requestPayout` makes real HTTP DEBIT call via `PspClient`; faithful test server simulates synchronous read timeout (300ms) while committing `SUCCEEDED` remotely; Payout remains `PROCESSING` with `ACTIVE` hold; test server dispatches signed HTTP webhook callback to LedgerGuard's live HTTP server port (`server.port=8089`); LedgerGuard HTTP ingress receives, authenticates HMAC-SHA256, records event in `provider_events`, and processes settlement; Payout transitions to `SUCCEEDED`, hold is `CONSUMED`, exactly 1 journal posted.
-- **Actual PSP Simulator Outbound Signing & Storage Verification (`ProviderWebhookSigningIntegrationTest` — 2 Tests)**:
+- **Actual PSP Simulator Outbound Signing & Storage Verification (`ProviderWebhookSigningIntegrationTest` â€” 2 Tests)**:
   - Proves actual `psp-simulator` Spring application, `provider_webhooks` database table, and `ProviderWebhookDispatcher`: outbound webhook includes `eventSequence: 1` in stored payload and valid HMAC-SHA256 signature matching canonical bytes with delivery timestamp headers (`X-PSP-Webhook-Timestamp`, `X-PSP-Webhook-Signature`).
   - `DUPLICATE_WEBHOOK` scenario dispatches byte-for-byte identical payloads with valid signatures computed per delivery timestamp.
+
+---
+
+## 10. Phase 23: External State Machine & Ambiguous Outcome Lifecycle Tests
+
+Phase 23 introduces a dedicated lifecycle test suite in `ledgerguard-api` under `com.ledgerguard.lifecycle` (8 test classes, 20 test methods). All tests run against real PostgreSQL Testcontainers (`AbstractIntegrationTest`). No H2, no mocking of the DB layer.
+
+### Test Class Registry
+
+| Test Class | Methods | Coverage Area |
+| :--- | :---: | :--- |
+| `ConcurrentSubmissionClaimIntegrationTest` | 1 | At-most-one provider POST via atomic `CREATED -> PROCESSING` claim race |
+| `DurableConflictTransitionIntegrationTest` | 1 | Conflicting replay: `PROCESSING -> RECONCILIATION_REQUIRED` durably committed before HTTP 409 |
+| `ExternalStateMachineDatabaseConstraintTest` | 7 | V13 trigger enforcement: all illegal status transitions, field invariants, and delete rejection |
+| `FinalAttemptExhaustionRaceIntegrationTest` | 1 | Concurrent poller exhaustion: exactly one `PROCESSING -> RECONCILIATION_REQUIRED` under race |
+| `MigrationV13CompatibilityTest` | 1 | V13 Flyway migration: new columns, backfill, CHECK constraints, trigger enforcement |
+| `PspErrorClassificationIntegrationTest` | 5 | RFC-9457 ProblemDetail `type` URI classification: temporary-failure, conflicting-replay, ambiguous 500, transport timeout, missing body |
+| `TerminalProviderContradictionIntegrationTest` | 3 | FAILED + FAILED idempotent; SUCCEEDED + FAILED conflict; FAILED + SUCCEEDED conflict; journal integrity on settlement |
+| `TimeoutAfterSuccessE2EIntegrationTest` | 1 | Full E2E: `TIMEOUT_AFTER_SUCCESS` scenario â€” CREATED â†’ PROCESSING â†’ UNKNOWN â†’ SUCCEEDED via poller GET; exactly 1 journal (2 balanced entries, 1 DEBIT + 1 CREDIT); hold CONSUMED; no duplicate journals |
+
+### Phase 23 Lifecycle Invariants Verified by Tests
+
+1. **At-Most-One Provider POST**: `ConcurrentSubmissionClaimIntegrationTest` races concurrent threads; only one claims `CREATED -> PROCESSING`; exactly 1 external POST made.
+2. **Durable Conflict Before HTTP**: `DurableConflictTransitionIntegrationTest` confirms `RECONCILIATION_REQUIRED` is in the DB row before any 409 is returned.
+3. **V13 Trigger Boundaries**: `ExternalStateMachineDatabaseConstraintTest` directly exercises every prohibited transition and field invariant at the SQL level.
+4. **Exhaustion Race Safety**: `FinalAttemptExhaustionRaceIntegrationTest` proves exactly 1 row reaches `RECONCILIATION_REQUIRED` when multiple pollers race to finalize.
+5. **Error Classification (RFC-9457)**: `PspErrorClassificationIntegrationTest` verifies `urn:ledgerguard:psp:error:temporary-failure` â†’ `FAILED` (hold `RELEASED`), `urn:ledgerguard:psp:error:conflicting-replay` â†’ `RECONCILIATION_REQUIRED`, and all ambiguous variants â†’ `UNKNOWN` (hold `ACTIVE`).
+6. **Terminal Contradiction Safety**: `TerminalProviderContradictionIntegrationTest` verifies that conflicting terminal outcomes throw `ProviderEventConflictException`, total journals â‰¤ 1, and no duplicate financial mutations occur.
+7. **Full Lifecycle Journal Integrity**: `TimeoutAfterSuccessE2EIntegrationTest` and `TerminalProviderContradictionIntegrationTest` both verify exactly 1 `POSTED` journal transaction, exactly 2 journal entries (1 `DEBIT` + 1 `CREDIT`), equal `amount_minor`, and exactly 1 journal per operation (no duplicates).
+
+### Phase 23 Test Count
+
+- `ledgerguard-api`: **450 tests, 0 failures, 0 errors, 0 skipped**
+- `psp-simulator`: **17 tests**
+- `notification-worker`: **18 tests**
+- `failure-lab`: **1 test**
+- **Workspace total: 486 tests, 0 failures, 0 errors, 0 skipped**
+
+Verified by `.\mvnw.cmd clean verify` (2026-09-02).

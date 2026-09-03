@@ -56,7 +56,10 @@ public class PayoutController {
         PayoutResponse response = PayoutResponse.fromResult(result);
 
         if (result.replayed()) {
-            if (result.status() == PayoutStatus.PROCESSING) {
+            if (result.status() == PayoutStatus.CREATED
+                    || result.status() == PayoutStatus.PROCESSING
+                    || result.status() == PayoutStatus.UNKNOWN
+                    || result.status() == PayoutStatus.RECONCILIATION_REQUIRED) {
                 return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
             }
             return ResponseEntity.ok(response);

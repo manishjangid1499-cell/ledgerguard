@@ -8,6 +8,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -17,13 +19,27 @@ import java.util.UUID;
 @Repository
 public interface FundingOperationRepository extends JpaRepository<FundingOperation, UUID> {
 
-    /**
-     * Acquires a pessimistic write row lock on the specified FundingOperation.
-     *
-     * @param id funding operation ID
-     * @return optional containing the locked FundingOperation if present
-     */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT f FROM FundingOperation f WHERE f.id = :id")
     Optional<FundingOperation> findByIdForUpdate(@Param("id") UUID id);
+
+    Optional<FundingOperation> findByProviderOperationId(UUID providerOperationId);
+
+    @Query(value = "SELECT id FROM funding_operations WHERE status IN ('PROCESSING', 'UNKNOWN') " +
+            "AND next_provider_poll_at <= :now AND provider_poll_attempts >= :maxAttempts " +
+            "ORDER BY next_provider_poll_at ASC FOR UPDATE SKIP LOCKED LIMIT :batchSize",
+            nativeQuery = true)
+    List<UUID> findExhaustedCandidateIdsForUpdate(
+            @Param("now") Instant now,
+            @Param("maxAttempts") int maxAttempts,
+            @Param("batchSize") int batchSize);
+
+    @Query(value = "SELECT id FROM funding_operations WHERE status IN ('PROCESSING', 'UNKNOWN') " +
+            "AND next_provider_poll_at <= :now AND provider_poll_attempts < :maxAttempts " +
+            "ORDER BY next_provider_poll_at ASC FOR UPDATE SKIP LOCKED LIMIT :batchSize",
+            nativeQuery = true)
+    List<UUID> findDueCandidateIdsForUpdate(
+            @Param("now") Instant now,
+            @Param("maxAttempts") int maxAttempts,
+            @Param("batchSize") int batchSize);
 }

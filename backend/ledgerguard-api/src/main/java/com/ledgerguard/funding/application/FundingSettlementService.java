@@ -90,6 +90,11 @@ public class FundingSettlementService {
             return funding;
         }
 
+        if (funding.getStatus() == FundingStatus.FAILED) {
+            throw new com.ledgerguard.provider.application.ProviderEventConflictException(
+                    "FundingOperation " + fundingId + " is in terminal status FAILED and cannot be settled as SUCCEEDED");
+        }
+
         // 3. Validate provider response against durable FundingOperation
         validateProviderResponse(funding, pspResponse);
 

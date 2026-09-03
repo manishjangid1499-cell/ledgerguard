@@ -84,7 +84,14 @@ public class PayoutSettlementService {
             return toResult(payout, false);
         }
 
-        if (payout.getStatus() != PayoutStatus.PROCESSING) {
+        if (payout.getStatus() == PayoutStatus.FAILED) {
+            throw new com.ledgerguard.provider.application.ProviderEventConflictException(
+                    "Payout " + payoutId + " is in terminal status FAILED and cannot be settled as SUCCEEDED");
+        }
+
+        if (payout.getStatus() != PayoutStatus.PROCESSING
+                && payout.getStatus() != PayoutStatus.UNKNOWN
+                && payout.getStatus() != PayoutStatus.RECONCILIATION_REQUIRED) {
             throw new IllegalStateException("Cannot settle Payout " + payoutId + " in status " + payout.getStatus());
         }
 

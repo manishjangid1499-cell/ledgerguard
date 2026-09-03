@@ -625,8 +625,7 @@ class HoldServiceIntegrationTest extends AbstractIntegrationTest {
         LedgerAccount wallet = createWallet(customer.getId(), AccountType.CUSTOMER);
         fundWallet(wallet.getId(), 10000L);
 
-        Instant now = Instant.now();
-        BalanceHold hold = holdService.createHold(wallet.getId(), Money.inr(5000L), now.plus(1, ChronoUnit.MILLIS));
+        BalanceHold hold = holdService.createHold(wallet.getId(), Money.inr(5000L), Instant.now().plus(500, ChronoUnit.MILLIS));
 
         int threads = 2;
         ExecutorService executor = Executors.newFixedThreadPool(threads);
@@ -652,7 +651,7 @@ class HoldServiceIntegrationTest extends AbstractIntegrationTest {
         executor.submit(() -> {
             try {
                 startLatch.await();
-                int count = holdExpirationService.expireDueHolds(now.plus(10, ChronoUnit.SECONDS));
+                int count = holdExpirationService.expireDueHolds(Instant.now().plus(10, ChronoUnit.SECONDS));
                 if (count > 0) {
                     expireSuccess.incrementAndGet();
                 }

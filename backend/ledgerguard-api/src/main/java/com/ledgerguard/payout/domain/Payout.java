@@ -48,6 +48,15 @@ public class Payout {
     @Column(name = "journal_transaction_id", unique = true)
     private UUID journalTransactionId;
 
+    @Column(name = "provider_poll_attempts", nullable = false)
+    private int providerPollAttempts = 0;
+
+    @Column(name = "next_provider_poll_at")
+    private Instant nextProviderPollAt;
+
+    @Column(name = "unknown_since")
+    private Instant unknownSince;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -79,26 +88,120 @@ public class Payout {
         this.balanceHoldId = Objects.requireNonNull(balanceHoldId, "balanceHoldId must not be null");
         this.amountMinor = amountMinor;
         this.currency = currency;
-        this.status = PayoutStatus.PROCESSING;
+        this.status = PayoutStatus.CREATED;
+        this.providerOperationId = null;
+        this.journalTransactionId = null;
+        this.providerPollAttempts = 0;
+        this.nextProviderPollAt = null;
+        this.unknownSince = null;
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
+        this.completedAt = null;
     }
 
-    public void markSucceeded(UUID providerOperationId, UUID journalTransactionId, Instant completedAt) {
-        if (this.status != PayoutStatus.PROCESSING) {
-            throw new IllegalStateException("Cannot transition Payout from " + this.status + " to SUCCEEDED");
+    /**
+     * Atomically claims this operation for submission, transitioning CREATED -> PROCESSING.
+     */
+    public void prepareSubmission(Instant nextPollAt) {
+        if (this.status != PayoutStatus.CREATED) {
+            throw new IllegalStateException("Cannot prepare submission for Payout " + id + " in status " + status);
         }
-        this.providerOperationId = Objects.requireNonNull(providerOperationId, "providerOperationId must not be null");
+        this.status = PayoutStatus.PROCESSING;
+        this.nextProviderPollAt = Objects.requireNonNull(nextPollAt, "nextProviderPollAt must not be null");
+    }
+
+    /**
+     * Transitions PROCESSING -> UNKNOWN upon network timeout or lost response.
+     */
+    public void markUnknown(Instant now, Instant nextPollAt) {
+        if (this.status != PayoutStatus.PROCESSING && this.status != PayoutStatus.UNKNOWN) {
+            throw new IllegalStateException("Cannot mark Payout " + id + " UNKNOWN from status " + status);
+        }
+        this.status = PayoutStatus.UNKNOWN;
+        if (this.unknownSince == null) {
+            this.unknownSince = Objects.requireNonNull(now, "unknownSince must not be null");
+        }
+        this.nextProviderPollAt = Objects.requireNonNull(nextPollAt, "nextProviderPollAt must not be null");
+    }
+
+    /**
+     * Updates/retains PROCESSING state during recovery or provider confirmation.
+     */
+    public void markProcessing(Instant nextPollAt) {
+        if (this.status != PayoutStatus.PROCESSING && this.status != PayoutStatus.UNKNOWN) {
+            throw new IllegalStateException("Cannot mark Payout " + id + " PROCESSING from status " + status);
+        }
+        this.status = PayoutStatus.PROCESSING;
+        this.nextProviderPollAt = Objects.requireNonNull(nextPollAt, "nextProviderPollAt must not be null");
+    }
+
+    /**
+     * Transitions nonterminal operation to RECONCILIATION_REQUIRED upon max attempts or contradiction.
+     */
+    public void markReconciliationRequired() {
+        if (this.status != PayoutStatus.PROCESSING && this.status != PayoutStatus.UNKNOWN) {
+            throw new IllegalStateException("Cannot mark Payout " + id + " RECONCILIATION_REQUIRED from status " + status);
+        }
+        this.status = PayoutStatus.RECONCILIATION_REQUIRED;
+        this.nextProviderPollAt = null;
+    }
+
+    /**
+     * Binds providerOperationId one-way under business row lock.
+     */
+    public void bindProviderOperationId(UUID providerOperationId) {
+        if (providerOperationId == null) {
+            return;
+        }
+        if (this.providerOperationId != null && !this.providerOperationId.equals(providerOperationId)) {
+            throw new com.ledgerguard.provider.application.ProviderEventConflictException(
+                    "Cannot modify providerOperationId on Payout " + id + " from "
+                            + this.providerOperationId + " to " + providerOperationId);
+        }
+        this.providerOperationId = providerOperationId;
+    }
+
+    /**
+     * Transitions this payout to FAILED.
+     */
+    public void markFailed(Instant completedAt, UUID providerOperationId) {
+        if (this.status == PayoutStatus.SUCCEEDED || this.status == PayoutStatus.FAILED) {
+            throw new IllegalStateException("Payout " + id + " is already in terminal status " + status);
+        }
+        if (this.status == PayoutStatus.CREATED && providerOperationId != null) {
+            throw new IllegalStateException("Payout " + id + " failing from CREATED must have providerOperationId null");
+        }
+        if ((this.status == PayoutStatus.UNKNOWN || this.status == PayoutStatus.RECONCILIATION_REQUIRED) && providerOperationId == null) {
+            throw new IllegalStateException("Payout " + id + " failing from " + status + " must have providerOperationId non-null");
+        }
+        bindProviderOperationId(providerOperationId);
+        this.status = PayoutStatus.FAILED;
+        this.completedAt = Objects.requireNonNull(completedAt, "completedAt must not be null");
+        this.nextProviderPollAt = null;
+    }
+
+    /**
+     * Transitions this payout to SUCCEEDED upon committed ledger settlement.
+     */
+    public void markSucceeded(UUID providerOperationId, UUID journalTransactionId, Instant completedAt) {
+        if (this.status == PayoutStatus.SUCCEEDED) {
+            throw new IllegalStateException("Payout " + id + " is already in terminal status SUCCEEDED");
+        }
+        if (this.status == PayoutStatus.FAILED) {
+            throw new IllegalStateException("Payout " + id + " is already in terminal status FAILED and cannot become SUCCEEDED");
+        }
+        bindProviderOperationId(providerOperationId);
+        this.status = PayoutStatus.SUCCEEDED;
         this.journalTransactionId = Objects.requireNonNull(journalTransactionId, "journalTransactionId must not be null");
         this.completedAt = Objects.requireNonNull(completedAt, "completedAt must not be null");
-        this.status = PayoutStatus.SUCCEEDED;
+        this.nextProviderPollAt = null;
     }
 
-    public void markFailed(Instant completedAt) {
-        if (this.status != PayoutStatus.PROCESSING) {
-            throw new IllegalStateException("Cannot transition Payout from " + this.status + " to FAILED");
-        }
-        this.completedAt = Objects.requireNonNull(completedAt, "completedAt must not be null");
-        this.status = PayoutStatus.FAILED;
+    /**
+     * Increments poll attempts during polling claim.
+     */
+    public void incrementPollAttempts(Instant nextPollAt) {
+        this.providerPollAttempts++;
+        this.nextProviderPollAt = nextPollAt;
     }
 
     public UUID getId() {
@@ -135,6 +238,18 @@ public class Payout {
 
     public UUID getJournalTransactionId() {
         return journalTransactionId;
+    }
+
+    public int getProviderPollAttempts() {
+        return providerPollAttempts;
+    }
+
+    public Instant getNextProviderPollAt() {
+        return nextProviderPollAt;
+    }
+
+    public Instant getUnknownSince() {
+        return unknownSince;
     }
 
     public Instant getCreatedAt() {

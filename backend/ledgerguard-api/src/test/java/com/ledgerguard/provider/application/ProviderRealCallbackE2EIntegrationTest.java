@@ -163,6 +163,8 @@ class ProviderRealCallbackE2EIntegrationTest extends AbstractIntegrationTest {
                 fundingId, customerUserId, customerAccountId, 10000L, "INR", Instant.now()
         );
         fundingOperationRepository.saveAndFlush(funding);
+        funding.prepareSubmission(Instant.now().plusSeconds(10));
+        fundingOperationRepository.saveAndFlush(funding);
 
         String fundingJson = """
                 {
@@ -275,8 +277,8 @@ class ProviderRealCallbackE2EIntegrationTest extends AbstractIntegrationTest {
         );
         PayoutResult execResult = payoutService.requestPayout(command);
 
-        // Synchronous call should time out and return HTTP 202 ACCEPTED with status PROCESSING
-        assertThat(execResult.status()).isEqualTo(PayoutStatus.PROCESSING);
+        // Synchronous call should time out and return HTTP 202 ACCEPTED with status UNKNOWN
+        assertThat(execResult.status()).isEqualTo(PayoutStatus.UNKNOWN);
 
         // Verify initial state: BalanceHold is ACTIVE, 0 payout journals posted
         BalanceHold hold = balanceHoldRepository.findById(execResult.balanceHoldId()).orElseThrow();
