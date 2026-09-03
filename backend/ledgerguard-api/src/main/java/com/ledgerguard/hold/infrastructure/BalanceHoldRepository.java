@@ -19,7 +19,7 @@ public interface BalanceHoldRepository extends JpaRepository<BalanceHold, UUID> 
     long sumActiveAmountByLedgerAccountId(@Param("ledgerAccountId") UUID ledgerAccountId);
 
     @Query(value = "SELECT h.* FROM balance_holds h WHERE h.status = 'ACTIVE' AND h.expires_at <= :now " +
-            "AND NOT EXISTS (SELECT 1 FROM payouts p WHERE p.balance_hold_id = h.id AND p.status = 'PROCESSING')",
+            "AND NOT EXISTS (SELECT 1 FROM payouts p WHERE p.balance_hold_id = h.id AND p.status IN ('PROCESSING', 'UNKNOWN', 'RECONCILIATION_REQUIRED'))",
             nativeQuery = true)
     List<BalanceHold> findDueActiveHolds(@Param("now") Instant now);
 
@@ -30,7 +30,7 @@ public interface BalanceHoldRepository extends JpaRepository<BalanceHold, UUID> 
     @Modifying
     @Query(value = "UPDATE balance_holds SET status = 'EXPIRED', terminal_at = :now, updated_at = :now " +
             "WHERE id = :id AND status = 'ACTIVE' " +
-            "AND NOT EXISTS (SELECT 1 FROM payouts p WHERE p.balance_hold_id = balance_holds.id AND p.status = 'PROCESSING')",
+            "AND NOT EXISTS (SELECT 1 FROM payouts p WHERE p.balance_hold_id = balance_holds.id AND p.status IN ('PROCESSING', 'UNKNOWN', 'RECONCILIATION_REQUIRED'))",
             nativeQuery = true)
     int expireHoldConditional(@Param("id") UUID id, @Param("now") Instant now);
 

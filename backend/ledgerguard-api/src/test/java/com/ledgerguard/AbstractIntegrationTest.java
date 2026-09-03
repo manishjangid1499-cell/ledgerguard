@@ -15,10 +15,11 @@ import java.util.Base64;
 public abstract class AbstractIntegrationTest {
 
     public static final PostgreSQLContainer<?> POSTGRES_CONTAINER =
-            new PostgreSQLContainer<>("postgres:17.11-alpine")
+            new PostgreSQLContainer<>("postgres:17-alpine")
                     .withDatabaseName("ledgerguard_test")
                     .withUsername("test_user")
-                    .withPassword("test_pass");
+                    .withPassword("test_pass")
+                    .withCommand("postgres", "-c", "max_connections=300");
 
     public static final KafkaContainer KAFKA_CONTAINER =
             new KafkaContainer("apache/kafka:4.3.1");
@@ -44,8 +45,11 @@ public abstract class AbstractIntegrationTest {
         registry.add("spring.datasource.url", POSTGRES_CONTAINER::getJdbcUrl);
         registry.add("spring.datasource.username", POSTGRES_CONTAINER::getUsername);
         registry.add("spring.datasource.password", POSTGRES_CONTAINER::getPassword);
+        registry.add("spring.datasource.hikari.maximum-pool-size", () -> 5);
+        registry.add("spring.datasource.hikari.minimum-idle", () -> 1);
         registry.add("spring.kafka.bootstrap-servers", KAFKA_CONTAINER::getBootstrapServers);
         registry.add("ledgerguard.security.jwt.secret", () -> RUNTIME_JWT_SECRET);
         registry.add("ledgerguard.psp.webhook.secret", () -> RUNTIME_WEBHOOK_SECRET);
+        registry.add("ledgerguard.psp.polling.enabled", () -> "false");
     }
 }

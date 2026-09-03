@@ -19,8 +19,8 @@ class FundingDatabaseConstraintTest extends AbstractIntegrationTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    @DisplayName("Direct INSERT with status PROCESSING succeeds for active customer account")
-    void directInsertProcessingSucceeds() {
+    @DisplayName("Direct INSERT with status CREATED succeeds for active customer account")
+    void directInsertCreatedSucceeds() {
         UUID customerId = createTestUser();
         UUID customerAcc = createTestAccount(customerId, "CUSTOMER", "ACTIVE", "INR");
 
@@ -29,29 +29,36 @@ class FundingDatabaseConstraintTest extends AbstractIntegrationTest {
 
         int rows = jdbcTemplate.update(
                 "INSERT INTO funding_operations (id, initiated_by_user_id, customer_ledger_account_id, amount_minor, currency, status, provider_operation_id, journal_transaction_id, created_at, completed_at) " +
-                        "VALUES (?, ?, ?, 10000, 'INR', 'PROCESSING', NULL, NULL, ?, NULL)",
+                        "VALUES (?, ?, ?, 10000, 'INR', 'CREATED', NULL, NULL, ?, NULL)",
                 fundingId, customerId, customerAcc, now
         );
         assertThat(rows).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("Direct INSERT with status SUCCEEDED is rejected by trigger")
-    void directInsertSucceededRejected() {
+    @DisplayName("Direct INSERT with status PROCESSING or SUCCEEDED is rejected by trigger")
+    void directInsertNonCreatedRejected() {
         UUID customerId = createTestUser();
         UUID customerAcc = createTestAccount(customerId, "CUSTOMER", "ACTIVE", "INR");
         UUID clearingAcc = createTestAccount(null, "PSP_CLEARING", "ACTIVE", "INR");
         UUID journalId = createTestFundingJournal(clearingAcc, customerAcc, 10000);
 
-        UUID fundingId = UUID.randomUUID();
+        UUID fundingId1 = UUID.randomUUID();
+        UUID fundingId2 = UUID.randomUUID();
         UUID providerOpId = UUID.randomUUID();
         Timestamp now = Timestamp.from(Instant.now());
 
         assertThatThrownBy(() -> jdbcTemplate.update(
                 "INSERT INTO funding_operations (id, initiated_by_user_id, customer_ledger_account_id, amount_minor, currency, status, provider_operation_id, journal_transaction_id, created_at, completed_at) " +
+                        "VALUES (?, ?, ?, 10000, 'INR', 'PROCESSING', NULL, NULL, ?, NULL)",
+                fundingId1, customerId, customerAcc, now
+        )).isInstanceOf(Exception.class).hasMessageContaining("must be inserted with status CREATED");
+
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                "INSERT INTO funding_operations (id, initiated_by_user_id, customer_ledger_account_id, amount_minor, currency, status, provider_operation_id, journal_transaction_id, created_at, completed_at) " +
                         "VALUES (?, ?, ?, 10000, 'INR', 'SUCCEEDED', ?, ?, ?, ?)",
-                fundingId, customerId, customerAcc, providerOpId, journalId, now, now
-        )).isInstanceOf(Exception.class).hasMessageContaining("must be inserted with status PROCESSING");
+                fundingId2, customerId, customerAcc, providerOpId, journalId, now, now
+        )).isInstanceOf(Exception.class).hasMessageContaining("must be inserted with status CREATED");
     }
 
     @Test
@@ -67,13 +74,13 @@ class FundingDatabaseConstraintTest extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> jdbcTemplate.update(
                 "INSERT INTO funding_operations (id, initiated_by_user_id, customer_ledger_account_id, amount_minor, currency, status, provider_operation_id, journal_transaction_id, created_at, completed_at) " +
-                        "VALUES (?, ?, ?, 10000, 'INR', 'PROCESSING', NULL, NULL, ?, NULL)",
+                        "VALUES (?, ?, ?, 10000, 'INR', 'CREATED', NULL, NULL, ?, NULL)",
                 fundingId1, userId, merchantAcc, now
         )).isInstanceOf(Exception.class).hasMessageContaining("must be of type CUSTOMER");
 
         assertThatThrownBy(() -> jdbcTemplate.update(
                 "INSERT INTO funding_operations (id, initiated_by_user_id, customer_ledger_account_id, amount_minor, currency, status, provider_operation_id, journal_transaction_id, created_at, completed_at) " +
-                        "VALUES (?, ?, ?, 10000, 'INR', 'PROCESSING', NULL, NULL, ?, NULL)",
+                        "VALUES (?, ?, ?, 10000, 'INR', 'CREATED', NULL, NULL, ?, NULL)",
                 fundingId2, userId, clearingAcc, now
         )).isInstanceOf(Exception.class).hasMessageContaining("must be of type CUSTOMER");
     }
@@ -90,7 +97,7 @@ class FundingDatabaseConstraintTest extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> jdbcTemplate.update(
                 "INSERT INTO funding_operations (id, initiated_by_user_id, customer_ledger_account_id, amount_minor, currency, status, provider_operation_id, journal_transaction_id, created_at, completed_at) " +
-                        "VALUES (?, ?, ?, 10000, 'INR', 'PROCESSING', NULL, NULL, ?, NULL)",
+                        "VALUES (?, ?, ?, 10000, 'INR', 'CREATED', NULL, NULL, ?, NULL)",
                 fundingId, user2, customerAcc, now
         )).isInstanceOf(Exception.class).hasMessageContaining("does not match initiator");
     }
@@ -106,7 +113,7 @@ class FundingDatabaseConstraintTest extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> jdbcTemplate.update(
                 "INSERT INTO funding_operations (id, initiated_by_user_id, customer_ledger_account_id, amount_minor, currency, status, provider_operation_id, journal_transaction_id, created_at, completed_at) " +
-                        "VALUES (?, ?, ?, 10000, 'INR', 'PROCESSING', NULL, NULL, ?, NULL)",
+                        "VALUES (?, ?, ?, 10000, 'INR', 'CREATED', NULL, NULL, ?, NULL)",
                 fundingId, customerId, customerAcc, now
         )).isInstanceOf(Exception.class).hasMessageContaining("must be ACTIVE");
     }
@@ -121,19 +128,19 @@ class FundingDatabaseConstraintTest extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> jdbcTemplate.update(
                 "INSERT INTO funding_operations (id, initiated_by_user_id, customer_ledger_account_id, amount_minor, currency, status, provider_operation_id, journal_transaction_id, created_at, completed_at) " +
-                        "VALUES (?, ?, ?, 0, 'INR', 'PROCESSING', NULL, NULL, ?, NULL)",
+                        "VALUES (?, ?, ?, 0, 'INR', 'CREATED', NULL, NULL, ?, NULL)",
                 UUID.randomUUID(), customerId, customerAcc, now
         )).isInstanceOf(Exception.class);
 
         assertThatThrownBy(() -> jdbcTemplate.update(
                 "INSERT INTO funding_operations (id, initiated_by_user_id, customer_ledger_account_id, amount_minor, currency, status, provider_operation_id, journal_transaction_id, created_at, completed_at) " +
-                        "VALUES (?, ?, ?, -100, 'INR', 'PROCESSING', NULL, NULL, ?, NULL)",
+                        "VALUES (?, ?, ?, -100, 'INR', 'CREATED', NULL, NULL, ?, NULL)",
                 UUID.randomUUID(), customerId, customerAcc, now
         )).isInstanceOf(Exception.class);
     }
 
     @Test
-    @DisplayName("Valid transition PROCESSING -> SUCCEEDED with valid posted settlement journal succeeds")
+    @DisplayName("Valid transition CREATED -> PROCESSING -> SUCCEEDED with valid posted settlement journal succeeds")
     void validSettlementTransitionSucceeds() {
         UUID customerId = createTestUser();
         UUID customerAcc = createTestAccount(customerId, "CUSTOMER", "ACTIVE", "INR");
@@ -144,16 +151,22 @@ class FundingDatabaseConstraintTest extends AbstractIntegrationTest {
         UUID providerOpId = UUID.randomUUID();
         Timestamp now = Timestamp.from(Instant.now());
 
-        // 1. Insert PROCESSING
+        // 1. Insert CREATED
         jdbcTemplate.update(
                 "INSERT INTO funding_operations (id, initiated_by_user_id, customer_ledger_account_id, amount_minor, currency, status, provider_operation_id, journal_transaction_id, created_at, completed_at) " +
-                        "VALUES (?, ?, ?, 10000, 'INR', 'PROCESSING', NULL, NULL, ?, NULL)",
+                        "VALUES (?, ?, ?, 10000, 'INR', 'CREATED', NULL, NULL, ?, NULL)",
                 fundingId, customerId, customerAcc, now
         );
 
-        // 2. Transition to SUCCEEDED
+        // 2. Transition to PROCESSING
+        jdbcTemplate.update(
+                "UPDATE funding_operations SET status = 'PROCESSING', next_provider_poll_at = ? WHERE id = ?",
+                now, fundingId
+        );
+
+        // 3. Transition to SUCCEEDED
         int updated = jdbcTemplate.update(
-                "UPDATE funding_operations SET status = 'SUCCEEDED', provider_operation_id = ?, journal_transaction_id = ?, completed_at = ? WHERE id = ?",
+                "UPDATE funding_operations SET status = 'SUCCEEDED', provider_operation_id = ?, journal_transaction_id = ?, completed_at = ?, next_provider_poll_at = NULL WHERE id = ?",
                 providerOpId, journalId, now, fundingId
         );
         assertThat(updated).isEqualTo(1);
@@ -168,10 +181,7 @@ class FundingDatabaseConstraintTest extends AbstractIntegrationTest {
         UUID otherCustomer = createTestUser();
         UUID otherCustomerAcc = createTestAccount(otherCustomer, "CUSTOMER", "ACTIVE", "INR");
 
-        // Journal with wrong amount (5000 instead of 10000)
         UUID wrongAmountJournal = createTestFundingJournal(clearingAcc, customerAcc, 5000);
-
-        // Journal with wrong credit account (other customer)
         UUID wrongAccountJournal = createTestFundingJournal(clearingAcc, otherCustomerAcc, 10000);
 
         UUID fundingId = UUID.randomUUID();
@@ -180,19 +190,24 @@ class FundingDatabaseConstraintTest extends AbstractIntegrationTest {
 
         jdbcTemplate.update(
                 "INSERT INTO funding_operations (id, initiated_by_user_id, customer_ledger_account_id, amount_minor, currency, status, provider_operation_id, journal_transaction_id, created_at, completed_at) " +
-                        "VALUES (?, ?, ?, 10000, 'INR', 'PROCESSING', NULL, NULL, ?, NULL)",
+                        "VALUES (?, ?, ?, 10000, 'INR', 'CREATED', NULL, NULL, ?, NULL)",
                 fundingId, customerId, customerAcc, now
+        );
+
+        jdbcTemplate.update(
+                "UPDATE funding_operations SET status = 'PROCESSING', next_provider_poll_at = ? WHERE id = ?",
+                now, fundingId
         );
 
         // Wrong amount
         assertThatThrownBy(() -> jdbcTemplate.update(
-                "UPDATE funding_operations SET status = 'SUCCEEDED', provider_operation_id = ?, journal_transaction_id = ?, completed_at = ? WHERE id = ?",
+                "UPDATE funding_operations SET status = 'SUCCEEDED', provider_operation_id = ?, journal_transaction_id = ?, completed_at = ?, next_provider_poll_at = NULL WHERE id = ?",
                 providerOpId, wrongAmountJournal, now, fundingId
         )).isInstanceOf(Exception.class).hasMessageContaining("do not match funding amount");
 
         // Wrong credit account
         assertThatThrownBy(() -> jdbcTemplate.update(
-                "UPDATE funding_operations SET status = 'SUCCEEDED', provider_operation_id = ?, journal_transaction_id = ?, completed_at = ? WHERE id = ?",
+                "UPDATE funding_operations SET status = 'SUCCEEDED', provider_operation_id = ?, journal_transaction_id = ?, completed_at = ?, next_provider_poll_at = NULL WHERE id = ?",
                 providerOpId, wrongAccountJournal, now, fundingId
         )).isInstanceOf(Exception.class).hasMessageContaining("does not match funding customer account");
     }
@@ -211,12 +226,17 @@ class FundingDatabaseConstraintTest extends AbstractIntegrationTest {
 
         jdbcTemplate.update(
                 "INSERT INTO funding_operations (id, initiated_by_user_id, customer_ledger_account_id, amount_minor, currency, status, provider_operation_id, journal_transaction_id, created_at, completed_at) " +
-                        "VALUES (?, ?, ?, 10000, 'INR', 'PROCESSING', NULL, NULL, ?, NULL)",
+                        "VALUES (?, ?, ?, 10000, 'INR', 'CREATED', NULL, NULL, ?, NULL)",
                 fundingId, customerId, customerAcc, now
         );
 
         jdbcTemplate.update(
-                "UPDATE funding_operations SET status = 'SUCCEEDED', provider_operation_id = ?, journal_transaction_id = ?, completed_at = ? WHERE id = ?",
+                "UPDATE funding_operations SET status = 'PROCESSING', next_provider_poll_at = ? WHERE id = ?",
+                now, fundingId
+        );
+
+        jdbcTemplate.update(
+                "UPDATE funding_operations SET status = 'SUCCEEDED', provider_operation_id = ?, journal_transaction_id = ?, completed_at = ?, next_provider_poll_at = NULL WHERE id = ?",
                 providerOpId, journalId, now, fundingId
         );
 

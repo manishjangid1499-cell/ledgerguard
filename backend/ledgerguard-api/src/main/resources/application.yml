@@ -48,6 +48,12 @@ ledgerguard:
     webhook:
       secret: ${PSP_WEBHOOK_SECRET:}
       max-clock-skew-seconds: ${PSP_WEBHOOK_MAX_CLOCK_SKEW_SECONDS:300}
+    polling:
+      enabled: ${LEDGERGUARD_PSP_POLLING_ENABLED:true}
+      interval-ms: ${LEDGERGUARD_PSP_POLLING_INTERVAL_MS:5000}
+      max-attempts: ${LEDGERGUARD_PSP_POLLING_MAX_ATTEMPTS:10}
+      retry-delay-seconds: ${LEDGERGUARD_PSP_POLLING_RETRY_DELAY_SECONDS:5}
+      batch-size: ${LEDGERGUARD_PSP_POLLING_BATCH_SIZE:10}
   security:
     jwt:
       issuer: ledgerguard

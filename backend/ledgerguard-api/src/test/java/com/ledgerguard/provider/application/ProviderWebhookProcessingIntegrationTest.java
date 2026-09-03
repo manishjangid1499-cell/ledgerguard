@@ -21,6 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
@@ -34,28 +35,30 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-class ProviderWebhookProcessingIntegrationTest extends AbstractIntegrationTest {
+@SpringBootTest
+public class ProviderWebhookProcessingIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
-    private WebApplicationContext wac;
-
-    private MockMvc mockMvc;
+    private WebApplicationContext webApplicationContext;
 
     @Autowired
-    private JdbcTemplate jdbcTemplate;
-
-    @Autowired
-    private LedgerAccountRepository ledgerAccountRepository;
+    private ProviderEventRepository providerEventRepository;
 
     @Autowired
     private FundingOperationRepository fundingOperationRepository;
@@ -67,76 +70,70 @@ class ProviderWebhookProcessingIntegrationTest extends AbstractIntegrationTest {
     private BalanceHoldRepository balanceHoldRepository;
 
     @Autowired
-    private ProviderEventRepository providerEventRepository;
+    private LedgerAccountRepository ledgerAccountRepository;
 
-    private static final String HMAC_ALGORITHM = "HmacSHA256";
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
+    private MockMvc mockMvc;
     private UUID customerUserId;
     private LedgerAccount customerAccount;
     private LedgerAccount pspClearingAccount;
 
     @BeforeEach
-    void setUpTestData() {
-        mockMvc = MockMvcBuilders.webAppContextSetup(wac)
-                .apply(springSecurity())
-                .build();
-
-        Timestamp now = Timestamp.from(Instant.now());
-
-        // Ensure active PSP_CLEARING account exists
-        List<LedgerAccount> clearings = ledgerAccountRepository.findAllByAccountType(AccountType.PSP_CLEARING);
-        for (LedgerAccount ca : clearings) {
-            if (ca.getStatus() == AccountStatus.ACTIVE) {
-                ca.close(Instant.now());
-                ledgerAccountRepository.saveAndFlush(ca);
-            }
-        }
-        pspClearingAccount = LedgerAccount.createSystemAccount(AccountType.PSP_CLEARING);
-        ledgerAccountRepository.saveAndFlush(pspClearingAccount);
+    void setUp() {
+        mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).build();
 
         customerUserId = UUID.randomUUID();
+        Instant now = Instant.now();
+        Timestamp ts = Timestamp.from(now);
         jdbcTemplate.update(
-                "INSERT INTO users (id, email, password_hash, role, status, created_at, updated_at) " +
-                        "VALUES (?, ?, 'hash', 'CUSTOMER', 'ACTIVE', ?, ?)",
-                customerUserId, "cust-" + customerUserId + "@example.com", now, now
+                "INSERT INTO users (id, email, password_hash, role, status, created_at, updated_at) VALUES (?, ?, 'hash', 'CUSTOMER', 'ACTIVE', ?, ?)",
+                customerUserId, "webhook-user-" + customerUserId + "@example.com", ts, ts
         );
 
-        UUID custAccId = UUID.randomUUID();
-        jdbcTemplate.update(
-                "INSERT INTO ledger_accounts (id, owner_user_id, account_type, currency, status, created_at, updated_at) " +
-                        "VALUES (?, ?, 'CUSTOMER', 'INR', 'ACTIVE', ?, ?)",
-                custAccId, customerUserId, now, now
-        );
-        customerAccount = ledgerAccountRepository.findById(custAccId).orElseThrow();
+        customerAccount = new LedgerAccount(UUID.randomUUID(), customerUserId, AccountType.CUSTOMER, "INR", AccountStatus.ACTIVE, now, now);
+        ledgerAccountRepository.saveAndFlush(customerAccount);
+
+        jdbcTemplate.update("UPDATE ledger_accounts SET status = 'CLOSED' WHERE account_type = 'PSP_CLEARING' AND currency = 'INR'");
+        pspClearingAccount = new LedgerAccount(UUID.randomUUID(), null, AccountType.PSP_CLEARING, "INR", AccountStatus.ACTIVE, now, now);
+        ledgerAccountRepository.saveAndFlush(pspClearingAccount);
     }
 
-    private String sign(long timestamp, byte[] rawBody, String secret) {
+    private FundingOperation createSubmittedFunding(UUID fundingId, UUID customerUserId, UUID customerAccountId, long amountMinor) {
+        FundingOperation funding = new FundingOperation(
+                fundingId, customerUserId, customerAccountId, amountMinor, "INR", Instant.now()
+        );
+        fundingOperationRepository.saveAndFlush(funding);
+        funding.prepareSubmission(Instant.now().plusSeconds(10));
+        return fundingOperationRepository.saveAndFlush(funding);
+    }
+
+    private Payout createSubmittedPayout(UUID payoutId, UUID customerUserId, UUID customerAccountId, UUID balanceHoldId, long amountMinor) {
+        Payout payout = new Payout(
+                payoutId, customerUserId, customerAccountId, balanceHoldId, amountMinor, "INR", Instant.now()
+        );
+        payoutRepository.saveAndFlush(payout);
+        payout.prepareSubmission(Instant.now().plusSeconds(10));
+        return payoutRepository.saveAndFlush(payout);
+    }
+
+    private String sign(long timestamp, byte[] payload, String secret) {
         try {
-            byte[] timestampBytes = Long.toString(timestamp).getBytes(StandardCharsets.UTF_8);
-            byte[] dotBytes = ".".getBytes(StandardCharsets.UTF_8);
-            byte[] canonicalBytes = new byte[timestampBytes.length + dotBytes.length + rawBody.length];
-
-            System.arraycopy(timestampBytes, 0, canonicalBytes, 0, timestampBytes.length);
-            System.arraycopy(dotBytes, 0, canonicalBytes, timestampBytes.length, dotBytes.length);
-            System.arraycopy(rawBody, 0, canonicalBytes, timestampBytes.length + dotBytes.length, rawBody.length);
-
-            Mac mac = Mac.getInstance(HMAC_ALGORITHM);
-            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM));
-            byte[] digest = mac.doFinal(canonicalBytes);
-
-            StringBuilder sb = new StringBuilder(64);
-            for (byte b : digest) {
-                sb.append(String.format("%02x", b));
-            }
-            return "sha256=" + sb.toString();
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            mac.update(String.valueOf(timestamp).getBytes(StandardCharsets.UTF_8));
+            mac.update((byte) '.');
+            byte[] signatureBytes = mac.doFinal(payload);
+            return "sha256=" + HexFormat.of().formatHex(signatureBytes);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }
 
-    private ResultActions sendWebhook(String bodyJson) throws Exception {
-        byte[] body = bodyJson.getBytes(StandardCharsets.UTF_8);
+    private ResultActions sendWebhook(String jsonPayload) throws Exception {
         long timestamp = Instant.now().getEpochSecond();
+        byte[] body = jsonPayload.getBytes(StandardCharsets.UTF_8);
         String signature = sign(timestamp, body, RUNTIME_WEBHOOK_SECRET);
 
         return mockMvc.perform(post("/api/provider/webhooks")
@@ -177,10 +174,7 @@ class ProviderWebhookProcessingIntegrationTest extends AbstractIntegrationTest {
     void fundingSucceededSettlesAndAppliesOnce() throws Exception {
         UUID fundingId = UUID.randomUUID();
         UUID providerOpId = UUID.randomUUID();
-        FundingOperation funding = new FundingOperation(
-                fundingId, customerUserId, customerAccount.getId(), 5000L, "INR", Instant.now()
-        );
-        fundingOperationRepository.saveAndFlush(funding);
+        createSubmittedFunding(fundingId, customerUserId, customerAccount.getId(), 5000L);
 
         UUID eventId = UUID.randomUUID();
         String json = buildWebhookJson(
@@ -214,10 +208,7 @@ class ProviderWebhookProcessingIntegrationTest extends AbstractIntegrationTest {
     void fundingSucceededIdenticalReplay() throws Exception {
         UUID fundingId = UUID.randomUUID();
         UUID providerOpId = UUID.randomUUID();
-        FundingOperation funding = new FundingOperation(
-                fundingId, customerUserId, customerAccount.getId(), 5000L, "INR", Instant.now()
-        );
-        fundingOperationRepository.saveAndFlush(funding);
+        createSubmittedFunding(fundingId, customerUserId, customerAccount.getId(), 5000L);
 
         UUID eventId = UUID.randomUUID();
         String json = buildWebhookJson(
@@ -250,10 +241,7 @@ class ProviderWebhookProcessingIntegrationTest extends AbstractIntegrationTest {
     void sameTerminalSucceededProgressionIsAppliedNoOp() throws Exception {
         UUID fundingId = UUID.randomUUID();
         UUID providerOpId = UUID.randomUUID();
-        FundingOperation funding = new FundingOperation(
-                fundingId, customerUserId, customerAccount.getId(), 4000L, "INR", Instant.now()
-        );
-        fundingOperationRepository.saveAndFlush(funding);
+        createSubmittedFunding(fundingId, customerUserId, customerAccount.getId(), 4000L);
 
         // Sequence 1: SUCCEEDED
         UUID eventId1 = UUID.randomUUID();
@@ -282,10 +270,7 @@ class ProviderWebhookProcessingIntegrationTest extends AbstractIntegrationTest {
         // Initial customer balance via credit
         UUID fundingId = UUID.randomUUID();
         UUID fundingProviderOpId = UUID.randomUUID();
-        FundingOperation funding = new FundingOperation(
-                fundingId, customerUserId, customerAccount.getId(), 10000L, "INR", Instant.now()
-        );
-        fundingOperationRepository.saveAndFlush(funding);
+        createSubmittedFunding(fundingId, customerUserId, customerAccount.getId(), 10000L);
         sendWebhook(buildWebhookJson(UUID.randomUUID(), 1, "PROVIDER_OPERATION_SUCCEEDED", fundingProviderOpId, fundingId, "CREDIT", "SUCCEEDED", 10000L))
                 .andExpect(status().isOk());
 
@@ -298,11 +283,7 @@ class ProviderWebhookProcessingIntegrationTest extends AbstractIntegrationTest {
 
         UUID payoutId = UUID.randomUUID();
         UUID payoutProviderOpId = UUID.randomUUID();
-        Payout payout = new Payout(
-                payoutId, customerUserId, customerAccount.getId(), hold.getId(),
-                3000L, "INR", Instant.now()
-        );
-        payoutRepository.saveAndFlush(payout);
+        createSubmittedPayout(payoutId, customerUserId, customerAccount.getId(), hold.getId(), 3000L);
 
         UUID eventId = UUID.randomUUID();
         String json = buildWebhookJson(
@@ -330,10 +311,7 @@ class ProviderWebhookProcessingIntegrationTest extends AbstractIntegrationTest {
         // Initial customer balance via credit
         UUID fundingId = UUID.randomUUID();
         UUID fundingProviderOpId = UUID.randomUUID();
-        FundingOperation funding = new FundingOperation(
-                fundingId, customerUserId, customerAccount.getId(), 10000L, "INR", Instant.now()
-        );
-        fundingOperationRepository.saveAndFlush(funding);
+        createSubmittedFunding(fundingId, customerUserId, customerAccount.getId(), 10000L);
         sendWebhook(buildWebhookJson(UUID.randomUUID(), 1, "PROVIDER_OPERATION_SUCCEEDED", fundingProviderOpId, fundingId, "CREDIT", "SUCCEEDED", 10000L))
                 .andExpect(status().isOk());
 
@@ -345,11 +323,7 @@ class ProviderWebhookProcessingIntegrationTest extends AbstractIntegrationTest {
 
         UUID payoutId = UUID.randomUUID();
         UUID payoutProviderOpId = UUID.randomUUID();
-        Payout payout = new Payout(
-                payoutId, customerUserId, customerAccount.getId(), hold.getId(),
-                2500L, "INR", Instant.now()
-        );
-        payoutRepository.saveAndFlush(payout);
+        createSubmittedPayout(payoutId, customerUserId, customerAccount.getId(), hold.getId(), 2500L);
 
         UUID eventId = UUID.randomUUID();
         String json = buildWebhookJson(
@@ -375,14 +349,11 @@ class ProviderWebhookProcessingIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("CREDIT FAILED marks event APPLIED and leaves FundingOperation unchanged in Phase 22")
-    void fundingFailedObservationOnly() throws Exception {
+    @DisplayName("CREDIT FAILED marks event APPLIED and transitions FundingOperation to FAILED")
+    void fundingFailedMarksFundingFailed() throws Exception {
         UUID fundingId = UUID.randomUUID();
         UUID providerOpId = UUID.randomUUID();
-        FundingOperation funding = new FundingOperation(
-                fundingId, customerUserId, customerAccount.getId(), 2000L, "INR", Instant.now()
-        );
-        fundingOperationRepository.saveAndFlush(funding);
+        createSubmittedFunding(fundingId, customerUserId, customerAccount.getId(), 2000L);
 
         UUID eventId = UUID.randomUUID();
         String json = buildWebhookJson(
@@ -395,10 +366,11 @@ class ProviderWebhookProcessingIntegrationTest extends AbstractIntegrationTest {
         ProviderEvent event = providerEventRepository.findById(eventId).orElseThrow();
         assertThat(event.getProcessingStatus()).isEqualTo(ProviderProcessingStatus.APPLIED);
 
-        // FundingOperation remains PROCESSING
-        FundingOperation unchanged = fundingOperationRepository.findById(fundingId).orElseThrow();
-        assertThat(unchanged.getStatus()).isEqualTo(FundingStatus.PROCESSING);
-        assertThat(unchanged.getJournalTransactionId()).isNull();
+        // FundingOperation transitions to FAILED
+        FundingOperation failed = fundingOperationRepository.findById(fundingId).orElseThrow();
+        assertThat(failed.getStatus()).isEqualTo(FundingStatus.FAILED);
+        assertThat(failed.getProviderOperationId()).isEqualTo(providerOpId);
+        assertThat(failed.getJournalTransactionId()).isNull();
     }
 
     @Test
@@ -406,10 +378,7 @@ class ProviderWebhookProcessingIntegrationTest extends AbstractIntegrationTest {
     void outOfOrderSequenceQueueing() throws Exception {
         UUID fundingId = UUID.randomUUID();
         UUID providerOpId = UUID.randomUUID();
-        FundingOperation funding = new FundingOperation(
-                fundingId, customerUserId, customerAccount.getId(), 3500L, "INR", Instant.now()
-        );
-        fundingOperationRepository.saveAndFlush(funding);
+        createSubmittedFunding(fundingId, customerUserId, customerAccount.getId(), 3500L);
 
         // Send sequence 2 first
         UUID eventId2 = UUID.randomUUID();
@@ -459,10 +428,7 @@ class ProviderWebhookProcessingIntegrationTest extends AbstractIntegrationTest {
     void statusRegressionMarkedIgnored() throws Exception {
         UUID fundingId = UUID.randomUUID();
         UUID providerOpId = UUID.randomUUID();
-        FundingOperation funding = new FundingOperation(
-                fundingId, customerUserId, customerAccount.getId(), 1500L, "INR", Instant.now()
-        );
-        fundingOperationRepository.saveAndFlush(funding);
+        createSubmittedFunding(fundingId, customerUserId, customerAccount.getId(), 1500L);
 
         // Sequence 1: SUCCEEDED
         UUID eventId1 = UUID.randomUUID();
@@ -491,10 +457,7 @@ class ProviderWebhookProcessingIntegrationTest extends AbstractIntegrationTest {
     void sequenceOwnershipConflictReturns409() throws Exception {
         UUID fundingId = UUID.randomUUID();
         UUID providerOpId = UUID.randomUUID();
-        FundingOperation funding = new FundingOperation(
-                fundingId, customerUserId, customerAccount.getId(), 2200L, "INR", Instant.now()
-        );
-        fundingOperationRepository.saveAndFlush(funding);
+        createSubmittedFunding(fundingId, customerUserId, customerAccount.getId(), 2200L);
 
         // Sequence 1 owned by eventId1
         UUID eventId1 = UUID.randomUUID();
@@ -513,10 +476,7 @@ class ProviderWebhookProcessingIntegrationTest extends AbstractIntegrationTest {
     void changedPayloadForSameEventIdReturns409() throws Exception {
         UUID fundingId = UUID.randomUUID();
         UUID providerOpId = UUID.randomUUID();
-        FundingOperation funding = new FundingOperation(
-                fundingId, customerUserId, customerAccount.getId(), 5000L, "INR", Instant.now()
-        );
-        fundingOperationRepository.saveAndFlush(funding);
+        createSubmittedFunding(fundingId, customerUserId, customerAccount.getId(), 5000L);
 
         UUID eventId = UUID.randomUUID();
         String json1 = buildWebhookJson(eventId, 1, "PROVIDER_OPERATION_SUCCEEDED", providerOpId, fundingId, "CREDIT", "SUCCEEDED", 5000L);
@@ -534,10 +494,7 @@ class ProviderWebhookProcessingIntegrationTest extends AbstractIntegrationTest {
     void concurrentIdenticalWebhooksYieldSingleSettlement() throws Exception {
         UUID fundingId = UUID.randomUUID();
         UUID providerOpId = UUID.randomUUID();
-        FundingOperation funding = new FundingOperation(
-                fundingId, customerUserId, customerAccount.getId(), 7500L, "INR", Instant.now()
-        );
-        fundingOperationRepository.saveAndFlush(funding);
+        createSubmittedFunding(fundingId, customerUserId, customerAccount.getId(), 7500L);
 
         UUID eventId = UUID.randomUUID();
         String json = buildWebhookJson(eventId, 1, "PROVIDER_OPERATION_SUCCEEDED", providerOpId, fundingId, "CREDIT", "SUCCEEDED", 7500L);
@@ -595,10 +552,7 @@ class ProviderWebhookProcessingIntegrationTest extends AbstractIntegrationTest {
     void concurrentSequenceOwnershipRace() throws Exception {
         UUID fundingId = UUID.randomUUID();
         UUID providerOpId = UUID.randomUUID();
-        FundingOperation funding = new FundingOperation(
-                fundingId, customerUserId, customerAccount.getId(), 8800L, "INR", Instant.now()
-        );
-        fundingOperationRepository.saveAndFlush(funding);
+        createSubmittedFunding(fundingId, customerUserId, customerAccount.getId(), 8800L);
 
         UUID eventId1 = UUID.randomUUID();
         UUID eventId2 = UUID.randomUUID();
@@ -659,10 +613,7 @@ class ProviderWebhookProcessingIntegrationTest extends AbstractIntegrationTest {
     void pendingDuplicateRedeliveryRetriesProcessing() throws Exception {
         UUID fundingId = UUID.randomUUID();
         UUID providerOpId = UUID.randomUUID();
-        FundingOperation funding = new FundingOperation(
-                fundingId, customerUserId, customerAccount.getId(), 6000L, "INR", Instant.now()
-        );
-        fundingOperationRepository.saveAndFlush(funding);
+        createSubmittedFunding(fundingId, customerUserId, customerAccount.getId(), 6000L);
 
         UUID eventId = UUID.randomUUID();
         String json = buildWebhookJson(
@@ -725,10 +676,7 @@ class ProviderWebhookProcessingIntegrationTest extends AbstractIntegrationTest {
         UUID fundingId = UUID.randomUUID();
         UUID providerOpIdA = UUID.randomUUID();
         UUID providerOpIdB = UUID.randomUUID();
-        FundingOperation funding = new FundingOperation(
-                fundingId, customerUserId, customerAccount.getId(), 5000L, "INR", Instant.now()
-        );
-        fundingOperationRepository.saveAndFlush(funding);
+        createSubmittedFunding(fundingId, customerUserId, customerAccount.getId(), 5000L);
 
         UUID eventIdA = UUID.randomUUID();
         String jsonA = buildWebhookJson(eventIdA, 1, "PROVIDER_OPERATION_SUCCEEDED", providerOpIdA, fundingId, "CREDIT", "SUCCEEDED", 5000L);
@@ -764,10 +712,7 @@ class ProviderWebhookProcessingIntegrationTest extends AbstractIntegrationTest {
         UUID fundingId = UUID.randomUUID();
         UUID providerOpIdA = UUID.randomUUID();
         UUID providerOpIdB = UUID.randomUUID();
-        FundingOperation funding = new FundingOperation(
-                fundingId, customerUserId, customerAccount.getId(), 4200L, "INR", Instant.now()
-        );
-        fundingOperationRepository.saveAndFlush(funding);
+        createSubmittedFunding(fundingId, customerUserId, customerAccount.getId(), 4200L);
 
         UUID eventIdA = UUID.randomUUID();
         UUID eventIdB = UUID.randomUUID();
@@ -821,10 +766,7 @@ class ProviderWebhookProcessingIntegrationTest extends AbstractIntegrationTest {
         // Initial customer balance via credit
         UUID fundingId = UUID.randomUUID();
         UUID fundingProviderOpId = UUID.randomUUID();
-        FundingOperation funding = new FundingOperation(
-                fundingId, customerUserId, customerAccount.getId(), 10000L, "INR", Instant.now()
-        );
-        fundingOperationRepository.saveAndFlush(funding);
+        createSubmittedFunding(fundingId, customerUserId, customerAccount.getId(), 10000L);
         sendWebhook(buildWebhookJson(UUID.randomUUID(), 1, "PROVIDER_OPERATION_SUCCEEDED", fundingProviderOpId, fundingId, "CREDIT", "SUCCEEDED", 10000L))
                 .andExpect(status().isOk());
 
@@ -836,11 +778,7 @@ class ProviderWebhookProcessingIntegrationTest extends AbstractIntegrationTest {
 
         UUID payoutId = UUID.randomUUID();
         UUID payoutProviderOpIdA = UUID.randomUUID();
-        Payout payout = new Payout(
-                payoutId, customerUserId, customerAccount.getId(), hold.getId(),
-                3000L, "INR", Instant.now()
-        );
-        payoutRepository.saveAndFlush(payout);
+        createSubmittedPayout(payoutId, customerUserId, customerAccount.getId(), hold.getId(), 3000L);
 
         // Event A settles payout
         UUID eventIdA = UUID.randomUUID();

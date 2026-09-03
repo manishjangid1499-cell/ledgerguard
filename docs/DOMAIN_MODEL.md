@@ -189,3 +189,31 @@ $$\text{Available Balance} = \text{Posted Balance} - \sum \text{Active Holds}$$
   - All incoming events enter `provider_events` strictly as `PENDING` with `processed_at IS NULL`.
   - Allowed status transitions: `PENDING -> APPLIED` or `PENDING -> IGNORED` (both requiring non-null `processed_at`).
   - Terminal statuses and business columns are strictly immutable; `DELETE` is permanently prohibited at the database trigger level (`trg_fn_enforce_provider_events_immutability`).
+
+### Invariant 12: External State Machines & Ambiguous Outcomes (Phase 23)
+
+- **Six-State Lifecycle**: `funding_operations` and `payouts` follow a formal six-state lifecycle enforced by PostgreSQL triggers (`V13`):
+  - `CREATED`: Durable intent record. No provider POST has been attempted. Hold exists on payouts. Expireable.
+  - `PROCESSING`: Provider POST has been claimed and attempted. Outcome is pending. Payout hold is `ACTIVE` and protected from expiration.
+  - `UNKNOWN`: Network outcome is definitively in doubt (transport error, timeout, ambiguous 5xx). Provider may or may not have committed. Payout hold is `ACTIVE` and protected.
+  - `RECONCILIATION_REQUIRED`: Poller exhausted max attempts, conflicting replay received, or provider GET returned a validation mismatch. Requires authoritative external input. Payout hold remains `ACTIVE`.
+  - `SUCCEEDED` (terminal): Authoritative provider confirmation received. Balanced double-entry journal posted exactly once. Payout hold is `CONSUMED`.
+  - `FAILED` (terminal): Definite failure confirmed (pre-acceptance `FAILED` or post-acceptance `FAILED`). No journal posted. Payout hold is `RELEASED` or `EXPIRED`.
+
+- **`UNKNOWN != FAILED` (Money Safety)**: `UNKNOWN` means "we do not know." Treating `UNKNOWN` as `FAILED` would destroy money that the provider may have already committed. Any ambiguous outcome must remain `UNKNOWN` or `RECONCILIATION_REQUIRED` until authoritative external evidence resolves it.
+
+- **At-Most-One Provider POST**: The `CREATED -> PROCESSING` transition is an atomic, pessimistic row-lock claim. Only the thread that claims `CREATED` may make the outbound `PspClient.createOperation(...)` POST. All concurrent replays observing non-`CREATED` status skip the POST and replay the current state.
+
+- **Provider POST & GET Outside DB Transactions**: `PspClient` network calls execute with `TransactionSynchronizationManager.isActualTransactionActive() == false`. No database row locks are held across HTTP boundaries.
+
+- **RFC-9457 ProblemDetail Classification**: `PspClient` uses machine-readable `type` URIs to classify provider errors. Generic HTTP 500 status codes alone are never sufficient to trigger `FAILED` transitions.
+
+- **Durable Poll Metadata**: `provider_poll_attempts` (int), `next_provider_poll_at` (timestamptz), and `unknown_since` (timestamptz) are stored durably in PostgreSQL. No in-memory retry state exists.
+
+- **Exactly 1 Journal on Successful Settlement**: Every `SUCCEEDED` settlement posts exactly 1 `POSTED` journal transaction with exactly 2 balanced journal entries (1 `DEBIT` + 1 `CREDIT`, equal amounts). This invariant holds whether settlement is triggered by synchronous provider response, status poller GET, or late webhook delivery.
+
+- **Payout Hold Protection Under Ambiguity**: Balance hold expiration queries exclude holds linked to payouts in `PROCESSING`, `UNKNOWN`, or `RECONCILIATION_REQUIRED`. These holds cannot be released by background sweepers until the operation reaches a terminal state.
+
+- **Late Webhook Recovery**: `RECONCILIATION_REQUIRED` is not a terminal state. Authoritative signed webhook deliveries (via `ProviderEventProcessingService`) can transition `RECONCILIATION_REQUIRED -> SUCCEEDED` or `RECONCILIATION_REQUIRED -> FAILED` atomically, settling exactly 1 journal (2 entries) or releasing holds without double-posting.
+
+- **Bounded Poll Exhaustion**: After `maxAttempts` provider GETs, the Step 0 exhaustion finalizer transitions any `PROCESSING` or `UNKNOWN` operation to `RECONCILIATION_REQUIRED`. No stranded rows exist.

@@ -223,7 +223,7 @@ class FundingControllerIntegrationTest extends AbstractIntegrationTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.fundingId", notNullValue()))
-                .andExpect(jsonPath("$.status", is("PROCESSING")))
+                .andExpect(jsonPath("$.status", is("UNKNOWN")))
                 .andExpect(jsonPath("$.amountMinor", is("10000")))
                 .andExpect(jsonPath("$.currency", is("INR")))
                 .andExpect(jsonPath("$.providerOperationId", nullValue()))

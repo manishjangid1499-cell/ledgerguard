@@ -215,7 +215,7 @@ To maintain focus on correctness and avoid resume-driven architecture, the follo
 - **Financial Precision Invariants**:
   - Minor-unit amounts and balances are serialized as decimal JSON strings (`"10000"`), preventing precision truncation from JavaScript 64-bit float conversions.
   - Client-side INR human inputs are parsed into minor units using exact string decomposition and `BigInt` (no `parseFloat`, `Math.round`, or floating multiplication).
-  - Minor units are formatted back to display INR using `BigInt` and Indian numbering notation (`₹1,23,456.78`).
+  - Minor units are formatted back to display INR using `BigInt` and Indian numbering notation (`â‚¹1,23,456.78`).
 - **Idempotency Lifecycle in Browser**:
   - Client generates `Idempotency-Key` via `crypto.randomUUID()`.
   - For ambiguous network errors or timeouts on unchanged destination/amount payloads, the form reuses the same idempotency key to prevent double-charging.
@@ -291,3 +291,96 @@ To maintain focus on correctness and avoid resume-driven architecture, the follo
     - On INSERT: requires `processing_status = 'PENDING'` and `processed_at IS NULL`.
     - On UPDATE: only allows `PENDING -> APPLIED` or `PENDING -> IGNORED` with non-null `processed_at`. Business columns and terminal statuses are immutable.
     - On DELETE: strictly rejected.
+
+---
+
+## 16. External State Machines & Ambiguous Outcomes Architecture (Phase 23)
+
+### Six-State External Operation Lifecycle
+
+Both `funding_operations` and `payouts` share a formal six-state machine enforced by PostgreSQL triggers (V13):
+
+```
+CREATED â”€â”€â–º PROCESSING â”€â”€â–º SUCCEEDED (terminal)
+                â”‚
+                â”œâ”€â”€â–º FAILED (terminal)
+                â”‚
+                â”œâ”€â”€â–º UNKNOWN â”€â”€â–º SUCCEEDED (terminal)
+                â”‚        â”‚
+                â”‚        â”œâ”€â”€â–º FAILED (terminal)
+                â”‚        â”‚
+                â”‚        â””â”€â”€â–º RECONCILIATION_REQUIRED â”€â”€â–º SUCCEEDED (terminal)
+                â”‚                                   â”‚
+                â””â”€â”€â–º RECONCILIATION_REQUIRED â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â–º FAILED (terminal)
+```
+
+**Critical Invariant: `UNKNOWN != FAILED`**
+
+`UNKNOWN` represents *"the network outcome is in doubt â€” we do not know if the provider processed this operation."* It must never be treated as a confirmed failure. Transitioning `UNKNOWN -> FAILED` without authoritative provider confirmation would destroy money that the provider may have already committed.
+
+### Atomic Submission Claim (At-Most-One Provider POST)
+
+`FundingSubmissionService.claimSubmission()` and `PayoutSubmissionService.claimSubmission()` each:
+1. Acquire a pessimistic `FOR UPDATE` row lock on the target operation.
+2. Re-read the current status inside the locked transaction.
+3. If status is `CREATED`: transition `CREATED -> PROCESSING`, set `next_provider_poll_at = now`, and return `SubmissionPreparationResult(operation, submissionClaimed=true)`.
+4. If status is any other state: return `SubmissionPreparationResult(operation, submissionClaimed=false)` without modifying any rows.
+5. Commit the claim transaction **before** making the outbound HTTP request.
+
+This guarantees at most ONE outbound `PspClient.createOperation(...)` POST per logical operation, regardless of concurrent replays.
+
+### Network Transaction Boundary
+
+Both `PspClient.createOperation(...)` and `PspClient.getOperationByClientOperationId(...)` execute with **no active PostgreSQL transaction**, verified by `TransactionSynchronizationManager.isActualTransactionActive() == false`. No row locks or DB connections are held across outbound HTTP calls.
+
+### RFC-9457 Provider Error Classification
+
+`PspClient` parses RFC-9457 ProblemDetail `type` URIs to classify provider errors deterministically:
+
+| ProblemDetail Type | HTTP Status | Classification | Operation Outcome |
+|---|---|---|---|
+| `urn:ledgerguard:psp:error:temporary-failure` | 500 | Definite pre-acceptance failure | `PROCESSING -> FAILED`, hold `RELEASED` |
+| `urn:ledgerguard:psp:error:conflicting-replay` | 409 | Conflicting replay | `PROCESSING/UNKNOWN -> RECONCILIATION_REQUIRED` |
+| Absent, unrecognized, or malformed body | 500 | Ambiguous | `PROCESSING -> UNKNOWN`, hold `ACTIVE` |
+| Transport error / connection timeout | â€” | Ambiguous | `PROCESSING -> UNKNOWN`, hold `ACTIVE` |
+
+Generic HTTP 500 alone is **never** sufficient to transition to `FAILED`.
+
+### Durable Status Poller (`ProviderStatusPollingService`)
+
+The background polling service executes a four-phase cycle:
+
+1. **Step 0 â€” Exhaustion Finalizer** (`@Transactional REQUIRES_NEW`): Queries `provider_poll_attempts >= maxAttempts AND next_provider_poll_at <= now AND status IN (PROCESSING, UNKNOWN)`. Transitions eligible rows to `RECONCILIATION_REQUIRED` with `next_provider_poll_at = NULL`.
+2. **Step A â€” Claim Due** (`@Transactional REQUIRES_NEW`): `SELECT ... FOR UPDATE SKIP LOCKED` on due rows (`next_provider_poll_at <= now AND status IN (PROCESSING, UNKNOWN)`), increments `provider_poll_attempts`, advances `next_provider_poll_at = now + retryDelaySeconds`, commits. Exactly 1 outbound GET per claimed item.
+3. **Step B â€” Provider GET** (non-transactional): Calls `PspClient.getOperationByClientOperationId(id)`. Response is validated for field-by-field identity match.
+4. **Step C â€” Apply Outcome** (`@Transactional REQUIRES_NEW`): Re-reads operation under lock. If `SUCCEEDED`: `FundingSettlementService`/`PayoutSettlementService`. If `FAILED`: `FundingFailureService`/`PayoutFailureService`. If 404 or transport error: remains until attempt exhaustion triggers Step 0.
+
+No in-memory queues, sleeping worker threads, or retry frameworks (`Resilience4j`, `Spring Retry`) are used. All poll metadata is stored durably in PostgreSQL.
+
+### Payout Balance Hold Protection
+
+Hold expiration queries explicitly exclude holds linked to payouts in `PROCESSING`, `UNKNOWN`, or `RECONCILIATION_REQUIRED` status. In-doubt payout funds cannot be released by background sweepers.
+
+`CREATED` payouts are intentionally expirable: if the balance hold expires before the first provider submission attempt, the payout transitions `CREATED -> FAILED` locally with hold status `EXPIRED` and 0 journal entries.
+
+### V13 Flyway Migration
+
+- Adds `provider_poll_attempts INT NOT NULL DEFAULT 0`, `next_provider_poll_at TIMESTAMPTZ`, and `unknown_since TIMESTAMPTZ` to `funding_operations` and `payouts`.
+- Immediately backfills existing Phase 22 `PROCESSING` rows with `next_provider_poll_at = CURRENT_TIMESTAMP`.
+- Drops and replaces V10/V11 CHECK constraints to include `UNKNOWN` and `RECONCILIATION_REQUIRED` statuses.
+- Upgrades lifecycle triggers with new transition rules, metadata invariants, and payout hold protection coverage.
+- No PostgreSQL enum types are introduced. Status columns remain `VARCHAR` enforced by CHECK constraints.
+
+### HTTP Response Codes for External Operations
+
+| Condition | HTTP Status |
+|---|---|
+| Synchronous settlement confirmed (`SUCCEEDED`) | 201 Created (funding) / 202 Accepted (payout) |
+| Provider in progress (`PROCESSING`) | 202 Accepted |
+| Ambiguous timeout/error (`UNKNOWN`) | 202 Accepted |
+| Definite pre-acceptance failure (`FAILED`) | 202 Accepted (failure is internal; API acknowledges request) |
+| Conflicting replay (`RECONCILIATION_REQUIRED`) | 409 Conflict |
+
+### RECONCILIATION_REQUIRED Semantics
+
+`RECONCILIATION_REQUIRED` is a durable lifecycle state indicating that LedgerGuard has exhausted its polling capacity and requires authoritative external input (reconciliation engine, human operator, or late webhook) to determine the true outcome. It is NOT a terminal state. Both `RECONCILIATION_REQUIRED -> SUCCEEDED` and `RECONCILIATION_REQUIRED -> FAILED` are valid transitions via late webhooks or Phase 24 reconciliation.

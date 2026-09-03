@@ -1,0 +1,50 @@
+warning: in the working copy of 'backend/ledgerguard-api/src/main/java/com/ledgerguard/funding/application/FundingService.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ledgerguard-api/src/main/java/com/ledgerguard/funding/domain/FundingOperation.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ledgerguard-api/src/main/java/com/ledgerguard/funding/domain/FundingStatus.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ledgerguard-api/src/main/java/com/ledgerguard/funding/infrastructure/FundingOperationRepository.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ledgerguard-api/src/main/java/com/ledgerguard/funding/infrastructure/PspClient.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ledgerguard-api/src/main/java/com/ledgerguard/funding/infrastructure/PspProtocolException.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ledgerguard-api/src/main/java/com/ledgerguard/payout/application/PayoutFailureService.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ledgerguard-api/src/main/java/com/ledgerguard/payout/application/PayoutService.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ledgerguard-api/src/main/java/com/ledgerguard/payout/domain/Payout.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ledgerguard-api/src/main/java/com/ledgerguard/payout/domain/PayoutStatus.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ledgerguard-api/src/main/java/com/ledgerguard/payout/infrastructure/PayoutRepository.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ledgerguard-api/src/main/java/com/ledgerguard/provider/application/ProviderEventProcessingService.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ledgerguard-api/src/test/java/com/ledgerguard/AbstractIntegrationTest.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ledgerguard-api/src/test/java/com/ledgerguard/funding/FundingDatabaseConstraintTest.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ledgerguard-api/src/test/java/com/ledgerguard/payout/PayoutDatabaseConstraintTest.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ledgerguard-api/src/test/java/com/ledgerguard/provider/application/ProviderWebhookProcessingIntegrationTest.java', LF will be replaced by CRLF the next time Git touches it
+README.md
+backend/ledgerguard-api/src/main/java/com/ledgerguard/funding/api/FundingController.java
+backend/ledgerguard-api/src/main/java/com/ledgerguard/funding/application/FundingService.java
+backend/ledgerguard-api/src/main/java/com/ledgerguard/funding/application/FundingSettlementService.java
+backend/ledgerguard-api/src/main/java/com/ledgerguard/funding/domain/FundingOperation.java
+backend/ledgerguard-api/src/main/java/com/ledgerguard/funding/domain/FundingStatus.java
+backend/ledgerguard-api/src/main/java/com/ledgerguard/funding/infrastructure/FundingOperationRepository.java
+backend/ledgerguard-api/src/main/java/com/ledgerguard/funding/infrastructure/PspClient.java
+backend/ledgerguard-api/src/main/java/com/ledgerguard/funding/infrastructure/PspProtocolException.java
+backend/ledgerguard-api/src/main/java/com/ledgerguard/hold/infrastructure/BalanceHoldRepository.java
+backend/ledgerguard-api/src/main/java/com/ledgerguard/payout/api/PayoutController.java
+backend/ledgerguard-api/src/main/java/com/ledgerguard/payout/application/PayoutFailureService.java
+backend/ledgerguard-api/src/main/java/com/ledgerguard/payout/application/PayoutService.java
+backend/ledgerguard-api/src/main/java/com/ledgerguard/payout/application/PayoutSettlementService.java
+backend/ledgerguard-api/src/main/java/com/ledgerguard/payout/domain/Payout.java
+backend/ledgerguard-api/src/main/java/com/ledgerguard/payout/domain/PayoutStatus.java
+backend/ledgerguard-api/src/main/java/com/ledgerguard/payout/infrastructure/PayoutRepository.java
+backend/ledgerguard-api/src/main/java/com/ledgerguard/provider/application/ProviderEventProcessingService.java
+backend/ledgerguard-api/src/main/resources/application.yml
+backend/ledgerguard-api/src/test/java/com/ledgerguard/AbstractIntegrationTest.java
+backend/ledgerguard-api/src/test/java/com/ledgerguard/funding/FundingDatabaseConstraintTest.java
+backend/ledgerguard-api/src/test/java/com/ledgerguard/funding/api/FundingControllerIntegrationTest.java
+backend/ledgerguard-api/src/test/java/com/ledgerguard/funding/application/FundingServiceIntegrationTest.java
+backend/ledgerguard-api/src/test/java/com/ledgerguard/hold/application/HoldServiceIntegrationTest.java
+backend/ledgerguard-api/src/test/java/com/ledgerguard/payout/PayoutDatabaseConstraintTest.java
+backend/ledgerguard-api/src/test/java/com/ledgerguard/payout/application/PayoutServiceIntegrationTest.java
+backend/ledgerguard-api/src/test/java/com/ledgerguard/provider/application/ProviderRealCallbackE2EIntegrationTest.java
+backend/ledgerguard-api/src/test/java/com/ledgerguard/provider/application/ProviderWebhookProcessingIntegrationTest.java
+docs/API.md
+docs/ARCHITECTURE.md
+docs/DOMAIN_MODEL.md
+docs/FAILURE_MODEL.md
+docs/STATUS.md
+docs/TESTING.md

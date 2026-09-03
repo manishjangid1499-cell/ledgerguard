@@ -1,5 +1,6 @@
 package com.ledgerguard.provider.application;
 
+import com.ledgerguard.funding.application.FundingFailureService;
 import com.ledgerguard.funding.application.FundingSettlementService;
 import com.ledgerguard.funding.domain.FundingOperation;
 import com.ledgerguard.funding.domain.FundingStatus;
@@ -32,24 +33,30 @@ public class ProviderEventProcessingService {
     private final ProviderEventRepository providerEventRepository;
     private final FundingOperationRepository fundingOperationRepository;
     private final FundingSettlementService fundingSettlementService;
+    private final FundingFailureService fundingFailureService;
     private final PayoutRepository payoutRepository;
     private final PayoutSettlementService payoutSettlementService;
     private final PayoutFailureService payoutFailureService;
+    private final ProviderConflictTransitionService providerConflictTransitionService;
 
     public ProviderEventProcessingService(
             ProviderEventRepository providerEventRepository,
             FundingOperationRepository fundingOperationRepository,
             FundingSettlementService fundingSettlementService,
+            FundingFailureService fundingFailureService,
             PayoutRepository payoutRepository,
             PayoutSettlementService payoutSettlementService,
-            PayoutFailureService payoutFailureService
+            PayoutFailureService payoutFailureService,
+            ProviderConflictTransitionService providerConflictTransitionService
     ) {
         this.providerEventRepository = providerEventRepository;
         this.fundingOperationRepository = fundingOperationRepository;
         this.fundingSettlementService = fundingSettlementService;
+        this.fundingFailureService = fundingFailureService;
         this.payoutRepository = payoutRepository;
         this.payoutSettlementService = payoutSettlementService;
         this.payoutFailureService = payoutFailureService;
+        this.providerConflictTransitionService = providerConflictTransitionService;
     }
 
     public record ProcessingOutcome(
@@ -101,31 +108,24 @@ public class ProviderEventProcessingService {
                 continue;
             }
 
-            // event is PENDING at expectedSequence
-            // Step 1: Pre-settlement local business validation
-            boolean missingLocal = validateLocalBusinessIdentity(event);
-            if (missingLocal) {
-                log.info("Local business operation missing for clientOperationId {}. Halting processing.", event.getClientOperationId());
+            // event is PENDING
+            boolean missing = validateLocalBusinessIdentity(event);
+            if (missing) {
+                log.warn("Local business operation missing for event {}. Halting processing.", event.getEventId());
                 localOperationMissing = true;
                 break;
             }
 
-            // Step 2: Check provider state progression / regression guards
-            boolean isRegression = isStatusRegression(lastKnownProviderStatus, event.getProviderStatus());
-
-            Instant now = Instant.now();
-            if (isRegression) {
-                log.warn("Provider state regression/conflict for providerOpId {}: lastKnown={}, incoming={}. Marking IGNORED.",
-                        providerOperationId, lastKnownProviderStatus, event.getProviderStatus());
-                event.markIgnored(now);
+            if (isStatusRegression(lastKnownProviderStatus, event.getProviderStatus())) {
+                log.warn("Illegal status regression detected for event {}: lastKnown={}, incoming={}. Marking IGNORED.",
+                        event.getEventId(), lastKnownProviderStatus, event.getProviderStatus());
+                event.markIgnored(Instant.now());
                 providerEventRepository.saveAndFlush(event);
                 ignoredCount++;
                 expectedSequence++;
-                // IGNORED row does not update lastKnownProviderStatus
             } else {
-                // Valid progression (including same-terminal: SUCCEEDED->SUCCEEDED or FAILED->FAILED)
                 applyBusinessSideEffects(event);
-                event.markApplied(now);
+                event.markApplied(Instant.now());
                 providerEventRepository.saveAndFlush(event);
                 appliedCount++;
                 lastKnownProviderStatus = event.getProviderStatus();
@@ -144,12 +144,15 @@ public class ProviderEventProcessingService {
             }
             FundingOperation funding = fundingOpt.get();
             if (funding.getAmountMinor() != event.getAmountMinor()) {
+                providerConflictTransitionService.transitionFundingToReconciliationRequired(funding.getId());
                 throw new ProviderEventConflictException("Funding amount mismatch: local=" + funding.getAmountMinor() + ", event=" + event.getAmountMinor());
             }
             if (!funding.getCurrency().equalsIgnoreCase(event.getCurrency())) {
+                providerConflictTransitionService.transitionFundingToReconciliationRequired(funding.getId());
                 throw new ProviderEventConflictException("Funding currency mismatch: local=" + funding.getCurrency() + ", event=" + event.getCurrency());
             }
             if (funding.getProviderOperationId() != null && !funding.getProviderOperationId().equals(event.getProviderOperationId())) {
+                providerConflictTransitionService.transitionFundingToReconciliationRequired(funding.getId());
                 throw new ProviderEventConflictException("Funding providerOperationId mismatch: local=" + funding.getProviderOperationId() + ", event=" + event.getProviderOperationId());
             }
             return false;
@@ -160,12 +163,15 @@ public class ProviderEventProcessingService {
             }
             Payout payout = payoutOpt.get();
             if (payout.getAmountMinor() != event.getAmountMinor()) {
+                providerConflictTransitionService.transitionPayoutToReconciliationRequired(payout.getId());
                 throw new ProviderEventConflictException("Payout amount mismatch: local=" + payout.getAmountMinor() + ", event=" + event.getAmountMinor());
             }
             if (!payout.getCurrency().equalsIgnoreCase(event.getCurrency())) {
+                providerConflictTransitionService.transitionPayoutToReconciliationRequired(payout.getId());
                 throw new ProviderEventConflictException("Payout currency mismatch: local=" + payout.getCurrency() + ", event=" + event.getCurrency());
             }
             if (payout.getProviderOperationId() != null && !payout.getProviderOperationId().equals(event.getProviderOperationId())) {
+                providerConflictTransitionService.transitionPayoutToReconciliationRequired(payout.getId());
                 throw new ProviderEventConflictException("Payout providerOperationId mismatch: local=" + payout.getProviderOperationId() + ", event=" + event.getProviderOperationId());
             }
             return false;
@@ -236,14 +242,29 @@ public class ProviderEventProcessingService {
         if ("FAILED".equalsIgnoreCase(status)) {
             if ("DEBIT".equalsIgnoreCase(event.getOperationType())) {
                 Payout payout = payoutRepository.findById(event.getClientOperationId()).orElseThrow();
-                if (payout.getStatus() == PayoutStatus.PROCESSING) {
-                    payoutFailureService.failPayout(payout.getId());
+                if (payout.getStatus() == PayoutStatus.PROCESSING
+                        || payout.getStatus() == PayoutStatus.UNKNOWN
+                        || payout.getStatus() == PayoutStatus.RECONCILIATION_REQUIRED) {
+                    payoutFailureService.failPayout(payout.getId(), event.getProviderOperationId(), event.getOccurredAt());
+                } else if (payout.getStatus() == PayoutStatus.SUCCEEDED) {
+                    throw new ProviderEventConflictException("Payout " + payout.getId() + " is already SUCCEEDED and cannot be failed by incoming event");
                 } else if (payout.getProviderOperationId() != null && !payout.getProviderOperationId().equals(event.getProviderOperationId())) {
                     throw new ProviderEventConflictException("Conflicting providerOperationId for terminal payout: expected="
                             + payout.getProviderOperationId() + ", incoming=" + event.getProviderOperationId());
                 }
+            } else if ("CREDIT".equalsIgnoreCase(event.getOperationType())) {
+                FundingOperation funding = fundingOperationRepository.findById(event.getClientOperationId()).orElseThrow();
+                if (funding.getStatus() == FundingStatus.PROCESSING
+                        || funding.getStatus() == FundingStatus.UNKNOWN
+                        || funding.getStatus() == FundingStatus.RECONCILIATION_REQUIRED) {
+                    fundingFailureService.failFunding(funding.getId(), event.getProviderOperationId(), event.getOccurredAt());
+                } else if (funding.getStatus() == FundingStatus.SUCCEEDED) {
+                    throw new ProviderEventConflictException("Funding " + funding.getId() + " is already SUCCEEDED and cannot be failed by incoming event");
+                } else if (funding.getProviderOperationId() != null && !funding.getProviderOperationId().equals(event.getProviderOperationId())) {
+                    throw new ProviderEventConflictException("Conflicting providerOperationId for terminal funding: expected="
+                            + funding.getProviderOperationId() + ", incoming=" + event.getProviderOperationId());
+                }
             }
-            // For CREDIT + FAILED: leave local Funding conservatively unchanged (observation only in Phase 22)
         }
     }
 }

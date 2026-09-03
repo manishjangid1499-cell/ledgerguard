@@ -36,6 +36,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
@@ -310,8 +311,8 @@ class PayoutServiceIntegrationTest extends AbstractIntegrationTest {
     @DisplayName("Definite provider failure (TEMPORARY_500) releases hold, marks Payout FAILED, and posts 0 journals")
     void definiteProviderFailure500ReleasesHoldAndFailsPayout() {
         currentHandler = exchange -> {
-            byte[] errBytes = "{\"error\": \"Temporary simulated provider outage\"}".getBytes();
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            byte[] errBytes = "{\"type\": \"urn:ledgerguard:psp:error:temporary-failure\", \"title\": \"Temporary simulated provider outage\", \"status\": 500}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/problem+json");
             exchange.sendResponseHeaders(500, errBytes.length);
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(errBytes);
@@ -342,7 +343,7 @@ class PayoutServiceIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("TIMEOUT_AFTER_SUCCESS preserves PROCESSING status, keeps hold ACTIVE, and suppresses blind replay PSP calls")
+    @DisplayName("TIMEOUT_AFTER_SUCCESS enters UNKNOWN status, keeps hold ACTIVE, and suppresses blind replay PSP calls")
     void timeoutAfterSuccessPreservesProcessingAndActiveHold() {
         AtomicInteger pspCallCount = new AtomicInteger(0);
         currentHandler = exchange -> {
@@ -356,7 +357,7 @@ class PayoutServiceIntegrationTest extends AbstractIntegrationTest {
         CreatePayoutCommand command = new CreatePayoutCommand(customerUserId, idempKey, Money.inr(3000));
         PayoutResult result = payoutService.requestPayout(command);
 
-        assertThat(result.status()).isEqualTo(PayoutStatus.PROCESSING);
+        assertThat(result.status()).isEqualTo(PayoutStatus.UNKNOWN);
         assertThat(result.completedAt()).isNull();
         assertThat(pspCallCount.get()).isEqualTo(1);
 
@@ -370,9 +371,9 @@ class PayoutServiceIntegrationTest extends AbstractIntegrationTest {
         long activeHeld = balanceHoldRepository.sumActiveAmountByLedgerAccountId(customerAccount.getId());
         assertThat(activeHeld).isEqualTo(3000L);
 
-        // Same-key replay returns existing PROCESSING without making a second PSP call
+        // Same-key replay returns existing UNKNOWN without making a second PSP call
         PayoutResult replayResult = payoutService.requestPayout(command);
-        assertThat(replayResult.status()).isEqualTo(PayoutStatus.PROCESSING);
+        assertThat(replayResult.status()).isEqualTo(PayoutStatus.UNKNOWN);
         assertThat(replayResult.replayed()).isTrue();
         assertThat(pspCallCount.get()).isEqualTo(1); // Still 1! No blind DEBIT replay
     }
@@ -393,11 +394,15 @@ class PayoutServiceIntegrationTest extends AbstractIntegrationTest {
                 holdId, customerAccount.getId(), past, created, created
         );
 
-        // Insert PROCESSING payout referencing this hold
+        // Insert CREATED payout and transition to PROCESSING
         jdbcTemplate.update(
                 "INSERT INTO payouts (id, initiated_by_user_id, source_ledger_account_id, balance_hold_id, amount_minor, currency, status, created_at) " +
-                        "VALUES (?, ?, ?, ?, 3000, 'INR', 'PROCESSING', ?)",
+                        "VALUES (?, ?, ?, ?, 3000, 'INR', 'CREATED', ?)",
                 payoutId, customerUserId, customerAccount.getId(), holdId, created
+        );
+        jdbcTemplate.update(
+                "UPDATE payouts SET status = 'PROCESSING', next_provider_poll_at = ? WHERE id = ?",
+                created, payoutId
         );
 
         // Also insert an unrelated generic hold with expires_at in the past
@@ -452,13 +457,13 @@ class PayoutServiceIntegrationTest extends AbstractIntegrationTest {
         CreatePayoutCommand command = new CreatePayoutCommand(customerUserId, "payout-rollback-" + UUID.randomUUID(), Money.inr(3000));
         PayoutResult result = payoutService.requestPayout(command);
 
-        // PayoutService catches the settlement failure and safely preserves PROCESSING status (returning 202/PROCESSING)
-        assertThat(result.status()).isEqualTo(PayoutStatus.PROCESSING);
+        // PayoutService catches the settlement failure and safely marks UNKNOWN
+        assertThat(result.status()).isEqualTo(PayoutStatus.UNKNOWN);
         assertThat(result.completedAt()).isNull();
 
-        // 1. Payout.status = PROCESSING
+        // 1. Payout.status = UNKNOWN
         Payout payout = payoutRepository.findById(result.payoutId()).orElseThrow();
-        assertThat(payout.getStatus()).isEqualTo(PayoutStatus.PROCESSING);
+        assertThat(payout.getStatus()).isEqualTo(PayoutStatus.UNKNOWN);
 
         // 2. BalanceHold.status = ACTIVE
         BalanceHold hold = balanceHoldRepository.findById(payout.getBalanceHoldId()).orElseThrow();
@@ -506,8 +511,12 @@ class PayoutServiceIntegrationTest extends AbstractIntegrationTest {
         );
         jdbcTemplate.update(
                 "INSERT INTO payouts (id, initiated_by_user_id, source_ledger_account_id, balance_hold_id, amount_minor, currency, status, created_at) " +
-                        "VALUES (?, ?, ?, ?, 3000, 'INR', 'PROCESSING', ?)",
+                        "VALUES (?, ?, ?, ?, 3000, 'INR', 'CREATED', ?)",
                 payoutId, customerUserId, customerAccount.getId(), holdId, now
+        );
+        jdbcTemplate.update(
+                "UPDATE payouts SET status = 'PROCESSING', next_provider_poll_at = ? WHERE id = ?",
+                now, payoutId
         );
 
         UUID providerOpId = UUID.randomUUID();
@@ -683,8 +692,12 @@ class PayoutServiceIntegrationTest extends AbstractIntegrationTest {
         );
         jdbcTemplate.update(
                 "INSERT INTO payouts (id, initiated_by_user_id, source_ledger_account_id, balance_hold_id, amount_minor, currency, status, created_at) " +
-                        "VALUES (?, ?, ?, ?, 3000, 'INR', 'PROCESSING', ?)",
+                        "VALUES (?, ?, ?, ?, 3000, 'INR', 'CREATED', ?)",
                 payoutId, customerUserId, customerAccount.getId(), holdId, created
+        );
+        jdbcTemplate.update(
+                "UPDATE payouts SET status = 'PROCESSING', next_provider_poll_at = ? WHERE id = ?",
+                created, payoutId
         );
 
         int threadCount = 4;
@@ -745,8 +758,8 @@ class PayoutServiceIntegrationTest extends AbstractIntegrationTest {
         AtomicInteger pspCallCount = new AtomicInteger(0);
         currentHandler = exchange -> {
             pspCallCount.incrementAndGet();
-            byte[] errBytes = "{\"error\": \"Definite failure simulated\"}".getBytes();
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            byte[] errBytes = "{\"type\": \"urn:ledgerguard:psp:error:temporary-failure\", \"title\": \"Definite failure simulated\", \"status\": 500}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/problem+json");
             exchange.sendResponseHeaders(500, errBytes.length);
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(errBytes);
