@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Awaiting Phase 24
-- **Status:** Phase 23 Complete (Verified)
+- **Current Phase:** Phase 24 Complete (Verified)
+- **Status:** Phase 24 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -29,18 +29,17 @@
   - **Phase 21 — External Payouts & Balance Holds** (Completed: 2026-09-02)
   - **Phase 22 — PSP Webhook Signatures, Deduplication & Ordering** (Completed: 2026-09-02)
   - **Phase 23 — External State Machines & Ambiguous Outcomes** (Completed: 2026-09-02)
-- **Current Work:** Phase 23 completed. Implemented external state machines and status recovery for in-doubt operations:
-  - V13 Flyway migration adding `UNKNOWN` and `RECONCILIATION_REQUIRED` statuses, `provider_poll_attempts`, `next_provider_poll_at`, and `unknown_since` columns with immediate backfill for historical `PROCESSING` rows.
-  - Upgraded PostgreSQL lifecycle triggers enforcing `CREATED` insert only, valid transitions, terminal immutability, non-null provider operation IDs, and balance hold protection for `PROCESSING`, `UNKNOWN`, and `RECONCILIATION_REQUIRED` payouts.
-  - At-most-one outbound provider POST enforced by `SubmissionPreparationResult` and pessimistic row locks in `FundingSubmissionService` and `PayoutSubmissionService`.
-  - Network boundary isolation: provider HTTP operations executed outside DB transactions.
-  - Machine-readable RFC-9457 error classification in `PspClient`: definite pre-acceptance rejection (`FAILED`, hold `RELEASED`), conflicting replay (`RECONCILIATION_REQUIRED`), ambiguous HTTP/transport errors (`UNKNOWN`, hold `ACTIVE`).
-  - Durable PostgreSQL status polling recovery in `ProviderStatusPollingService` with `SKIP LOCKED` batch claiming, configurable retry delay, and Step 0 crash-safe exhaustion finalizer.
-  - Durable conflict transition service (`ProviderConflictTransitionService`) transitioning in-doubt rows to `RECONCILIATION_REQUIRED` before returning HTTP 409.
-  - Total test suite: 450 tests in `ledgerguard-api` (including 20 dedicated lifecycle tests in `com.ledgerguard.lifecycle.*`), 17 in `psp-simulator`, 18 in `notification-worker`, 1 in `failure-lab` (total 486 workspace tests, 100% passing).
-- **Next Phase:** Phase 24 — Core Reconciliation Engine
-- **Last Verified:** 2026-09-02
-- **Git Branch:** `feat/phase-23-external-state-machines` (workspace uncommitted)
+  - **Phase 24 — Core Reconciliation Engine** (Completed: 2026-09-04)
+- **Current Work:** Phase 24 completed. Implemented three-level automated detection-only reconciliation engine:
+  - V14 Flyway migration adding `reconciliation_runs` and `reconciliation_items` tables with database triggers enforcing state machine transitions, lock escalation serialization (`FOR UPDATE` finalization vs `FOR SHARE` item insertion), item immutability, and cross-column constraint matrices.
+  - Level 1 (`JournalBalanceChecker`): Unbounded `NUMERIC` aggregation scanning `POSTED` journals via `LEFT JOIN` detecting unbalanced debits/credits and zero-entry or malformed transactions.
+  - Level 2 (`SnapshotConsistencyChecker`): Single-statement MVCC reconstruction excluding `DRAFT` journals via derived table subquery, matching reconstructed posted balance against `ledger_balance_snapshots`.
+  - Level 3 (`ProviderSettlementChecker`): Strict 3-phase execution (`collectIds` -> network GET outside DB transaction -> `findByIdForUpdate` re-read in `REQUIRES_NEW`), classifying operations across the full terminal and in-doubt matrix into `DISCREPANCY` and `UNRESOLVED`.
+  - Finalization & Orchestration (`ReconciliationEngine`, `ReconciliationRunFinalizationService`): Two-phase locking concurrency model, terminal counter derivation, scheduled Spring cron (`0 0 2 * * *`).
+  - Total test suite: 492 tests in `ledgerguard-api` (including 42 dedicated reconciliation tests across V14, lifecycle, Level 1, Level 2, Level 3, and full engine integration), 17 in `psp-simulator`, 18 in `notification-worker`, 1 in `failure-lab` (total 528 workspace tests, 100% passing).
+- **Next Phase:** Phase 25 — Reconciliation Discrepancy Workflows & Manual Intervention UI
+- **Last Verified:** 2026-09-04
+- **Git Branch:** `feat/phase-24-core-reconciliation` (workspace uncommitted)
 
 ---
 

@@ -54,6 +54,8 @@ ledgerguard:
       max-attempts: ${LEDGERGUARD_PSP_POLLING_MAX_ATTEMPTS:10}
       retry-delay-seconds: ${LEDGERGUARD_PSP_POLLING_RETRY_DELAY_SECONDS:5}
       batch-size: ${LEDGERGUARD_PSP_POLLING_BATCH_SIZE:10}
+  reconciliation:
+    cron: ${LEDGERGUARD_RECONCILIATION_CRON:0 0 2 * * *}
   security:
     jwt:
       issuer: ledgerguard

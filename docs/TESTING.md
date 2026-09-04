@@ -268,3 +268,30 @@ Phase 23 introduces a dedicated lifecycle test suite in `ledgerguard-api` under 
 - **Workspace total: 486 tests, 0 failures, 0 errors, 0 skipped**
 
 Verified by `.\mvnw.cmd clean verify` (2026-09-02).
+
+---
+
+## 11. Phase 24: Core Reconciliation Engine Testing Strategy
+
+Phase 24 introduces a dedicated test suite in `ledgerguard-api` under `com.ledgerguard.reconciliation` (6 test classes, 42 test methods). All tests execute against PostgreSQL 17-alpine Testcontainers.
+
+### Test Class Registry
+
+| Test Class | Methods | Coverage Area |
+| :--- | :---: | :--- |
+| `ReconciliationV14MigrationTest` | 13 | V14 triggers: valid runs, terminal immutability, item immutability, lock escalation, cross-column CHECK constraints |
+| `ReconciliationRunLifecycleTest` | 4 | Run completion, failure, terminal counter derivation, concurrent finalization serialization |
+| `JournalBalanceCheckerIntegrationTest` | 6 | Level 1: healthy journals, zero-entry detection (LEFT JOIN), unbalanced journals, test-only trigger disable/enable, no-repair proof |
+| `SnapshotConsistencyCheckerIntegrationTest` | 4 | Level 2: healthy snapshots, DRAFT entry exclusion, snapshot balance corruption detection, missing snapshot detection, no-repair proof |
+| `ProviderSettlementCheckerIntegrationTest` | 12 | Level 3: healthy matches, status mismatches, amount/currency/id mismatches, NOT_FOUND handling, in-doubt processing, provider unavailable transport/protocol errors |
+| `ReconciliationEngineIntegrationTest` | 3 | End-to-end: scheduled vs on-demand runs, 3-level integrated corruption detection with no financial repair, and failure recovery |
+
+### Phase 24 Test Count
+
+- `ledgerguard-api`: **492 tests, 0 failures, 0 errors, 0 skipped** (+42 tests from Phase 23)
+- `psp-simulator`: **17 tests**
+- `notification-worker`: **18 tests**
+- `failure-lab`: **1 test**
+- **Workspace total: 528 tests, 0 failures, 0 errors, 0 skipped**
+
+Verified by `.\mvnw.cmd clean verify` (2026-09-04).

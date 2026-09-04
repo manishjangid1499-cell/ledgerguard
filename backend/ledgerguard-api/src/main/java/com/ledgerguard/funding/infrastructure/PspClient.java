@@ -141,13 +141,19 @@ public class PspClient {
                     })
                     .toEntity(PspOperationResponse.class);
 
-            if (response.getStatusCode().value() == 404 || response.getBody() == null) {
+            if (response.getStatusCode().value() == 404) {
                 return Optional.empty();
+            }
+            if (response.getBody() == null) {
+                throw new PspProtocolException("PSP GET response body was null for status " + response.getStatusCode().value(), response.getStatusCode().value());
             }
             return Optional.of(response.getBody());
         } catch (ResourceAccessException ex) {
             log.warn("PSP transport error during GET for clientOperationId {}: {}", clientOperationId, ex.getMessage());
             throw new PspTransportException("Transport error during PSP GET: " + ex.getMessage(), ex);
+        } catch (org.springframework.http.converter.HttpMessageConversionException ex) {
+            log.warn("PSP decoding error during GET for clientOperationId {}: {}", clientOperationId, ex.getMessage());
+            throw new PspProtocolException("Failed to decode PSP GET response body: " + ex.getMessage(), ex, 200);
         } catch (RestClientResponseException ex) {
             if (ex.getStatusCode().value() == 404) {
                 return Optional.empty();

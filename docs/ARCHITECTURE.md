@@ -384,3 +384,81 @@ Hold expiration queries explicitly exclude holds linked to payouts in `PROCESSIN
 ### RECONCILIATION_REQUIRED Semantics
 
 `RECONCILIATION_REQUIRED` is a durable lifecycle state indicating that LedgerGuard has exhausted its polling capacity and requires authoritative external input (reconciliation engine, human operator, or late webhook) to determine the true outcome. It is NOT a terminal state. Both `RECONCILIATION_REQUIRED -> SUCCEEDED` and `RECONCILIATION_REQUIRED -> FAILED` are valid transitions via late webhooks or Phase 24 reconciliation.
+
+---
+
+## 17. Core Reconciliation Engine Architecture (Phase 24)
+
+### Purpose & Detection-Only Principle
+
+Phase 24 implements an automated three-level detection engine that verifies the integrity of the ledger across internal double-entry records, derived balance snapshots, and external provider settlement state.
+
+**DETECTION ONLY**: The reconciliation engine **never** repairs, modifies, or mutates any financial or business entities (`journal_transactions`, `journal_entries`, `ledger_accounts`, `ledger_balance_snapshots`, `funding_operations`, `payouts`, `balance_holds`). All discovered problems are recorded as immutable `reconciliation_items` attached to a `reconciliation_run`.
+
+### Three Reconciliation Levels
+
+```
++-------------------------------------------------------------------------+
+|                       Reconciliation Engine Run                         |
++-------------------------------------------------------------------------+
+       |
+       +---> Level 1: Journal Balance Checker
+       |     * Scan POSTED journals with LEFT JOIN journal_entries
+       |     * Unbounded NUMERIC debits vs credits sum
+       |     * Detects UNBALANCED_JOURNAL, MALFORMED_JOURNAL (e.g. zero entries)
+       |
+       +---> Level 2: Snapshot Consistency Checker
+       |     * Single-statement MVCC reconstruction from POSTED journal history
+       |     * Excludes DRAFT entries via derived subquery
+       |     * Matches against ledger_balance_snapshots
+       |     * Detects SNAPSHOT_MISMATCH, SNAPSHOT_MISSING
+       |
+       +---> Level 3: Provider Settlement Checker
+             * Scans SUCCEEDED, FAILED, PROCESSING, UNKNOWN, RECONCILIATION_REQUIRED
+             * Phase A: collect IDs
+             * Phase B: network GET outside DB transaction
+             * Phase C: re-read under FOR UPDATE in REQUIRES_NEW, classify, persist
+             * Classifies into DISCREPANCY vs UNRESOLVED
+```
+
+### Concurrency & Two-Phase Locking (2PL) Model
+
+To prevent discrepancy items from being inserted into a run after it has been finalized:
+1. `trg_recon_runs_lifecycle`:
+   - Validates state transitions (`RUNNING -> COMPLETED`, `RUNNING -> FAILED`).
+   - Terminal runs are immutable (no updates to status, completed_at, or counters once finalized).
+2. `trg_recon_items_immutability`:
+   - Enforces append-only semantics (no UPDATE or DELETE).
+   - On INSERT, acquires a `FOR SHARE` row lock on `reconciliation_runs` for the parent run.
+   - Verifies the parent run status is `RUNNING`.
+3. `ReconciliationRunFinalizationService`:
+   - In a `REQUIRES_NEW` transaction, executes `SELECT ... FROM reconciliation_runs WHERE id = ? FOR UPDATE`.
+   - The exclusive `FOR UPDATE` lock serializes with any concurrent item inserts holding `FOR SHARE`.
+   - Counts items while holding the lock: `discrepancy_count = COUNT(DISCREPANCY)`, `unresolved_count = COUNT(UNRESOLVED)`.
+   - Updates run to `COMPLETED` (or `FAILED`) with exact derived counts and commits.
+   - Once committed, subsequent item inserts fail the trigger check because the run is no longer `RUNNING`.
+
+### V14 Flyway Migration Schema
+
+- `reconciliation_runs`:
+  - `id UUID PRIMARY KEY`
+  - `status VARCHAR(32) NOT NULL` (`RUNNING`, `COMPLETED`, `FAILED`)
+  - `trigger_source VARCHAR(32) NOT NULL` (`SCHEDULED`, `ON_DEMAND`)
+  - `started_at TIMESTAMPTZ NOT NULL`
+  - `completed_at TIMESTAMPTZ` (NULL while RUNNING, non-null on terminal)
+  - `journals_checked BIGINT`, `accounts_checked BIGINT`, `operations_checked BIGINT`
+  - `discrepancy_count BIGINT`, `unresolved_count BIGINT`
+  - `failure_reason TEXT`
+- `reconciliation_items`:
+  - `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`
+  - `reconciliation_run_id UUID NOT NULL REFERENCES reconciliation_runs(id)`
+  - `classification VARCHAR(32) NOT NULL` (`DISCREPANCY`, `UNRESOLVED`)
+  - `level VARCHAR(32) NOT NULL` (`JOURNAL_BALANCE`, `SNAPSHOT_CONSISTENCY`, `PROVIDER_SETTLEMENT`)
+  - `problem_type VARCHAR(64) NOT NULL`
+  - `entity_type VARCHAR(64) NOT NULL`
+  - `entity_id UUID NOT NULL`
+  - `expected_value NUMERIC(38,0)`, `actual_value NUMERIC(38,0)`
+  - `observed_local_status VARCHAR(32)`, `provider_status VARCHAR(32)`
+  - `description TEXT NOT NULL`
+  - `created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP`
+  - Cross-column CHECK constraints validate level-specific problem types, classification mapping, and mandatory fields.

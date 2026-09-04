@@ -217,3 +217,20 @@ $$\text{Available Balance} = \text{Posted Balance} - \sum \text{Active Holds}$$
 - **Late Webhook Recovery**: `RECONCILIATION_REQUIRED` is not a terminal state. Authoritative signed webhook deliveries (via `ProviderEventProcessingService`) can transition `RECONCILIATION_REQUIRED -> SUCCEEDED` or `RECONCILIATION_REQUIRED -> FAILED` atomically, settling exactly 1 journal (2 entries) or releasing holds without double-posting.
 
 - **Bounded Poll Exhaustion**: After `maxAttempts` provider GETs, the Step 0 exhaustion finalizer transitions any `PROCESSING` or `UNKNOWN` operation to `RECONCILIATION_REQUIRED`. No stranded rows exist.
+
+### Invariant 13: Core Reconciliation Engine & Detection Immutability (Phase 24)
+
+- **Strict Detection-Only Semantics**: The reconciliation engine must NEVER alter financial records, mutate balances, modify snapshots, or alter funding/payout statuses. Its sole mutation capability is appending to `reconciliation_runs` and `reconciliation_items`.
+- **Three-Level Independence**:
+  1. *Level 1 (Journal Balance)*: Verifies $\sum \text{DEBIT} = \sum \text{CREDIT}$ across all `POSTED` journals using unbounded `NUMERIC` arithmetic and `LEFT JOIN` to catch zero-entry journals. Detects `UNBALANCED_JOURNAL` and `MALFORMED_JOURNAL`.
+  2. *Level 2 (Snapshot Consistency)*: Single-statement MVCC reconstruction from immutable `POSTED` journals excluding `DRAFT` entries, verifying reconstructed balance against `ledger_balance_snapshots`. Detects `SNAPSHOT_MISMATCH` and `SNAPSHOT_MISSING`.
+  3. *Level 3 (Provider Settlement)*: Phase-isolated scan of all non-created operations (`SUCCEEDED`, `FAILED`, `PROCESSING`, `UNKNOWN`, `RECONCILIATION_REQUIRED`), comparing local state against external provider truth.
+- **Classification Invariant**:
+  - `DISCREPANCY`: A hard ledger violation or provider state mismatch where local state conflicts with external ground truth or internal accounting laws.
+  - `UNRESOLVED`: An in-doubt state where ground truth could not be definitively verified (e.g. `PROVIDER_UNAVAILABLE` during network timeout, or in-flight `PROCESSING`/`UNKNOWN` 404s).
+- **Run & Item Immutability**:
+  - `reconciliation_runs`: Starts `RUNNING` with `completed_at IS NULL`. Terminal state (`COMPLETED` or `FAILED`) is immutable; status, completed timestamp, and checked/discrepancy counters cannot be modified after finalization.
+  - `reconciliation_items`: Append-only; `UPDATE` and `DELETE` are prohibited by trigger `trg_recon_items_immutability`.
+- **Lock Escalation Serialization**:
+  - Item insertion takes `FOR SHARE` on the parent run, failing if the run is no longer `RUNNING`.
+  - Finalization takes `FOR UPDATE` on the run, serializing behind all concurrent item insertions, counting items from the database, and locking out any future insertions before committing.
