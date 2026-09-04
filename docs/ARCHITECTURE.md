@@ -462,3 +462,37 @@ To prevent discrepancy items from being inserted into a run after it has been fi
   - `description TEXT NOT NULL`
   - `created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP`
   - Cross-column CHECK constraints validate level-specific problem types, classification mapping, and mandatory fields.
+
+---
+
+## 17. Reconciliation Recovery & Manual Review Architecture (Phase 25)
+
+Phase 25 introduces automated repair mechanisms and human-in-the-loop workflows for discrepancy resolution while strictly preserving the immutability of historical ledger entries and external state machines.
+
+### 1. Separation of Workflow vs. Financial Mutations
+
+- **Workflow Mutations**: Manual review resolution of discrepancy and unresolved items modifies only the `reconciliation_cases` table (`status = RESOLVED`, `resolution_action = MANUAL_REVIEW_COMPLETED`, audit timestamps, and non-blank notes).
+- **Zero Financial Side Effects**: Manual review executes zero writes to `journal_transactions`, `journal_entries`, `ledger_balance_snapshots`, `funding_operations`, `payouts`, `balance_holds`, or `provider_events`.
+
+### 2. Auto-Repair Boundary & Dynamic Balance Reconstruction
+
+- **Strict Boundary**: Automated balance repair via `SnapshotAutoRepairService` is permitted **only** for `problem_type = SNAPSHOT_MISMATCH` where `entity_type = LEDGER_ACCOUNT`.
+- **Exclusions**: `SNAPSHOT_MISSING`, unbalanced/malformed journals (`UNBALANCED_JOURNAL`, `MALFORMED_JOURNAL`), and provider settlement mismatches are barred from automated repair.
+- **Dynamic Reconstruction**: Computes balance strictly from immutable `POSTED` journals:
+  - CREDIT-normal accounts (`CUSTOMER_WALLET`, `MERCHANT_WALLET`, `PLATFORM_FEES`): $\sum \text{Credits} - \sum \text{Debits}$
+  - DEBIT-normal accounts (`PSP_CLEARING`, `PLATFORM_RESERVE`): $\sum \text{Debits} - \sum \text{Credits}$
+- **Concurrency & Pessimistic Locks**: Acquires row locks (`FOR UPDATE`) on both `reconciliation_cases` and `ledger_balance_snapshots`. If an incoming concurrent posting updates the snapshot to match the reconstructed balance before lock acquisition, the repair records `ALREADY_CONSISTENT` with zero snapshot modification.
+- **Missing Snapshot Safeguard**: If `ledger_balance_snapshots` contains no row for the account, the repair aborts without creating artificial rows and returns HTTP 409 Conflict.
+
+### 3. Case Claim Ownership & Trigger Lifecycle Invariants (V15)
+
+- **Claim Before Resolve**: Cases begin in `OPEN` with `assigned_to_user_id IS NULL`. Operators must claim (`IN_REVIEW`) prior to resolution.
+- **Null-Safe Claim Guard**: PostgreSQL trigger `trg_recon_cases_lifecycle` prevents reassignment or unassignment once claimed using null-safe comparison:
+  ```sql
+  IF OLD.assigned_to_user_id IS NOT NULL
+     AND NEW.assigned_to_user_id IS DISTINCT FROM OLD.assigned_to_user_id THEN
+      RAISE EXCEPTION 'reconciliation_case % cannot be reassigned or unassigned once claimed', OLD.id;
+  END IF;
+  ```
+- **Historical Actor Preservation**: Foreign keys on `assigned_to_user_id` and `resolved_by_user_id` enforce `ON DELETE RESTRICT` against `users(id)`.
+- **Terminal Immutability**: Cases in `RESOLVED` status cannot be updated. `DELETE` on `reconciliation_cases` is unconditionally rejected.

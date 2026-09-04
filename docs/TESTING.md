@@ -288,10 +288,35 @@ Phase 24 introduces a dedicated test suite in `ledgerguard-api` under `com.ledge
 
 ### Phase 24 Test Count
 
-- `ledgerguard-api`: **492 tests, 0 failures, 0 errors, 0 skipped** (+42 tests from Phase 23)
+- `ledgerguard-api`: **497 tests, 0 failures, 0 errors, 0 skipped** (with final provider-edge corrections)
 - `psp-simulator`: **17 tests**
 - `notification-worker`: **18 tests**
 - `failure-lab`: **1 test**
-- **Workspace total: 528 tests, 0 failures, 0 errors, 0 skipped**
+- **Workspace total: 533 tests, 0 failures, 0 errors, 0 skipped**
+
+---
+
+## 12. Phase 25: Reconciliation Recovery & Manual Review Testing Strategy
+
+Phase 25 introduces a dedicated test suite in `ledgerguard-api` under `com.ledgerguard.reconciliation` (6 test classes, 37 test methods). All tests execute against PostgreSQL 17-alpine Testcontainers.
+
+### Test Class Registry
+
+| Test Class | Methods | Coverage Area |
+| :--- | :---: | :--- |
+| `ReconciliationV15MigrationTest` | 10 | V15 migration triggers: OPEN status requirement, null-safe `IS DISTINCT FROM` claim immutability (reassignment and unassignment blocks), terminal immutability, DELETE rejection, immutable identity columns, auto-case creation trigger on `reconciliation_items` |
+| `ReconciliationCaseLifecycleTest` | 8 | Domain lifecycle: idempotent claim by same operator, 409 conflict on competing operator, resolve with note, rejection of resolve on `SNAPSHOT_MISMATCH`, note length bounds (<= 1000), clock skew normalization |
+| `SnapshotAutoRepairTest` | 7 | Snapshot dynamic reconstruction: credit-normal and debit-normal accounts, `SNAPSHOT_REPAIRED`, `ALREADY_CONSISTENT`, idempotent repair replay, missing snapshot row rejection (409 Conflict), signed 64-bit bounds check |
+| `ConcurrentPostingSnapshotRepairTest` | 1 | Multi-threaded race (20 threads concurrent double-entry posting vs 1 thread auto-repair) proving row lock serialization on target snapshot and 100% mathematical consistency without lost postings |
+| `ManualReviewNoMutationTest` | 1 | Proof of zero financial mutations across 9 tables (`journal_transactions`, `journal_entries`, `ledger_balance_snapshots`, `funding_operations`, `payouts`, `balance_holds`, `provider_events`, `outbox_events`, `idempotency_records`) during manual review |
+| `ReconciliationSecurityAndApiTest` | 10 | REST API security (`ROLE_OPS` enforcement, 403 Forbidden for `CUSTOMER`/`MERCHANT`), bounded pagination (clamped to 100), filter queries, exact numeric string serialization (`toPlainString()`), end-to-end claim and resolution flows |
+
+### Phase 25 Test Count
+
+- `ledgerguard-api`: **534 tests, 0 failures, 0 errors, 0 skipped** (+37 tests from Phase 24)
+- `psp-simulator`: **17 tests**
+- `notification-worker`: **18 tests**
+- `failure-lab`: **1 test**
+- **Workspace total: 570 tests, 0 failures, 0 errors, 0 skipped**
 
 Verified by `.\mvnw.cmd clean verify` (2026-09-04).

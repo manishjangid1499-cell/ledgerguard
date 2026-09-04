@@ -2,8 +2,9 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Phase 24 Complete (Verified)
-- **Status:** Phase 24 Complete (Verified)
+- **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
+- **Current Phase:** Phase 25 Complete (Verified)
+- **Status:** Phase 25 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -30,16 +31,17 @@
   - **Phase 22 — PSP Webhook Signatures, Deduplication & Ordering** (Completed: 2026-09-02)
   - **Phase 23 — External State Machines & Ambiguous Outcomes** (Completed: 2026-09-02)
   - **Phase 24 — Core Reconciliation Engine** (Completed: 2026-09-04)
-- **Current Work:** Phase 24 completed. Implemented three-level automated detection-only reconciliation engine:
-  - V14 Flyway migration adding `reconciliation_runs` and `reconciliation_items` tables with database triggers enforcing state machine transitions, lock escalation serialization (`FOR UPDATE` finalization vs `FOR SHARE` item insertion), item immutability, and cross-column constraint matrices.
-  - Level 1 (`JournalBalanceChecker`): Unbounded `NUMERIC` aggregation scanning `POSTED` journals via `LEFT JOIN` detecting unbalanced debits/credits and zero-entry or malformed transactions.
-  - Level 2 (`SnapshotConsistencyChecker`): Single-statement MVCC reconstruction excluding `DRAFT` journals via derived table subquery, matching reconstructed posted balance against `ledger_balance_snapshots`.
-  - Level 3 (`ProviderSettlementChecker`): Strict 3-phase execution (`collectIds` -> network GET outside DB transaction -> `findByIdForUpdate` re-read in `REQUIRES_NEW`), classifying operations across the full terminal and in-doubt matrix into `DISCREPANCY` and `UNRESOLVED`.
-  - Finalization & Orchestration (`ReconciliationEngine`, `ReconciliationRunFinalizationService`): Two-phase locking concurrency model, terminal counter derivation, scheduled Spring cron (`0 0 2 * * *`).
-  - Total test suite: 492 tests in `ledgerguard-api` (including 42 dedicated reconciliation tests across V14, lifecycle, Level 1, Level 2, Level 3, and full engine integration), 17 in `psp-simulator`, 18 in `notification-worker`, 1 in `failure-lab` (total 528 workspace tests, 100% passing).
-- **Next Phase:** Phase 25 — Reconciliation Discrepancy Workflows & Manual Intervention UI
+  - **Phase 25 — Reconciliation Recovery & Manual Review** (Completed: 2026-09-04)
+- **Current Work:** Phase 25 completed. Implemented reconciliation recovery workflows and operator manual review:
+  - V15 Flyway migration adding `reconciliation_cases` table with database triggers enforcing state machine transitions, claim immutability (`IS DISTINCT FROM` null-safe reassignment guard), terminal immutability, `ON DELETE RESTRICT` foreign keys preserving actor audit identity, note length constraint, clock skew normalization, and auto-case creation triggers on `reconciliation_items AFTER INSERT`.
+  - Auto-Repair Engine (`SnapshotAutoRepairService`): Strict boundary repair restricted exclusively to `problem_type = SNAPSHOT_MISMATCH` on `entity_type = LEDGER_ACCOUNT`. Acquires row locks on `reconciliation_cases` and target `ledger_balance_snapshots` before dynamically reconstructing balances from `POSTED` journals via V3 normal balance rules. Enforces signed 64-bit BIGINT bounds, handles missing snapshot row (409 Conflict), handles already consistent snapshots, and updates snapshot in-place with zero ledger adjustments.
+  - Manual Review Engine (`ReconciliationCaseManagementService`): Idempotent case claim for OPS operators (409 Conflict on competing operator claim), manual resolution with non-blank notes (<= 1000 chars) for discrepancies/unresolved items while prohibiting manual resolution of SNAPSHOT_MISMATCH. Zero financial mutations to ledger tables or business state machines.
+  - Case & Run Query Service (`ReconciliationCaseQueryService`): Bounded paged queries for runs, run items, review queue, and case details with numeric string precision formatting (`toPlainString()`).
+  - REST & Security (`ReconciliationController`, `SecurityConfig`): Protected `/api/reconciliation/**` endpoints guarded by `ROLE_OPS`.
+  - Total test suite: 534 tests in `ledgerguard-api` (37 new tests across V15 migration, lifecycle, auto-repair, concurrent posting, no-mutation invariants, and security/API), 17 in `psp-simulator`, 18 in `notification-worker`, 1 in `failure-lab` (total 570 workspace tests, 100% passing).
+- **Next Phase:** Phase 26 — Resilient Provider Client (Circuit Breakers)
 - **Last Verified:** 2026-09-04
-- **Git Branch:** `feat/phase-24-core-reconciliation` (workspace uncommitted)
+- **Git Branch:** `feat/phase-25-reconciliation-recovery` (workspace uncommitted)
 
 ---
 
@@ -103,8 +105,8 @@
 | **Phase 21** | External Payouts (Withdrawals) | **Completed** | 2026-09-02 |
 | **Phase 22** | PSP Webhook Signatures & Ordering | **Completed** | 2026-09-02 |
 | **Phase 23** | External State Machines & Ambiguity Handling | **Completed** | 2026-09-02 |
-| **Phase 24** | Core Reconciliation Engine | Planned | — |
-| **Phase 25** | Reconciliation Recovery & Manual Review | Planned | — |
+| **Phase 24** | Core Reconciliation Engine | **Completed** | 2026-09-04 |
+| **Phase 25** | Reconciliation Recovery & Manual Review | **Completed** | 2026-09-04 |
 | **Phase 26** | Resilient Provider Client (Circuit Breakers) | Planned | — |
 | **Phase 27** | Rate Limiting & Bounded Backpressure | Planned | — |
 | **Phase 28** | Audit Trail & Security Hardening | Planned | — |

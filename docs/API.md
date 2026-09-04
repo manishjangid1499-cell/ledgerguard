@@ -45,6 +45,8 @@ All API error responses use `application/problem+json` and follow the standard R
 | `RESOURCE_NOT_FOUND` | `404 Not Found` | Requested route or resource does not exist. |
 | `PROVIDER_AUTHENTICATION_FAILED` | `401 Unauthorized` | Webhook timestamp or HMAC-SHA256 signature verification failed. |
 | `PROVIDER_EVENT_CONFLICT` | `409 Conflict` | Webhook sequence ownership or payload conflict detected. |
+| `INVALID_RECONCILIATION_OPERATION` | `400 Bad Request` | Invalid reconciliation recovery operation (e.g. attempting manual resolve on SNAPSHOT_MISMATCH, blank notes, invalid status transition). |
+| `RECONCILIATION_CONFLICT` | `409 Conflict` | Case claim race (already claimed by another operator) or missing snapshot target row during repair. |
 | `INTERNAL_ERROR` | `500 Internal Server Error` | An unexpected server-side exception occurred. Sanitized safe detail returned. |
 
 ### Error Response Schema Example
@@ -657,3 +659,22 @@ The returned `status` field reflects the current durable lifecycle state of the 
 ### V13 Migration Notes
 
 Phase 23 added `UNKNOWN` and `RECONCILIATION_REQUIRED` status values to `funding_operations` and `payouts` tables via Flyway V13 migration. No breaking changes to existing API request/response field names. Existing `SUCCEEDED` and `FAILED` semantics are unchanged.
+
+---
+
+## 15. Reconciliation Recovery & Manual Review API (Phase 24–25)
+
+Protected by `ROLE_OPS`. All list endpoints enforce bounded pagination (`size` clamped to maximum 100) and serialize monetary quantities and large integers as exact strings (`toPlainString()`).
+
+### Endpoints Overview
+
+| Method | Endpoint | Access | Purpose |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/reconciliation/runs` | `ROLE_OPS` | Paged list of reconciliation runs (`page`, `size`, default sort `startedAt DESC`). |
+| `GET` | `/api/reconciliation/runs/{runId}` | `ROLE_OPS` | Detailed status of a reconciliation run including item counters. |
+| `GET` | `/api/reconciliation/runs/{runId}/items` | `ROLE_OPS` | Paged list of items recorded for a reconciliation run. |
+| `GET` | `/api/reconciliation/cases` | `ROLE_OPS` | Filtered review queue (`status`, `problemType`, `page`, `size`). |
+| `GET` | `/api/reconciliation/cases/{caseId}` | `ROLE_OPS` | Detailed view of a case joined with its reconciliation item. |
+| `POST` | `/api/reconciliation/cases/{caseId}/claim` | `ROLE_OPS` | Operator claims an `OPEN` case into `IN_REVIEW`. Idempotent for same operator; 409 Conflict if claimed by another. |
+| `POST` | `/api/reconciliation/cases/{caseId}/repair-snapshot` | `ROLE_OPS` | Auto-repairs `SNAPSHOT_MISMATCH` directly from posted journals. Updates snapshot in place; returns `SNAPSHOT_REPAIRED` or `ALREADY_CONSISTENT`. |
+| `POST` | `/api/reconciliation/cases/{caseId}/resolve` | `ROLE_OPS` | Manually resolves a discrepancy or unresolved case with required investigation note (max 1000 chars). Zero financial mutations. |
