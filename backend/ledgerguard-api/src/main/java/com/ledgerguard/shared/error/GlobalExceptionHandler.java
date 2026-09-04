@@ -504,6 +504,54 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .body(problemDetail);
     }
 
+    @ExceptionHandler(com.ledgerguard.reconciliation.domain.ReconciliationValidationException.class)
+    public ResponseEntity<ProblemDetail> handleReconciliationValidation(com.ledgerguard.reconciliation.domain.ReconciliationValidationException ex, WebRequest request) {
+        log.warn("Reconciliation validation rejected: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                ex.getMessage()
+        );
+        problemDetail.setTitle("Reconciliation validation failed");
+        enrichProblemDetail(problemDetail, ApiErrorCode.INVALID_RECONCILIATION_OPERATION, request);
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
+    @ExceptionHandler(com.ledgerguard.reconciliation.domain.ReconciliationNotFoundException.class)
+    public ResponseEntity<ProblemDetail> handleReconciliationNotFound(com.ledgerguard.reconciliation.domain.ReconciliationNotFoundException ex, WebRequest request) {
+        log.warn("Reconciliation resource not found: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.NOT_FOUND,
+                ex.getMessage()
+        );
+        problemDetail.setTitle("Reconciliation resource not found");
+        enrichProblemDetail(problemDetail, ApiErrorCode.RESOURCE_NOT_FOUND, request);
+
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
+    @ExceptionHandler(com.ledgerguard.reconciliation.domain.ReconciliationConflictException.class)
+    public ResponseEntity<ProblemDetail> handleReconciliationConflict(com.ledgerguard.reconciliation.domain.ReconciliationConflictException ex, WebRequest request) {
+        log.warn("Reconciliation conflict: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT,
+                ex.getMessage()
+        );
+        problemDetail.setTitle("Reconciliation conflict");
+        enrichProblemDetail(problemDetail, ApiErrorCode.RECONCILIATION_CONFLICT, request);
+
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetail> handleUnhandledException(Exception ex, WebRequest request) {
         log.error("Unhandled server exception: {}", ex.getMessage(), ex);

@@ -23,7 +23,7 @@ LedgerGuard defines three principal roles:
 ### Endpoint Authorization Rules
 - `/api/auth/register`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`: Publicly accessible endpoints.
 - `/actuator/health/**`, `/actuator/info`: Publicly accessible standard application liveness/readiness health probes.
-- `/api/ops/**`: Strictly restricted to authenticated principals holding `ROLE_OPS`.
+- `/api/ops/**`, `/api/reconciliation/**`: Strictly restricted to authenticated principals holding `ROLE_OPS`.
 - `/api/**`: Requires valid Bearer token authentication by default.
 
 ---

@@ -16,4 +16,9 @@ public interface ReconciliationItemRepository extends JpaRepository<Reconciliati
 
     @Query("SELECT COUNT(i) FROM ReconciliationItem i WHERE i.reconciliationRunId = :runId AND i.classification = 'UNRESOLVED'")
     long countUnresolvedByRunId(@Param("runId") UUID runId);
+
+    org.springframework.data.domain.Page<ReconciliationItem> findByReconciliationRunId(
+            UUID reconciliationRunId,
+            org.springframework.data.domain.Pageable pageable
+    );
 }

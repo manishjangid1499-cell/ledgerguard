@@ -30,6 +30,10 @@ public final class ApiErrorCode {
     public static final String PROVIDER_AUTHENTICATION_FAILED = "PROVIDER_AUTHENTICATION_FAILED";
     public static final String PROVIDER_EVENT_CONFLICT = "PROVIDER_EVENT_CONFLICT";
 
+    // Phase 25 Reconciliation Error Codes
+    public static final String INVALID_RECONCILIATION_OPERATION = "INVALID_RECONCILIATION_OPERATION";
+    public static final String RECONCILIATION_CONFLICT = "RECONCILIATION_CONFLICT";
+
     private ApiErrorCode() {
         // Utility class
     }

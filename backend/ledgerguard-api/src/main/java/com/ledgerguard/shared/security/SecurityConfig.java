@@ -152,8 +152,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/payments/*/refund").hasRole("MERCHANT")
                         // Payments endpoint
                         .requestMatchers(HttpMethod.POST, "/api/payments").hasRole("CUSTOMER")
-                        // Operations routes
-                        .requestMatchers("/api/ops/**").hasRole("OPS")
+                        // Operations and reconciliation routes
+                        .requestMatchers("/api/ops/**", "/api/reconciliation/**").hasRole("OPS")
                         // Protected API endpoints
                         .requestMatchers("/api/**").authenticated()
                         // Any other request

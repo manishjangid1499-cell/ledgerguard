@@ -234,3 +234,25 @@ $$\text{Available Balance} = \text{Posted Balance} - \sum \text{Active Holds}$$
 - **Lock Escalation Serialization**:
   - Item insertion takes `FOR SHARE` on the parent run, failing if the run is no longer `RUNNING`.
   - Finalization takes `FOR UPDATE` on the run, serializing behind all concurrent item insertions, counting items from the database, and locking out any future insertions before committing.
+
+### Invariant 14: Reconciliation Recovery & Manual Review Workflows (Phase 25)
+
+- **Workflow State Separation**: Manual review of discrepancy or unresolved items operates strictly on `reconciliation_cases`. Zero mutations are made to financial tables (`journal_transactions`, `journal_entries`, `ledger_balance_snapshots`, `balance_holds`, `funding_operations`, `payouts`, `provider_events`, `outbox_events`, `idempotency_records`).
+- **Strict Auto-Repair Boundary**: Automated snapshot repair is restricted exclusively to `problem_type = SNAPSHOT_MISMATCH` where `entity_type = LEDGER_ACCOUNT`.
+  - `SNAPSHOT_MISSING` is NEVER auto-repaired (missing snapshot row indicates schema or account creation anomaly).
+  - Unbalanced or malformed journals (`UNBALANCED_JOURNAL`, `MALFORMED_JOURNAL`) are NEVER auto-repaired.
+  - Provider settlement mismatches (`PROVIDER_STATUS_MISMATCH`, etc.) are NEVER auto-repaired.
+- **Snapshot Dynamic Reconstruction & Normal Balance**: Balance repair derives the account's balance exclusively from immutable `POSTED` journals:
+  - CREDIT-normal accounts (`CUSTOMER_WALLET`, `MERCHANT_WALLET`, `PLATFORM_FEES`): $\sum \text{Credits} - \sum \text{Debits}$
+  - DEBIT-normal accounts (`PSP_CLEARING`, `PLATFORM_RESERVE`): $\sum \text{Debits} - \sum \text{Credits}$
+- **Concurrency & Pessimistic Row Locking**:
+  - `SnapshotAutoRepairService` locks the `reconciliation_cases` row `FOR UPDATE` and the target `ledger_balance_snapshots` row `FOR UPDATE` to serialize against concurrent journal postings.
+  - If a snapshot is already consistent upon acquiring locks, resolution records `ALREADY_CONSISTENT` with zero snapshot mutation.
+- **Claim Ownership & Null-Safe Trigger Enforcement**:
+  - A case must be claimed (`IN_REVIEW`) before resolution.
+  - Trigger `trg_recon_cases_lifecycle` enforces that once claimed (`assigned_to_user_id IS NOT NULL`), the assigned operator cannot be reassigned or unassigned using null-safe `NEW.assigned_to_user_id IS DISTINCT FROM OLD.assigned_to_user_id`.
+  - Idempotent claims by the same operator succeed; competing claims by different operators fail with HTTP 409 Conflict.
+- **Terminal Immutability**:
+  - Cases in `RESOLVED` status cannot be updated or un-resolved.
+  - `DELETE` on `reconciliation_cases` is unconditionally prohibited.
+  - Foreign keys on `assigned_to_user_id` and `resolved_by_user_id` reference `users(id)` with `ON DELETE RESTRICT` to preserve historical operator identity.
