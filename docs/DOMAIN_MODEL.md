@@ -276,3 +276,27 @@ $$\text{Available Balance} = \text{Posted Balance} - \sum \text{Active Holds}$$
   - The durable counter `provider_poll_attempts` increments by exactly 1 per scheduled poller run ($N \to N+1$, never $N+3$).
 - **Reconciliation Provider Unavailability**:
   - Level 3 provider checks rejected by circuit breaker or bulkhead persist `classification = UNRESOLVED` and `problem_type = PROVIDER_UNAVAILABLE` strictly within the frozen V14 schema, without creating new problem types or migration V16.
+
+### Invariant 16: Rate Limiting Admission Control & Financial Safety (Phase 27)
+
+- **Pure Admission Control**:
+  - Rate limiting operates strictly as an ingress gatekeeper (`RateLimitFilter`) positioned after Spring Security `AuthorizationFilter` but before Spring MVC controllers and transactional service methods.
+  - An `HTTP 429 Too Many Requests` rejection executes with zero transactional side-effects:
+    - Zero rows inserted into `idempotency_records`
+    - Zero rows inserted into `transfers`, `payments`, `refunds`, `funding_operations`, or `payouts`
+    - Zero `journal_transactions` or `journal_entries` written
+    - Zero balance snapshot mutations or row locks acquired
+    - Zero `balance_holds` created, consumed, or released
+    - Zero `outbox_events` appended
+    - Zero outbound network calls made to PSPs
+- **Clean Idempotency Replay After Refill**:
+  - Because an HTTP 429 rejection does not record an idempotency claim in `idempotency_records`, the caller's `Idempotency-Key` remains completely unpoisoned.
+  - Once the caller waits the duration specified in the `Retry-After` header and the token bucket refills, replaying the exact same request with the same `Idempotency-Key` executes cleanly as the first admitted attempt.
+- **Security Precedence Invariant**:
+  - Authentication (401) and Authorization (403) strictly precede token bucket consumption.
+  - Unauthenticated requests and forbidden requests (e.g. `CUSTOMER` attempting `/api/ops/**`) are rejected by Spring Security before reaching `RateLimitFilter`.
+  - Attackers or unauthorized clients cannot deplete token buckets of valid users or induce artificial 429 rejections on protected routes.
+- **Bounded Ingress & Resource Conservation**:
+  - Bounded Tomcat worker threads (`max = 50`) and queue capacity (`50`) bound concurrent server execution.
+  - Bounded Hikari connection pool (`maximum-pool-size = 10`) ensures database connection availability.
+  - Bounded Kafka consumer batching (`max.poll.records = 10`, `concurrency = 3`) guarantees worker heap stability and deterministic consumer backpressure.

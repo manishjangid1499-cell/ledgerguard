@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Phase 26 Complete (Verified)
-- **Status:** Phase 26 Complete (Verified)
+- **Current Phase:** Phase 27 Complete (Verified)
+- **Status:** Phase 27 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -32,22 +32,20 @@
   - **Phase 24 — Core Reconciliation Engine** (Completed: 2026-09-04)
   - **Phase 25 — Reconciliation Recovery & Manual Review** (Completed: 2026-09-04)
   - **Phase 26 — Resilient Provider Client (Circuit Breaker & Retries)** (Completed: 2026-09-05)
-- **Current Work:** Phase 26 completed. Implemented comprehensive, programmatic resilience architecture for outbound provider communication:
-  - Resilience4j 2.4.0 core modules integration (`resilience4j-circuitbreaker`, `resilience4j-retry`, `resilience4j-bulkhead`) used programmatically with zero Spring Boot starters, AOP, or Feign.
-  - Execution pipeline: CircuitBreaker (`psp-remote`) -> Bulkhead (`psp-create` / `psp-status`, 20 permits each) -> Aggregate Logical Outcome -> Retry (max 3 attempts, exponential random backoff with 20% jitter) -> Raw `RestClient`.
-  - Breaker evaluation: Shared `psp-remote` circuit breaker counts logical call outcomes, not individual retry attempts (retry-then-success = 1 success / 0 failure; 3 timeouts = 1 failure / 0 success).
-  - Bulkhead isolation: Separate create and status semaphore bulkheads prevent status polling contention from starving payment creation.
-  - Authoritative replay resolution (`TIMEOUT_AFTER_SUCCESS`): An earlier transport timeout ambiguity is preserved only until an authoritative provider replay resolves it. Authoritative 200 response immediately settles Funding/Payout to `SUCCEEDED`, writes balanced double-entry journals, and consumes linked balance holds (`ACTIVE` -> `CONSUMED`).
-  - Multi-attempt ambiguity dominance: A logical operation's final business state evaluates the full multi-attempt history. If any attempt was ambiguous and not authoritatively resolved, the operation transitions to `UNKNOWN` with `ACTIVE` balance hold (never prematurely failed, never released).
-  - Pre-network rejections: Circuit `OPEN` or Bulkhead `FULL` rejects fast with 0 raw HTTP requests; Funding transitions to `FAILED`; Payout transitions to `FAILED` and releases linked balance hold (`ACTIVE` -> `RELEASED`).
-  - Polling retry isolation: Physical GET retries under `psp-status-retry` do not inflate durable database counters (`provider_poll_attempts` increments $N \to N+1$, never $N+3$).
-  - Reconciliation Level 3 integration: Provider call rejections under circuit `OPEN` or bulkhead `FULL` persist `classification = UNRESOLVED`, `problem_type = PROVIDER_UNAVAILABLE` adhering strictly to existing Phase 24 contracts without schema alterations.
-  - Flyway migrations frozen at `V1-V15`. No V16 migration.
-  - Zero modifications to frontend, notification worker, Kafka, or PSP simulator.
-  - Test suites: 557 tests in `ledgerguard-api` (20 new tests in Phase 26), 17 in `psp-simulator`, 18 in `notification-worker`, 1 in `failure-lab` (total 593 workspace tests, 100% passing, 0 failures, 0 errors, 0 skipped).
-- **Next Phase:** Phase 27 — Rate Limiting & Bounded Backpressure
+  - **Phase 27 — Rate Limiting & Bounded Backpressure** (Completed: 2026-09-05)
+- **Current Work:** Phase 27 completed. Implemented token-bucket admission control, bounded server thread pools, and bounded Kafka consumer backpressure:
+  - Token-bucket rate limiting via Bucket4j 8.19.0 (`bucket4j_jdk17-core`) backed by bounded in-memory Caffeine cache (3.2.4 managed by Spring Boot BOM).
+  - Rate limiting filter placed after Spring Security `AuthorizationFilter`: authentication and authorization strictly precede rate limiting (401 and 403 returned with 0 token consumption).
+  - Keying strategy: `PUBLIC_AUTH` strictly IP-keyed (`PUBLIC_AUTH:ip:<ip>`), authenticated routes keyed by policy and JWT `sub` UUID (`FINANCIAL_WRITE:user:<uuid>`, `OPS:user:<uuid>`, `AUTHENTICATED_GENERAL:user:<uuid>`).
+  - Policies: `PUBLIC_AUTH` (10 tokens/min), `FINANCIAL_WRITE` (20 tokens/min), `OPS` (30 tokens/min), `AUTHENTICATED_GENERAL` (50 tokens/min), `EXEMPT` (OPTIONS, actuator health/info, PSP webhooks).
+  - RFC 9457 error response with `status = 429`, `errorCode = RATE_LIMIT_EXCEEDED`, and `Retry-After` header.
+  - Bounded request execution: Tomcat threads (`max=50`, `min-spare=10`, `max-queue-capacity=50`, `accept-count=50`, `max-connections=1000`), Hikari explicit maximum pool size `10`.
+  - Bounded Kafka consumer: `notification-worker` configured with `listener.concurrency=3` and `consumer.max-poll-records=10`.
+  - Financial safety & idempotency: 429 is pure admission control (zero DB queries, zero idempotency claims, zero journals, zero hold mutations, zero outbox events, zero PSP calls). Safe retry with same idempotency key executes cleanly once tokens refill.
+  - Test suites: 583 tests in `ledgerguard-api` (26 new rate-limiting and backpressure tests), 17 in `psp-simulator`, 19 in `notification-worker` (+1 backpressure test), 1 in `failure-lab` (total 620 workspace tests, 100% passing, 0 failures, 0 errors, 0 skipped).
+- **Next Phase:** Phase 28 — Audit Trail & Security Hardening
 - **Last Verified:** 2026-09-05
-- **Git Branch:** `feat/phase-26-provider-resilience`
+- **Git Branch:** `feat/phase-27-rate-limiting-backpressure`
 
 ---
 
@@ -114,7 +112,7 @@
 | **Phase 24** | Core Reconciliation Engine | **Completed** | 2026-09-04 |
 | **Phase 25** | Reconciliation Recovery & Manual Review | **Completed** | 2026-09-04 |
 | **Phase 26** | Resilient Provider Client (Circuit Breakers) | **Completed** | 2026-09-05 |
-| **Phase 27** | Rate Limiting & Bounded Backpressure | Planned | — |
+| **Phase 27** | Rate Limiting & Bounded Backpressure | **Completed** | 2026-09-05 |
 | **Phase 28** | Audit Trail & Security Hardening | Planned | — |
 | **Phase 29** | Business & Integrity Metrics (Prometheus) | Planned | — |
 | **Phase 30** | OpenTelemetry Tracing & Correlation IDs | Planned | — |
