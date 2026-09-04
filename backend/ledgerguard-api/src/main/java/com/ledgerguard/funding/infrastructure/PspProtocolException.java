@@ -10,17 +10,23 @@ public class PspProtocolException extends RuntimeException {
     private final String providerErrorType;
 
     public PspProtocolException(String message) {
-        this(message, null, null);
+        this(message, null, (String) null);
     }
 
     public PspProtocolException(String message, int statusCode) {
-        this(message, statusCode, null);
+        this(message, statusCode, (String) null);
     }
 
     public PspProtocolException(String message, Integer statusCode, String providerErrorType) {
         super(message);
         this.statusCode = statusCode;
         this.providerErrorType = providerErrorType;
+    }
+
+    public PspProtocolException(String message, Throwable cause, Integer statusCode) {
+        super(message, cause);
+        this.statusCode = statusCode;
+        this.providerErrorType = null;
     }
 
     public Integer getStatusCode() {
