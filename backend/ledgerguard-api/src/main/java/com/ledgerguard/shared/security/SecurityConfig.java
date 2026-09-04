@@ -25,6 +25,8 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
+import com.ledgerguard.shared.ratelimit.RateLimitFilter;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.cors.CorsConfiguration;
@@ -48,13 +50,23 @@ public class SecurityConfig {
     private final JwtProperties jwtProperties;
     private final CustomAuthenticationEntryPoint authenticationEntryPoint;
     private final CustomAccessDeniedHandler accessDeniedHandler;
+    private final RateLimitFilter rateLimitFilter;
 
     public SecurityConfig(JwtProperties jwtProperties,
                           CustomAuthenticationEntryPoint authenticationEntryPoint,
                           CustomAccessDeniedHandler accessDeniedHandler) {
+        this(jwtProperties, authenticationEntryPoint, accessDeniedHandler, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public SecurityConfig(JwtProperties jwtProperties,
+                          CustomAuthenticationEntryPoint authenticationEntryPoint,
+                          CustomAccessDeniedHandler accessDeniedHandler,
+                          RateLimitFilter rateLimitFilter) {
         this.jwtProperties = jwtProperties;
         this.authenticationEntryPoint = authenticationEntryPoint;
         this.accessDeniedHandler = accessDeniedHandler;
+        this.rateLimitFilter = rateLimitFilter;
     }
 
     @Bean
@@ -74,6 +86,7 @@ public class SecurityConfig {
             configuration.setAllowedOrigins(origins);
             configuration.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
             configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Idempotency-Key"));
+            configuration.setExposedHeaders(List.of("Retry-After"));
             configuration.setAllowCredentials(true);
             configuration.setMaxAge(3600L);
         }
@@ -146,12 +159,20 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/provider/webhooks").permitAll()
                         // Public actuator health/info endpoints
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
-                        // Transfers endpoint
+                        // Transfers endpoints
                         .requestMatchers(HttpMethod.POST, "/api/transfers").hasAnyRole("CUSTOMER", "MERCHANT")
+                        .requestMatchers(HttpMethod.GET, "/api/transfers").hasAnyRole("CUSTOMER", "MERCHANT")
+                        .requestMatchers(HttpMethod.GET, "/api/transfers/**").hasAnyRole("CUSTOMER", "MERCHANT")
+                        // Wallet read endpoint
+                        .requestMatchers(HttpMethod.GET, "/api/wallets/me").hasAnyRole("CUSTOMER", "MERCHANT")
                         // Refunds endpoint
                         .requestMatchers(HttpMethod.POST, "/api/payments/*/refund").hasRole("MERCHANT")
                         // Payments endpoint
                         .requestMatchers(HttpMethod.POST, "/api/payments").hasRole("CUSTOMER")
+                        // External Funding endpoint (Phase 27 authorization alignment)
+                        .requestMatchers(HttpMethod.POST, "/api/funding").hasRole("CUSTOMER")
+                        // External Payouts endpoint (Phase 27 authorization alignment)
+                        .requestMatchers(HttpMethod.POST, "/api/payouts").hasAnyRole("CUSTOMER", "MERCHANT")
                         // Operations and reconciliation routes
                         .requestMatchers("/api/ops/**", "/api/reconciliation/**").hasRole("OPS")
                         // Protected API endpoints
@@ -159,6 +180,10 @@ public class SecurityConfig {
                         // Any other request
                         .anyRequest().permitAll()
                 );
+
+        if (rateLimitFilter != null) {
+            http.addFilterAfter(rateLimitFilter, AuthorizationFilter.class);
+        }
 
         return http.build();
     }

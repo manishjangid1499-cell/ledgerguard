@@ -34,6 +34,9 @@ public final class ApiErrorCode {
     public static final String INVALID_RECONCILIATION_OPERATION = "INVALID_RECONCILIATION_OPERATION";
     public static final String RECONCILIATION_CONFLICT = "RECONCILIATION_CONFLICT";
 
+    // Phase 27 Resilience & Rate Limiting Error Codes
+    public static final String RATE_LIMIT_EXCEEDED = "RATE_LIMIT_EXCEEDED";
+
     private ApiErrorCode() {
         // Utility class
     }

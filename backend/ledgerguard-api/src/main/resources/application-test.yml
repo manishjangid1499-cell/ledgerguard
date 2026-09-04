@@ -11,6 +11,8 @@ ledgerguard:
   security:
     cookie:
       secure: false
+  rate-limit:
+    enabled: false
 
 logging:
   level:

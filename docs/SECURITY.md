@@ -107,5 +107,16 @@ All authentication and authorization failures return standardized RFC 9457 Probl
 
 ## 7. Rate Limiting & Denial of Service Protection
 
-- **API Ingress Throttling**: Authentication endpoints (`/api/auth/login`, `/api/auth/register`) and money-moving endpoints (`/api/transfers`, `/api/payments`) are subject to token-bucket rate limiting to mitigate brute-force and credential-stuffing attacks.
-- **Bounded Concurrency**: Thread pool limits and database connection limits prevent resource exhaustion under distributed load.
+- **Token-Bucket Admission Control (Phase 27)**: Implemented using Bucket4j 8.19.0 (`bucket4j_jdk17-core`) paired with a bounded in-memory Caffeine cache (`maxEntries = 10000`, `idleTtl = 1h`). Filter positioned after Spring Security `AuthorizationFilter`.
+- **Security Precedence**: Authentication (401) and role-based authorization (403) strictly precede token bucket evaluation. Unauthenticated callers and forbidden access attempts are rejected prior to filter execution and never consume token quota.
+- **Keying & Partitioning**:
+  - `PUBLIC_AUTH` (`/api/auth/register`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`): Keyed strictly by client remote IP (`PUBLIC_AUTH:ip:<ip>`), 10 tokens / 1 min greedy capacity. Mitigates credential-stuffing and brute-force attacks against BCrypt hashing.
+  - `FINANCIAL_WRITE` (`POST /api/transfers`, `POST /api/payments`, `POST /api/payments/*/refund`, `POST /api/funding`, `POST /api/payouts`): Keyed by authenticated JWT subject UUID (`FINANCIAL_WRITE:user:<uuid>`), 20 tokens / 1 min greedy capacity.
+  - `OPS` (`/api/ops/**`, `/api/reconciliation/**`): Keyed by authenticated JWT subject UUID (`OPS:user:<uuid>`), 30 tokens / 1 min greedy capacity.
+  - `AUTHENTICATED_GENERAL`: Keyed by authenticated JWT subject UUID (`AUTHENTICATED_GENERAL:user:<uuid>`), 50 tokens / 1 min greedy capacity.
+  - `EXEMPT`: `OPTIONS` preflight, `/actuator/health/**`, `/actuator/info`, and inbound PSP webhooks (`POST /api/provider/webhooks`) bypass rate limiting.
+- **Bounded Concurrency & Backpressure**:
+  - Embedded Tomcat worker threads: `max = 50`, `min-spare = 10`, `max-queue-capacity = 50`, `accept-count = 50`, `max-connections = 1000`.
+  - HikariCP database pool bound: `maximum-pool-size = 10`.
+  - Kafka consumer backpressure on `notification-worker`: `listener.concurrency = 3`, `consumer.max-poll-records = 10`.
+- **Standardized 429 Error Response**: Exceeded quotas return RFC 9457 `application/problem+json` with `RATE_LIMIT_EXCEEDED` error code and integer `Retry-After` header. Zero financial side effects or idempotency record poisoning.

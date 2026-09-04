@@ -33,8 +33,11 @@ spring:
       group-id: ledgerguard-notification-worker-v1
       auto-offset-reset: earliest
       enable-auto-commit: false
+      max-poll-records: ${NOTIFICATION_KAFKA_MAX_POLL_RECORDS:10}
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      concurrency: ${NOTIFICATION_KAFKA_CONCURRENCY:3}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer

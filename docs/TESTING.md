@@ -353,3 +353,39 @@ Phase 26 introduces a resilient provider client execution layer powered by Resil
 - **Workspace total: 593 tests, 0 failures, 0 errors, 0 skipped**
 
 Verified by `.\mvnw.cmd clean verify` (2026-09-05).
+
+---
+
+## 14. Phase 27: Rate Limiting & Bounded Backpressure Testing Strategy
+
+Phase 27 introduces token-bucket admission control, bounded server thread pools, and bounded Kafka consumer backpressure. The test suite verifies security precedence, tenant/principal isolation, financial safety on HTTP 429 rejections, thread/connection bounds, and consumer concurrency.
+
+### Test Class Registry
+
+| Test Class | Module | Methods | Coverage Area |
+| :--- | :--- | :---: | :--- |
+| `RateLimitServiceUnitTest` | `ledgerguard-api` | 5 | Token consumption: consumption probe rejection when quota exhausted, greedy refill calculation, distinct cache entries for distinct keys, idle TTL eviction, bypass when `enabled = false`. |
+| `RateLimitFilterUnitTest` | `ledgerguard-api` | 6 | Mock filter pipeline: `PUBLIC_AUTH` IP keying, authenticated user UUID keying, exempt endpoints bypass (`OPTIONS`, `/actuator/health`, `/api/provider/webhooks`), RFC 9457 ProblemDetail response serialization with `RATE_LIMIT_EXCEEDED` and `Retry-After` header. |
+| `RateLimitSecurityPrecedenceIntegrationTest` | `ledgerguard-api` | 6 | Spring Security precedence against real security chain: missing token returns 401 Unauthorized without consuming tokens; invalid token returns 401 without consuming tokens; role-forbidden request (`CUSTOMER` hitting `/api/ops/**`) returns 403 Forbidden without consuming tokens; repeated forbidden requests never return 429; authenticated requests after 403 succeed if quota permits. |
+| `RateLimitIntegrationTest` | `ledgerguard-api` | 5 | Multi-threaded concurrency and financial safety against PostgreSQL Testcontainers: 50 concurrent requests against capacity 5 yield exactly 5 admitted and 45 HTTP 429 rejections; principal isolation (User A exhausted, User B unaffected); public auth login flood throttled by IP; financial safety invariant (asserts 0 `idempotency_records`, 0 `transfers`, 0 journals, 0 hold mutations on 429); Hikari connection pool conservation (all active connections returned during burst). |
+| `TomcatThreadPropertiesTest` | `ledgerguard-api` | 2 | Bounded server execution verification: asserts production `application.yml` configures Tomcat `max=50`, `min-spare=10`, `max-queue-capacity=50`, `accept-count=50`, `max-connections=1000`, and Hikari `maximum-pool-size=10`. Verifies runtime pool size $\le 10$. |
+| `NotificationWorkerApplicationTests` | `notification-worker` | 2 | Context load and bounded Kafka consumer backpressure: verifies `ConcurrentKafkaListenerContainerFactory` is configured with `concurrency = 3` and `ConsumerConfig.MAX_POLL_RECORDS_CONFIG = 10`. |
+
+### Phase 27 Invariants Verified by Tests
+
+1. **Security Precedence**: `RateLimitSecurityPrecedenceIntegrationTest` proves that 401 Unauthorized and 403 Forbidden strictly precede rate limit evaluation. Unauthenticated and forbidden requests never consume token quota, and repeating unauthorized/forbidden calls never triggers a 429 response.
+2. **Deterministic Token-Bucket Admission**: `RateLimitIntegrationTest.burstRequestsExceedingCapacity` proves that under high concurrency (50 threads), exactly 5 requests are admitted and 45 requests receive HTTP 429 Too Many Requests with an integer `Retry-After` header.
+3. **Principal & Identity Isolation**: `RateLimitIntegrationTest.userQuotaIsolation` verifies that exhausting User A's token bucket has zero impact on User B's ability to execute requests. `PUBLIC_AUTH` is strictly isolated per client IP.
+4. **Financial Safety Invariant**: `RateLimitIntegrationTest.rateLimitedRequestCausesNoFinancialSideEffects` verifies that an HTTP 429 rejection on a financial write (`POST /api/transfers`) produces zero rows in `idempotency_records`, zero rows in `transfers`, and zero journal transactions or entries. Subsequent replay with the same idempotency key after token refill executes cleanly as the first admitted transaction.
+5. **Connection Pool Conservation**: Tests verify that during a flood of 429 rejections, zero Hikari database connections are checked out, preventing connection starvation.
+6. **Bounded Consumer Backpressure**: `NotificationWorkerApplicationTests.verifyKafkaConsumerBackpressureConfiguration` verifies that the Kafka consumer container factory restricts batch size to 10 records and bounds listener thread concurrency to 3.
+
+### Phase 27 Test Count
+
+- `ledgerguard-api`: **583 tests, 0 failures, 0 errors, 0 skipped** (+26 tests from Phase 26)
+- `psp-simulator`: **17 tests**
+- `notification-worker`: **19 tests** (+1 test from Phase 26)
+- `failure-lab`: **1 test**
+- **Workspace total: 620 tests, 0 failures, 0 errors, 0 skipped**
+
+Verified by `.\mvnw.cmd clean verify` (2026-09-05).

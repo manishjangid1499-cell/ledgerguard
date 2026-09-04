@@ -546,3 +546,75 @@ External PSP Simulator
 - **Pre-Network Rejections**: Rejections occurring before network dispatch (due to `CircuitBreaker` being `OPEN` or `Bulkhead` being `FULL`) are deterministic local rejections. Funding transitions to `FAILED`; Payout transitions to `FAILED` and releases the linked balance hold (`ACTIVE` $\to$ `RELEASED`).
 - **Poll Counter Isolation**: Physical HTTP retries executed during polling do not inflate durable database counters (`provider_poll_attempts` increments $N \to N+1$, never $N+3$).
 - **Reconciliation Provider Unavailability**: Level 3 provider checks rejected by circuit breaker or bulkhead persist `classification = UNRESOLVED` and `problem_type = PROVIDER_UNAVAILABLE` strictly within the frozen V14 schema, without creating new problem types or migration V16.
+
+---
+
+## 19. Rate Limiting & Bounded Backpressure Architecture (Phase 27)
+
+Phase 27 establishes multi-layer admission control and bounded thread/connection execution across all services, preventing resource exhaustion and unbounded queue growth under denial-of-service or high-concurrency spikes.
+
+### 1. Token-Bucket Admission Control Pipeline
+
+Rate limiting is implemented using `Bucket4j 8.19.0` (`bucket4j_jdk17-core`) paired with a bounded in-memory `Caffeine` cache (`maxEntries = 10,000`, `idleTtl = 1h`). The `RateLimitFilter` extends Spring's `OncePerRequestFilter` and is explicitly positioned **after** `AuthorizationFilter`:
+
+```
+Incoming HTTP Request
+   │
+   ▼
+[SecurityFilterChain: CorsFilter]
+   │
+   ▼
+[SecurityFilterChain: SecurityContextHolderFilter / JwtAuthenticationFilter]
+   │ (Validates JWT; produces 401 Unauthorized if missing/expired)
+   ▼
+[SecurityFilterChain: AuthorizationFilter]
+   │ (Validates HTTP route roles; produces 403 Forbidden if unpermitted)
+   ▼
+[RateLimitFilter]
+   │ (Evaluates Token Bucket; produces 429 Too Many Requests if empty)
+   ▼
+[DispatcherServlet / Spring MVC Controllers]
+   │ (Business logic, Transactional boundaries, DB locks)
+   ▼
+PostgreSQL / Outbox
+```
+
+### 2. Authorization Precedence & Identity Keying
+
+1. **Precedence Guarantee**: Because `RateLimitFilter` executes after `AuthorizationFilter`, unauthorized (401) or forbidden (403) callers are rejected before consuming any rate-limit tokens. An attacker cannot starve legitimate users or trigger 429 errors by sending invalid or forbidden requests.
+2. **Keying Strategy**:
+   - `PUBLIC_AUTH` (`/api/auth/register`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`): Keyed strictly by remote client IP (`PUBLIC_AUTH:ip:<ip>`), sanitized from `request.getRemoteAddr()`.
+   - Authenticated endpoints: Keyed by policy and the authenticated JWT subject UUID (`FINANCIAL_WRITE:user:<uuid>`, `OPS:user:<uuid>`, `AUTHENTICATED_GENERAL:user:<uuid>`).
+   - `EXEMPT` endpoints: `OPTIONS` preflight, `/actuator/health/**`, `/actuator/info`, and inbound PSP webhooks (`POST /api/provider/webhooks`) bypass rate limiting completely without allocating a bucket or key.
+
+### 3. Policy Thresholds & Response Semantics
+
+| Policy | Endpoints | Capacity | Refill Rate | Key Format |
+| :--- | :--- | :---: | :---: | :--- |
+| `PUBLIC_AUTH` | `/api/auth/register`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout` | 10 tokens | 10 tokens / 1 min greedy | `PUBLIC_AUTH:ip:<ip>` |
+| `FINANCIAL_WRITE` | `POST /api/transfers`, `POST /api/payments`, `POST /api/payments/*/refund`, `POST /api/funding`, `POST /api/payouts` | 20 tokens | 20 tokens / 1 min greedy | `FINANCIAL_WRITE:user:<uuid>` |
+| `OPS` | `/api/ops/**`, `/api/reconciliation/**` | 30 tokens | 30 tokens / 1 min greedy | `OPS:user:<uuid>` |
+| `AUTHENTICATED_GENERAL` | All other authenticated `/api/**` routes | 50 tokens | 50 tokens / 1 min greedy | `AUTHENTICATED_GENERAL:user:<uuid>` |
+
+When a bucket is exhausted:
+- The filter returns `HTTP 429 Too Many Requests` with `application/problem+json` (RFC 9457).
+- `errorCode`: `RATE_LIMIT_EXCEEDED`.
+- `Retry-After`: Calculated from `ConsumptionProbe.getNanosToWaitForRefill()` converted to ceiling seconds ($\ge 1$).
+
+### 4. Financial Safety & Bounded Resource Limits
+
+- **Pure Admission Control**: HTTP 429 rejections occur before controller dispatch. Zero database connections are acquired from Hikari, zero idempotency records are inserted, zero ledger locks are requested, zero journals are written, and zero balance holds are modified.
+- **Idempotent Retry Clean Execution**: A request that receives 429 does not record or poison its `Idempotency-Key`. Replaying the same request with the same idempotency key after the refill window executes cleanly as the first admitted attempt.
+- **Tomcat Thread Bounds (`ledgerguard-api`)**:
+  - `server.tomcat.threads.max: 50`
+  - `server.tomcat.threads.min-spare: 10`
+  - `server.tomcat.threads.max-queue-capacity: 50`
+  - `server.tomcat.accept-count: 50`
+  - `server.tomcat.max-connections: 1000`
+- **Database Connection Pool Bound (`ledgerguard-api`)**:
+  - `spring.datasource.hikari.maximum-pool-size: 10`
+  - Prevents database connection starvation under high concurrency.
+- **Kafka Consumer Backpressure (`notification-worker`)**:
+  - `consumer.max-poll-records: 10`
+  - `listener.concurrency: 3`
+  - Limits in-flight processing memory and guarantees deterministic partition assignment across worker consumer threads.

@@ -47,6 +47,7 @@ All API error responses use `application/problem+json` and follow the standard R
 | `PROVIDER_EVENT_CONFLICT` | `409 Conflict` | Webhook sequence ownership or payload conflict detected. |
 | `INVALID_RECONCILIATION_OPERATION` | `400 Bad Request` | Invalid reconciliation recovery operation (e.g. attempting manual resolve on SNAPSHOT_MISMATCH, blank notes, invalid status transition). |
 | `RECONCILIATION_CONFLICT` | `409 Conflict` | Case claim race (already claimed by another operator) or missing snapshot target row during repair. |
+| `RATE_LIMIT_EXCEEDED` | `429 Too Many Requests` | Rate limit quota exceeded for client identity. Returns `Retry-After` header in seconds. |
 | `INTERNAL_ERROR` | `500 Internal Server Error` | An unexpected server-side exception occurred. Sanitized safe detail returned. |
 
 ### Error Response Schema Example
@@ -678,3 +679,43 @@ Protected by `ROLE_OPS`. All list endpoints enforce bounded pagination (`size` c
 | `POST` | `/api/reconciliation/cases/{caseId}/claim` | `ROLE_OPS` | Operator claims an `OPEN` case into `IN_REVIEW`. Idempotent for same operator; 409 Conflict if claimed by another. |
 | `POST` | `/api/reconciliation/cases/{caseId}/repair-snapshot` | `ROLE_OPS` | Auto-repairs `SNAPSHOT_MISMATCH` directly from posted journals. Updates snapshot in place; returns `SNAPSHOT_REPAIRED` or `ALREADY_CONSISTENT`. |
 | `POST` | `/api/reconciliation/cases/{caseId}/resolve` | `ROLE_OPS` | Manually resolves a discrepancy or unresolved case with required investigation note (max 1000 chars). Zero financial mutations. |
+
+---
+
+## 16. Rate Limiting & Admission Control (Phase 27)
+
+LedgerGuard implements token-bucket admission control (`Bucket4j` 8.19.0 backed by bounded in-memory Caffeine cache) situated directly after Spring Security `AuthorizationFilter`. Requests exceeding bandwidth quotas are rejected with `HTTP 429 Too Many Requests` prior to reaching MVC controllers, database transactions, idempotency claims, or ledger locks.
+
+### Policy Configuration & Thresholds
+
+| Policy Bucket | Target Endpoints | Keying Strategy | Capacity | Refill Rate |
+| :--- | :--- | :--- | :---: | :---: |
+| **`PUBLIC_AUTH`** | `/api/auth/register`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout` | Client Remote IP (`PUBLIC_AUTH:ip:<ip>`) | 10 tokens | 10 tokens / min greedy |
+| **`FINANCIAL_WRITE`** | `POST /api/transfers`, `POST /api/payments`, `POST /api/payments/*/refund`, `POST /api/funding`, `POST /api/payouts` | User UUID (`FINANCIAL_WRITE:user:<uuid>`) | 20 tokens | 20 tokens / min greedy |
+| **`OPS`** | `/api/ops/**`, `/api/reconciliation/**` | User UUID (`OPS:user:<uuid>`) | 30 tokens | 30 tokens / min greedy |
+| **`AUTHENTICATED_GENERAL`** | Any other authenticated `/api/**` endpoint | User UUID (`AUTHENTICATED_GENERAL:user:<uuid>`) | 50 tokens | 50 tokens / min greedy |
+| **`EXEMPT`** | `OPTIONS`, `/actuator/health/**`, `/actuator/info`, `POST /api/provider/webhooks` | None | Unbounded | Bypassed |
+
+### HTTP 429 Response Specification
+
+When quota is exhausted, LedgerGuard immediately returns:
+- **Status Code**: `429 Too Many Requests`
+- **Content-Type**: `application/problem+json`
+- **Response Headers**:
+  - `Retry-After`: Integer seconds to wait until at least 1 token is refilled (`Math.max(1, Math.ceil(nanosToWaitForRefill / 1e9))`).
+- **Body Schema (RFC 9457)**:
+```json
+{
+  "type": "about:blank",
+  "title": "Rate limit exceeded",
+  "status": 429,
+  "detail": "Too many requests. Please retry after 6 seconds.",
+  "instance": "/api/transfers",
+  "errorCode": "RATE_LIMIT_EXCEEDED",
+  "timestamp": "2026-09-05T03:12:00Z"
+}
+```
+
+### Financial Safety & Idempotency Invariants
+- HTTP 429 is pure admission control: zero database connections consumed, zero idempotency claims recorded, zero journal transactions or entries written, zero balance holds created or released, zero outbox rows appended, and zero outbound PSP network calls dispatched.
+- Replaying a request with an existing `Idempotency-Key` after waiting the `Retry-After` window executes cleanly as the first admitted call.
