@@ -142,6 +142,14 @@ public class ProviderSettlementChecker {
                 return null;
             });
             return;
+        } catch (com.ledgerguard.funding.infrastructure.PspCallRejectedException e) {
+            log.warn("Level 3 provider client rejected for funding {}: reason={}", fundingId, e.getReason());
+            transactionTemplate.execute(status -> {
+                persistProviderUnavailable(runId, fundingId, FUNDING_ENTITY_TYPE,
+                        "Provider call rejected (" + e.getReason() + ") for funding " + fundingId + ": " + e.getMessage(), null);
+                return null;
+            });
+            return;
         } catch (PspProtocolException e) {
             log.warn("Level 3 provider protocol error for funding {}: {}", fundingId, e.getMessage());
             transactionTemplate.execute(status -> {
@@ -189,6 +197,14 @@ public class ProviderSettlementChecker {
             transactionTemplate.execute(status -> {
                 persistProviderUnavailable(runId, payoutId, PAYOUT_ENTITY_TYPE,
                         "Provider transport failure for payout " + payoutId + ": " + e.getMessage(), null);
+                return null;
+            });
+            return;
+        } catch (com.ledgerguard.funding.infrastructure.PspCallRejectedException e) {
+            log.warn("Level 3 provider client rejected for payout {}: reason={}", payoutId, e.getReason());
+            transactionTemplate.execute(status -> {
+                persistProviderUnavailable(runId, payoutId, PAYOUT_ENTITY_TYPE,
+                        "Provider call rejected (" + e.getReason() + ") for payout " + payoutId + ": " + e.getMessage(), null);
                 return null;
             });
             return;

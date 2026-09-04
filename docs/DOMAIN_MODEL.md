@@ -256,3 +256,23 @@ $$\text{Available Balance} = \text{Posted Balance} - \sum \text{Active Holds}$$
   - Cases in `RESOLVED` status cannot be updated or un-resolved.
   - `DELETE` on `reconciliation_cases` is unconditionally prohibited.
   - Foreign keys on `assigned_to_user_id` and `resolved_by_user_id` reference `users(id)` with `ON DELETE RESTRICT` to preserve historical operator identity.
+
+### Invariant 15: Resilient Provider Client & Multi-Attempt Financial Invariants (Phase 26)
+
+- **Authoritative Replay Resolution (`TIMEOUT_AFTER_SUCCESS`)**:
+  - If a physical attempt times out after provider-side transactional commitment, a subsequent retry or poller query returns the authoritative provider operation (`SUCCEEDED`).
+  - LedgerGuard treats this authoritative response as conclusive: the operation transitions immediately to `SUCCEEDED`, posts exactly 1 balanced double-entry journal, and consumes the linked `BalanceHold` (`ACTIVE` $\to$ `CONSUMED`).
+  - Prior transport ambiguity is superseded by authoritative proof of provider settlement.
+- **Multi-Attempt Ambiguity Dominance**:
+  - A logical CREATE operation comprising multiple physical HTTP attempts evaluates its final business outcome against the entire physical history.
+  - If any attempt experienced transport ambiguity (timeout, connection drop) and subsequent retries fail with 5xx errors without an authoritative response, the operation transitions to `UNKNOWN`.
+  - The linked `BalanceHold` remains `ACTIVE`. Funds are never prematurely released or marked failed when provider liability may exist.
+- **Pre-Network Rejections**:
+  - Rejections occurring before network dispatch (due to `CircuitBreaker` being `OPEN` or `Bulkhead` being `FULL`) are deterministic local rejections with 0 raw HTTP requests dispatched.
+  - Funding operations transition to `FAILED` with `provider_operation_id = NULL`.
+  - Payout operations transition to `FAILED` and immediately release the linked `BalanceHold` (`ACTIVE` $\to$ `RELEASED`).
+- **Poll Counter Isolation**:
+  - Physical HTTP retries executed by Resilience4j under `psp-status-retry` (max 3 attempts) do not inflate durable database counters.
+  - The durable counter `provider_poll_attempts` increments by exactly 1 per scheduled poller run ($N \to N+1$, never $N+3$).
+- **Reconciliation Provider Unavailability**:
+  - Level 3 provider checks rejected by circuit breaker or bulkhead persist `classification = UNRESOLVED` and `problem_type = PROVIDER_UNAVAILABLE` strictly within the frozen V14 schema, without creating new problem types or migration V16.

@@ -5,6 +5,8 @@ import com.ledgerguard.funding.domain.FundingOperation;
 import com.ledgerguard.funding.domain.FundingStatus;
 import com.ledgerguard.funding.domain.FundingValidationException;
 import com.ledgerguard.funding.infrastructure.FundingOperationRepository;
+import com.ledgerguard.funding.infrastructure.PspAmbiguousOutcomeException;
+import com.ledgerguard.funding.infrastructure.PspCallRejectedException;
 import com.ledgerguard.funding.infrastructure.PspClient;
 import com.ledgerguard.funding.infrastructure.PspOperationResponse;
 import com.ledgerguard.funding.infrastructure.PspProtocolException;
@@ -146,6 +148,15 @@ public class FundingService {
                     String.valueOf(funding.getAmountMinor()),
                     funding.getCurrency()
             );
+        } catch (PspCallRejectedException ex) {
+            log.warn("PSP CREATE locally rejected for funding {}: reason={}", funding.getId(), ex.getReason());
+            FundingOperation failed = fundingFailureService.failFunding(funding.getId(), null, Instant.now());
+            return FundingResult.from(failed, creationOutcome.replayed());
+        } catch (PspAmbiguousOutcomeException ex) {
+            log.warn("PSP ambiguous outcome after {} attempts for funding {}: marking UNKNOWN", ex.getAttemptsMade(), funding.getId());
+            FundingOperation updated = fundingTransitionService.markUnknown(
+                    funding.getId(), Instant.now(), Instant.now().plus(INITIAL_POLL_DELAY));
+            return FundingResult.from(updated, creationOutcome.replayed());
         } catch (PspTransportException ex) {
             log.warn("PSP transport error for funding {}: marking UNKNOWN", funding.getId());
             FundingOperation updated = fundingTransitionService.markUnknown(

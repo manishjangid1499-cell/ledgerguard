@@ -1,6 +1,8 @@
 package com.ledgerguard.payout.application;
 
 import com.ledgerguard.common.application.SubmissionPreparationResult;
+import com.ledgerguard.funding.infrastructure.PspAmbiguousOutcomeException;
+import com.ledgerguard.funding.infrastructure.PspCallRejectedException;
 import com.ledgerguard.funding.infrastructure.PspClient;
 import com.ledgerguard.funding.infrastructure.PspOperationResponse;
 import com.ledgerguard.funding.infrastructure.PspProtocolException;
@@ -99,6 +101,16 @@ public class PayoutService {
                     String.valueOf(payout.getAmountMinor()),
                     "INR"
             );
+        } catch (PspCallRejectedException ex) {
+            log.warn("PSP CREATE locally rejected for payout {}: reason={}. Releasing hold and marking FAILED.",
+                    payout.getId(), ex.getReason());
+            return payoutFailureService.failPayout(payout.getId(), null, Instant.now());
+        } catch (PspAmbiguousOutcomeException ex) {
+            log.warn("PSP ambiguous outcome after {} attempts for payout {}. Marking UNKNOWN and preserving ACTIVE hold.",
+                    ex.getAttemptsMade(), payout.getId());
+            Payout updated = payoutTransitionService.markUnknown(
+                    payout.getId(), Instant.now(), Instant.now().plus(INITIAL_POLL_DELAY));
+            return toResult(updated, creationResult.replayed());
         } catch (PspTransportException ex) {
             log.warn("PSP transport timeout/failure for payout {}. Marking UNKNOWN and preserving ACTIVE hold. Error: {}",
                     payout.getId(), ex.getMessage());

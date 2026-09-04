@@ -325,11 +325,12 @@ class FundingServiceIntegrationTest extends AbstractIntegrationTest {
         String idempotencyKey = "fund-timeout-" + UUID.randomUUID();
         UUID providerOpId = UUID.randomUUID();
         AtomicInteger attemptCount = new AtomicInteger(0);
+        java.util.concurrent.atomic.AtomicReference<UUID> targetFundingId = new java.util.concurrent.atomic.AtomicReference<>();
 
         activeHandler.set(exchange -> {
-            int attempt = attemptCount.incrementAndGet();
-            if (attempt == 1) {
-                // Timeout on synchronous POST
+            if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                attemptCount.incrementAndGet();
+                // Timeout on synchronous POST attempts -> enters UNKNOWN
                 try {
                     Thread.sleep(1500); // Exceeds read-timeout of 1000ms
                 } catch (InterruptedException ignored) {}
@@ -339,8 +340,10 @@ class FundingServiceIntegrationTest extends AbstractIntegrationTest {
                 // Poller GET /api/provider/operations/by-client/{clientOperationId}
                 String path = exchange.getRequestURI().getPath();
                 String clientOpIdStr = path.substring(path.lastIndexOf('/') + 1);
+                String targetIdStr = targetFundingId.get() != null ? targetFundingId.get().toString() : "";
+                String chosenProviderOpId = clientOpIdStr.equals(targetIdStr) ? providerOpId.toString() : UUID.randomUUID().toString();
                 Map<String, Object> respMap = Map.of(
-                        "providerOperationId", providerOpId.toString(),
+                        "providerOperationId", chosenProviderOpId,
                         "clientOperationId", clientOpIdStr,
                         "operationType", "CREDIT",
                         "amountMinor", "10000",
@@ -374,6 +377,7 @@ class FundingServiceIntegrationTest extends AbstractIntegrationTest {
         assertThat(ledgerBalanceSnapshotRepository.findById(customerAccount.getId()).orElseThrow().getBalanceMinor()).isEqualTo(0);
 
         // Poller claims UNKNOWN row and recovers SUCCEEDED outcome
+        targetFundingId.set(result1.fundingId());
         jdbcTemplate.update("UPDATE funding_operations SET next_provider_poll_at = CURRENT_TIMESTAMP WHERE id = ?", result1.fundingId());
         providerStatusPollingService.pollPendingOperations();
 
