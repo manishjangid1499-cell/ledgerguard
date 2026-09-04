@@ -54,6 +54,35 @@ ledgerguard:
       max-attempts: ${LEDGERGUARD_PSP_POLLING_MAX_ATTEMPTS:10}
       retry-delay-seconds: ${LEDGERGUARD_PSP_POLLING_RETRY_DELAY_SECONDS:5}
       batch-size: ${LEDGERGUARD_PSP_POLLING_BATCH_SIZE:10}
+  resilience:
+    retry:
+      create:
+        max-attempts: ${LEDGERGUARD_RESILIENCE_RETRY_CREATE_MAX_ATTEMPTS:3}
+        initial-backoff: 200ms
+        multiplier: 2.0
+        max-backoff: 400ms
+        jitter-factor: 0.20
+      status:
+        max-attempts: ${LEDGERGUARD_RESILIENCE_RETRY_STATUS_MAX_ATTEMPTS:3}
+        initial-backoff: 100ms
+        multiplier: 2.0
+        max-backoff: 200ms
+        jitter-factor: 0.20
+    bulkhead:
+      create:
+        max-concurrent-calls: ${LEDGERGUARD_RESILIENCE_BULKHEAD_CREATE_CONCURRENCY:20}
+        max-wait-duration: 0ms
+      status:
+        max-concurrent-calls: ${LEDGERGUARD_RESILIENCE_BULKHEAD_STATUS_CONCURRENCY:20}
+        max-wait-duration: 0ms
+    circuit-breaker:
+      name: psp-remote
+      sliding-window-size: ${LEDGERGUARD_RESILIENCE_CB_WINDOW_SIZE:20}
+      minimum-number-of-calls: ${LEDGERGUARD_RESILIENCE_CB_MIN_CALLS:10}
+      failure-rate-threshold: ${LEDGERGUARD_RESILIENCE_CB_FAILURE_THRESHOLD:50.0}
+      wait-duration-in-open-state: 10s
+      permitted-number-of-calls-in-half-open-state: 5
+      automatic-transition-from-open-to-half-open-enabled: false
   reconciliation:
     cron: ${LEDGERGUARD_RECONCILIATION_CRON:0 0 2 * * *}
   security:

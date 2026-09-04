@@ -313,10 +313,43 @@ Phase 25 introduces a dedicated test suite in `ledgerguard-api` under `com.ledge
 
 ### Phase 25 Test Count
 
-- `ledgerguard-api`: **534 tests, 0 failures, 0 errors, 0 skipped** (+37 tests from Phase 24)
+- `ledgerguard-api`: **537 tests, 0 failures, 0 errors, 0 skipped** (+40 tests from Phase 24)
 - `psp-simulator`: **17 tests**
 - `notification-worker`: **18 tests**
 - `failure-lab`: **1 test**
-- **Workspace total: 570 tests, 0 failures, 0 errors, 0 skipped**
+- **Workspace total: 573 tests, 0 failures, 0 errors, 0 skipped**
 
 Verified by `.\mvnw.cmd clean verify` (2026-09-04).
+
+---
+
+## 13. Phase 26: Resilient Provider Client Testing Strategy
+
+Phase 26 introduces a resilient provider client execution layer powered by Resilience4j 2.4.0 core modules (`resilience4j-circuitbreaker`, `resilience4j-retry`, `resilience4j-bulkhead`) integrated programmatically without AOP or Spring Boot starter magic. All resilience components are verified through isolated unit tests (`PspClientResilienceUnitTest`) and end-to-end Spring Boot Testcontainers integration tests (`ProviderResilienceIntegrationTest`).
+
+### Test Class Registry
+
+| Test Class | Methods | Coverage Area |
+| :--- | :---: | :--- |
+| `PspClientResilienceUnitTest` | 13 | Resilience4j programmatic pipeline: circuit breaker transitions (CLOSED -> OPEN -> HALF_OPEN -> CLOSED), retry backoff & jitter capping, decorator invocation order (`CircuitBreaker -> Bulkhead -> Aggregate Logical Outcome -> Retry -> Raw RestClient HTTP`), isolated `psp-create` and `psp-status` bulkhead saturation, fast rejection on open circuit, pre-network rejection hold release, transaction boundary verification (asserts no active DB transaction around resilience calls) |
+| `ProviderResilienceIntegrationTest` | 7 | Full lifecycle resilience: authoritative replay of `TIMEOUT_AFTER_SUCCESS` resolving to `SUCCEEDED` with double-entry journal and consumed hold, multi-attempt ambiguity dominance (timeout followed by 5xx preserved as `UNKNOWN` with `ACTIVE` hold), poll attempt counter incremented exactly once per logical poll despite retries, status bulkhead saturation non-starvation of create pipeline, circuit breaker half-open auto-recovery on canary success, pre-network circuit open rejection with hold release, and reconciliation Level 3 marking `UNRESOLVED` + `PROVIDER_UNAVAILABLE` on circuit open and bulkhead saturation |
+
+### Phase 26 Invariants Verified by Tests
+
+1. **Network Transaction Boundary**: `PspClientResilienceUnitTest.verifyTransactionBoundaryOutsideResilience` verifies that `TransactionSynchronizationManager.isActualTransactionActive() == false` across all resilient client invocations, guaranteeing that retries, backoffs, and circuit breaker evaluation never hold open PostgreSQL database transactions or locks.
+2. **Deterministic Decorator Order**: Validates the strict sequence `CircuitBreaker -> Bulkhead -> Aggregate Logical Outcome (CREATE) -> Retry -> Raw RestClient HTTP` (and `CircuitBreaker -> Bulkhead -> Retry -> Raw RestClient HTTP` for status GET). CircuitBreaker is outermost so an OPEN circuit fast-rejects before bulkhead acquisition and before any HTTP call. Bulkhead wraps Retry so one permit covers the entire bounded logical provider interaction. Retry sits inside so multiple physical retries reuse a single bulkhead slot, while individual physical failures are recorded in the circuit breaker metric ring.
+3. **Separate Bulkhead Concurrency Domains**: Confirms `psp-create` and `psp-status` operate on completely independent bulkhead instances (each defaulted to 20 concurrent calls with 0ms wait duration). Saturating the status bulkhead returns `BulkheadFullException` on status calls while create calls proceed without thread starvation.
+4. **Authoritative Replay Resolution (`TIMEOUT_AFTER_SUCCESS`)**: Proves that when an initial POST encounters a transport timeout but commits remotely, an immediate retry or subsequent status query returns the authoritative `SUCCEEDED` provider operation. The logical operation transitions to `SUCCEEDED`, commits the double-entry journal, and consumes the balance hold.
+5. **Multi-Attempt Ambiguity Dominance**: Verifies that when any physical attempt within a logical retry cycle yields an ambiguous outcome (transport timeout or non-deterministic 5xx), subsequent physical failures (even machine-readable `temporary-failure`) do NOT demote the outcome to `FAILED`. The final business status is preserved as `UNKNOWN` with the balance hold remaining `ACTIVE`.
+6. **Poller Counter Retry Isolation**: Verifies that when the background status poller executes a logical poll that triggers physical Resilience4j retries, `provider_poll_attempts` is incremented exactly once for the logical poller cycle, preventing premature poll exhaustion.
+7. **Reconciliation Provider Unavailable Classification**: Asserts that when Level 3 `ProviderSettlementChecker` encounters an open circuit breaker or saturated bulkhead, it records an item with `classification = UNRESOLVED` and `problem_type = ReconciliationProblemType.PROVIDER_UNAVAILABLE`, leaving the frozen V14 schema intact and making zero financial mutations.
+
+### Phase 26 Test Count
+
+- `ledgerguard-api`: **557 tests, 0 failures, 0 errors, 0 skipped** (+20 tests from Phase 25)
+- `psp-simulator`: **17 tests**
+- `notification-worker`: **18 tests**
+- `failure-lab`: **1 test**
+- **Workspace total: 593 tests, 0 failures, 0 errors, 0 skipped**
+
+Verified by `.\mvnw.cmd clean verify` (2026-09-05).

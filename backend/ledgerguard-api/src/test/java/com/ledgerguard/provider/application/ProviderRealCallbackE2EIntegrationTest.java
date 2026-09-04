@@ -242,7 +242,7 @@ class ProviderRealCallbackE2EIntegrationTest extends AbstractIntegrationTest {
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
-                }, 400, TimeUnit.MILLISECONDS);
+                }, 1800, TimeUnit.MILLISECONDS);
 
                 // Delay synchronous response by 600ms to trigger PspClient read-timeout (300ms)
                 Thread.sleep(600);

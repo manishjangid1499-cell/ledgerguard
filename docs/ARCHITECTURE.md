@@ -496,3 +496,53 @@ Phase 25 introduces automated repair mechanisms and human-in-the-loop workflows 
   ```
 - **Historical Actor Preservation**: Foreign keys on `assigned_to_user_id` and `resolved_by_user_id` enforce `ON DELETE RESTRICT` against `users(id)`.
 - **Terminal Immutability**: Cases in `RESOLVED` status cannot be updated. `DELETE` on `reconciliation_cases` is unconditionally rejected.
+
+---
+
+## 18. Resilient Provider Client Architecture (Phase 26)
+
+Phase 26 hardens outbound communication to external Payment Service Providers (PSPs) by integrating Resilience4j 2.4.0 core modules programmatically, avoiding annotation-based magic or Spring Boot starters.
+
+### 1. Decorator Pipeline & Invocation Ordering
+
+Outbound PSP calls execute through an exact layered decorator chain:
+```
+Caller (FundingService / PayoutService / Poller / Reconciliation)
+   │
+   ▼
+[CircuitBreaker: psp-remote]
+   │ (Tracks aggregate logical outcome; rejects fast when OPEN)
+   ▼
+[Bulkhead: psp-create (20) | psp-status (20)]
+   │ (Non-blocking semaphore isolation, maxWaitDuration = 0ms)
+   ▼
+[Aggregate Logical Outcome Context]
+   │ (Multi-attempt history tracker: ambiguity dominance)
+   ▼
+[Retry: psp-create-retry | psp-status-retry]
+   │ (Max 3 attempts, exponential backoff with 20% random jitter)
+   ▼
+[Raw HTTP RestClient]
+   │ (TransactionSynchronizationManager.isActualTransactionActive() == false)
+   ▼
+External PSP Simulator
+```
+
+### 2. Core Resilience Components & Production Capacities
+
+- **Circuit Breaker (`psp-remote`)**: Shared across all provider calls. Configured with a sliding window of 20 calls, 10 minimum calls before evaluation, 50% failure rate threshold, 10-second wait duration in OPEN state, and 5 permitted test probes in HALF_OPEN state. Counts logical outcomes rather than individual retry attempts (e.g. attempt 1 fail + attempt 2 success = 1 logical success).
+- **Separate Semaphore Bulkheads**:
+  - `psp-create`: 20 concurrent execution permits, `maxWaitDuration = 0ms`.
+  - `psp-status`: 20 concurrent execution permits, `maxWaitDuration = 0ms`.
+  - Independent semaphore allocations guarantee that high-volume status polling or background reconciliation scans never starve real-time customer funding or payout operations.
+- **Retry Policies**:
+  - `psp-create-retry`: Max 3 attempts, initial backoff 200ms, multiplier 2.0, max backoff 400ms, 20% jitter. Retries on transport exceptions (`PspTransportException`, socket/read timeouts), 5xx server errors, 408, 429, and decoding errors. Replay of existing `clientOperationId` is safe and idempotent.
+  - `psp-status-retry`: Max 3 attempts, initial backoff 100ms, multiplier 2.0, max backoff 200ms, 20% jitter.
+
+### 3. Financial Invariants Under Resilience
+
+- **Authoritative Replay Resolution (`TIMEOUT_AFTER_SUCCESS`)**: If an initial physical attempt times out after provider-side transactional commitment, the subsequent retry receives the authoritative provider record (`SUCCEEDED`). LedgerGuard resolves the operation immediately to `SUCCEEDED`, writes balanced double-entry ledger entries, and transitions the linked balance hold from `ACTIVE` to `CONSUMED`.
+- **Multi-Attempt Ambiguity Dominance**: If an initial attempt encounters transport ambiguity and subsequent retries fail with 5xx errors, the logical operation evaluates to `UNKNOWN`. Balance holds remain `ACTIVE` (never released, never consumed) until resolved by polling or late webhook.
+- **Pre-Network Rejections**: Rejections occurring before network dispatch (due to `CircuitBreaker` being `OPEN` or `Bulkhead` being `FULL`) are deterministic local rejections. Funding transitions to `FAILED`; Payout transitions to `FAILED` and releases the linked balance hold (`ACTIVE` $\to$ `RELEASED`).
+- **Poll Counter Isolation**: Physical HTTP retries executed during polling do not inflate durable database counters (`provider_poll_attempts` increments $N \to N+1$, never $N+3$).
+- **Reconciliation Provider Unavailability**: Level 3 provider checks rejected by circuit breaker or bulkhead persist `classification = UNRESOLVED` and `problem_type = PROVIDER_UNAVAILABLE` strictly within the frozen V14 schema, without creating new problem types or migration V16.

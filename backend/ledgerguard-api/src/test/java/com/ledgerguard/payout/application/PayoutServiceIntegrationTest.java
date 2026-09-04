@@ -359,7 +359,7 @@ class PayoutServiceIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(result.status()).isEqualTo(PayoutStatus.UNKNOWN);
         assertThat(result.completedAt()).isNull();
-        assertThat(pspCallCount.get()).isEqualTo(1);
+        assertThat(pspCallCount.get()).isEqualTo(3);
 
         // Hold must remain ACTIVE
         BalanceHold hold = balanceHoldRepository.findById(result.balanceHoldId()).orElseThrow();
@@ -375,7 +375,7 @@ class PayoutServiceIntegrationTest extends AbstractIntegrationTest {
         PayoutResult replayResult = payoutService.requestPayout(command);
         assertThat(replayResult.status()).isEqualTo(PayoutStatus.UNKNOWN);
         assertThat(replayResult.replayed()).isTrue();
-        assertThat(pspCallCount.get()).isEqualTo(1); // Still 1! No blind DEBIT replay
+        assertThat(pspCallCount.get()).isEqualTo(3); // Still 3! No blind DEBIT replay
     }
 
     @Test
@@ -769,11 +769,11 @@ class PayoutServiceIntegrationTest extends AbstractIntegrationTest {
         String idempKey = "payout-failed-replay-" + UUID.randomUUID();
         CreatePayoutCommand command = new CreatePayoutCommand(customerUserId, idempKey, Money.inr(3000));
 
-        // First attempt -> FAILED
+        // First attempt -> FAILED after exhausting 3 physical attempts (initial + 2 retries)
         PayoutResult firstResult = payoutService.requestPayout(command);
         assertThat(firstResult.status()).isEqualTo(PayoutStatus.FAILED);
         assertThat(firstResult.replayed()).isFalse();
-        assertThat(pspCallCount.get()).isEqualTo(1);
+        assertThat(pspCallCount.get()).isEqualTo(3);
 
         BalanceHold hold = balanceHoldRepository.findById(firstResult.balanceHoldId()).orElseThrow();
         assertThat(hold.getStatus()).isEqualTo(HoldStatus.RELEASED);
@@ -785,8 +785,8 @@ class PayoutServiceIntegrationTest extends AbstractIntegrationTest {
         assertThat(replayResult.payoutId()).isEqualTo(firstResult.payoutId());
         assertThat(replayResult.balanceHoldId()).isEqualTo(firstResult.balanceHoldId());
 
-        // ZERO new PSP calls made on replay
-        assertThat(pspCallCount.get()).isEqualTo(1);
+        // ZERO new PSP calls made on replay (still exactly 3 calls)
+        assertThat(pspCallCount.get()).isEqualTo(3);
 
         // Database row counts
         Integer payoutCount = jdbcTemplate.queryForObject(

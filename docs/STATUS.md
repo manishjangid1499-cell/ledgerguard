@@ -2,9 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Phase 25 Complete (Verified)
-- **Status:** Phase 25 Complete (Verified)
+- **Current Phase:** Phase 26 Complete (Verified)
+- **Status:** Phase 26 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -32,16 +31,23 @@
   - **Phase 23 — External State Machines & Ambiguous Outcomes** (Completed: 2026-09-02)
   - **Phase 24 — Core Reconciliation Engine** (Completed: 2026-09-04)
   - **Phase 25 — Reconciliation Recovery & Manual Review** (Completed: 2026-09-04)
-- **Current Work:** Phase 25 completed. Implemented reconciliation recovery workflows and operator manual review:
-  - V15 Flyway migration adding `reconciliation_cases` table with database triggers enforcing state machine transitions, claim immutability (`IS DISTINCT FROM` null-safe reassignment guard), terminal immutability, `ON DELETE RESTRICT` foreign keys preserving actor audit identity, note length constraint, clock skew normalization, and auto-case creation triggers on `reconciliation_items AFTER INSERT`.
-  - Auto-Repair Engine (`SnapshotAutoRepairService`): Strict boundary repair restricted exclusively to `problem_type = SNAPSHOT_MISMATCH` on `entity_type = LEDGER_ACCOUNT`. Acquires row locks on `reconciliation_cases` and target `ledger_balance_snapshots` before dynamically reconstructing balances from `POSTED` journals via V3 normal balance rules. Enforces signed 64-bit BIGINT bounds, handles missing snapshot row (409 Conflict), handles already consistent snapshots, and updates snapshot in-place with zero ledger adjustments.
-  - Manual Review Engine (`ReconciliationCaseManagementService`): Idempotent case claim for OPS operators (409 Conflict on competing operator claim), manual resolution with non-blank notes (<= 1000 chars) for discrepancies/unresolved items while prohibiting manual resolution of SNAPSHOT_MISMATCH. Zero financial mutations to ledger tables or business state machines.
-  - Case & Run Query Service (`ReconciliationCaseQueryService`): Bounded paged queries for runs, run items, review queue, and case details with numeric string precision formatting (`toPlainString()`).
-  - REST & Security (`ReconciliationController`, `SecurityConfig`): Protected `/api/reconciliation/**` endpoints guarded by `ROLE_OPS`.
-  - Total test suite: 534 tests in `ledgerguard-api` (37 new tests across V15 migration, lifecycle, auto-repair, concurrent posting, no-mutation invariants, and security/API), 17 in `psp-simulator`, 18 in `notification-worker`, 1 in `failure-lab` (total 570 workspace tests, 100% passing).
-- **Next Phase:** Phase 26 — Resilient Provider Client (Circuit Breakers)
-- **Last Verified:** 2026-09-04
-- **Git Branch:** `feat/phase-25-reconciliation-recovery` (workspace uncommitted)
+  - **Phase 26 — Resilient Provider Client (Circuit Breaker & Retries)** (Completed: 2026-09-05)
+- **Current Work:** Phase 26 completed. Implemented comprehensive, programmatic resilience architecture for outbound provider communication:
+  - Resilience4j 2.4.0 core modules integration (`resilience4j-circuitbreaker`, `resilience4j-retry`, `resilience4j-bulkhead`) used programmatically with zero Spring Boot starters, AOP, or Feign.
+  - Execution pipeline: CircuitBreaker (`psp-remote`) -> Bulkhead (`psp-create` / `psp-status`, 20 permits each) -> Aggregate Logical Outcome -> Retry (max 3 attempts, exponential random backoff with 20% jitter) -> Raw `RestClient`.
+  - Breaker evaluation: Shared `psp-remote` circuit breaker counts logical call outcomes, not individual retry attempts (retry-then-success = 1 success / 0 failure; 3 timeouts = 1 failure / 0 success).
+  - Bulkhead isolation: Separate create and status semaphore bulkheads prevent status polling contention from starving payment creation.
+  - Authoritative replay resolution (`TIMEOUT_AFTER_SUCCESS`): An earlier transport timeout ambiguity is preserved only until an authoritative provider replay resolves it. Authoritative 200 response immediately settles Funding/Payout to `SUCCEEDED`, writes balanced double-entry journals, and consumes linked balance holds (`ACTIVE` -> `CONSUMED`).
+  - Multi-attempt ambiguity dominance: A logical operation's final business state evaluates the full multi-attempt history. If any attempt was ambiguous and not authoritatively resolved, the operation transitions to `UNKNOWN` with `ACTIVE` balance hold (never prematurely failed, never released).
+  - Pre-network rejections: Circuit `OPEN` or Bulkhead `FULL` rejects fast with 0 raw HTTP requests; Funding transitions to `FAILED`; Payout transitions to `FAILED` and releases linked balance hold (`ACTIVE` -> `RELEASED`).
+  - Polling retry isolation: Physical GET retries under `psp-status-retry` do not inflate durable database counters (`provider_poll_attempts` increments $N \to N+1$, never $N+3$).
+  - Reconciliation Level 3 integration: Provider call rejections under circuit `OPEN` or bulkhead `FULL` persist `classification = UNRESOLVED`, `problem_type = PROVIDER_UNAVAILABLE` adhering strictly to existing Phase 24 contracts without schema alterations.
+  - Flyway migrations frozen at `V1-V15`. No V16 migration.
+  - Zero modifications to frontend, notification worker, Kafka, or PSP simulator.
+  - Test suites: 557 tests in `ledgerguard-api` (20 new tests in Phase 26), 17 in `psp-simulator`, 18 in `notification-worker`, 1 in `failure-lab` (total 593 workspace tests, 100% passing, 0 failures, 0 errors, 0 skipped).
+- **Next Phase:** Phase 27 — Rate Limiting & Bounded Backpressure
+- **Last Verified:** 2026-09-05
+- **Git Branch:** `feat/phase-26-provider-resilience`
 
 ---
 
@@ -95,19 +101,19 @@
 | **Phase 11** | Concurrency Control, Deterministic Locking & Overdraft Prevention | **Completed** | 2026-08-31 |
 | **Phase 12** | Wallet, Transfer & Ledger Frontend Experience | **Completed** | 2026-08-31 |
 | **Phase 13** | Merchant Payments Domain | **Completed** | 2026-09-01 |
-| **Phase 14** | Full & Partial Refunds | Planned | — |
-| **Phase 15** | Balance Holds & Available Balance Model | Planned | — |
-| **Phase 16** | Transactional Outbox Persistence | Planned | — |
-| **Phase 17** | Kafka Outbox Publisher & Event Contracts | Planned | — |
-| **Phase 18** | Notification Worker & Idempotent Consumer | Planned | — |
-| **Phase 19** | PSP & Banking Simulator | Planned | — |
-| **Phase 20** | External Wallet Funding (Top-Ups) | Planned | — |
+| **Phase 14** | Full & Partial Refunds | **Completed** | 2026-09-01 |
+| **Phase 15** | Balance Holds & Available Balance Model | **Completed** | 2026-09-01 |
+| **Phase 16** | Transactional Outbox Persistence | **Completed** | 2026-09-01 |
+| **Phase 17** | Kafka Outbox Publisher & Event Contracts | **Completed** | 2026-09-01 |
+| **Phase 18** | Notification Worker & Idempotent Consumer | **Completed** | 2026-09-01 |
+| **Phase 19** | PSP & Banking Simulator | **Completed** | 2026-09-01 |
+| **Phase 20** | External Wallet Funding (Top-Ups) | **Completed** | 2026-09-01 |
 | **Phase 21** | External Payouts (Withdrawals) | **Completed** | 2026-09-02 |
 | **Phase 22** | PSP Webhook Signatures & Ordering | **Completed** | 2026-09-02 |
 | **Phase 23** | External State Machines & Ambiguity Handling | **Completed** | 2026-09-02 |
 | **Phase 24** | Core Reconciliation Engine | **Completed** | 2026-09-04 |
 | **Phase 25** | Reconciliation Recovery & Manual Review | **Completed** | 2026-09-04 |
-| **Phase 26** | Resilient Provider Client (Circuit Breakers) | Planned | — |
+| **Phase 26** | Resilient Provider Client (Circuit Breakers) | **Completed** | 2026-09-05 |
 | **Phase 27** | Rate Limiting & Bounded Backpressure | Planned | — |
 | **Phase 28** | Audit Trail & Security Hardening | Planned | — |
 | **Phase 29** | Business & Integrity Metrics (Prometheus) | Planned | — |
