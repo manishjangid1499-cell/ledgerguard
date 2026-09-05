@@ -45,9 +45,9 @@
     1. `LedgerGuard Financial Integrity` (`ledgerguard-financial-integrity.json`, UID: `ledgerguard-financial-integrity`): Monitors Unbalanced/Malformed Posted Journals, Active Reconciliation Discrepancies, Oldest Pending Outbox Lag, and Idempotency Conflicts / Replays.
     2. `LedgerGuard API Operations` (`ledgerguard-api-operations.json`, UID: `ledgerguard-api-operations`): Monitors HTTP Throughput by Status, 5xx & 429 Errors, Aggregate Mean HTTP Duration (`sum(rate(sum))/clamp_min(sum(rate(count)), 1e-12)`), JVM Heap Memory, Process & System CPU, HikariCP Connection Pool, and JVM Thread Pool Utilization.
   - Zero-Impact Invariant: Zero production Java code changes, zero database migrations (V1-V17 frozen, V18 absent), zero changes to `pom.xml`. Clean verify passing with 715 tests (675 API, 17 PSP, 22 Notification Worker, 1 Failure Lab; 0 failures, 0 errors, 0 skipped).
-- **Next Phase:** Phase 32 — Alertmanager & Automated Incident Alerts
+- **Next Phase:** Phase 32 — Money Integrity Failure Lab Backend
 - **Last Verified:** 2026-09-05
-- **Git Branch:** `feat/phase-31-grafana-financial-dashboards`
+- **Git Branch:** main
 
 ---
 
@@ -118,7 +118,7 @@
 | **Phase 28** | Audit Trail & Security Hardening | **Completed** | 2026-09-05 |
 | **Phase 29** | Business & Integrity Metrics (Prometheus) | **Completed** | 2026-09-05 |
 | **Phase 30** | OpenTelemetry Tracing & Correlation IDs | **Completed** | 2026-09-05 |
-| **Phase 31** | Grafana Operations Dashboards | Planned | — |
+| **Phase 31** | Grafana Operations Dashboards | **Completed** | 2026-09-05 |
 | **Phase 32** | Money Integrity Failure Lab Backend | Planned | — |
 | **Phase 33** | Failure Lab Frontend & Visualizer | Planned | — |
 | **Phase 34** | Complete Testcontainers & E2E Suite | Planned | — |

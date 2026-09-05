@@ -122,7 +122,7 @@ After each failure injection, the engine mathematically proves that:
 ## 7. Current Project Status
 
 - **Current State:** Phase 31 Completed — Grafana Operations & Financial Integrity Dashboards: Provisioned containerized Prometheus v3.2.1 and Grafana v11.5.2 observability infrastructure. Automated provisioning of Prometheus datasource and two pre-configured Grafana dashboards in the `LedgerGuard` folder (`LedgerGuard Financial Integrity` and `LedgerGuard API Operations`). Secure defaults enforced: mandatory Grafana local authentication (anonymous access disabled), disabled Prometheus HTTP lifecycle controls, 15s aligned scraping/refresh intervals, and aggregate latency PromQL expressions. Workspace total 715 tests (675 API, 17 PSP, 22 Notification Worker, 1 Failure Lab) with 0 failures, 0 errors, 0 skipped.
-- **Next Step:** Phase 32 — Alertmanager & Automated Incident Alerts.
+- **Next Step:** Phase 32 — Money Integrity Failure Lab Backend.
 - **Roadmap:** Detailed phase-by-phase progress is tracked in [docs/STATUS.md](docs/STATUS.md).
 
 ---
