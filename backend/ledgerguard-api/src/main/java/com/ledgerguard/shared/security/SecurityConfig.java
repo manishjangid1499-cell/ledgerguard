@@ -164,8 +164,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout").permitAll()
                         // Public provider webhook ingress (authenticated via HMAC)
                         .requestMatchers(HttpMethod.POST, "/api/provider/webhooks").permitAll()
-                        // Public actuator health/info endpoints
-                        .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
+                        // Public actuator health/info/prometheus endpoints
+                        .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info", "/actuator/prometheus").permitAll()
                         // Transfers endpoints
                         .requestMatchers(HttpMethod.POST, "/api/transfers").hasAnyRole("CUSTOMER", "MERCHANT")
                         .requestMatchers(HttpMethod.GET, "/api/transfers").hasAnyRole("CUSTOMER", "MERCHANT")

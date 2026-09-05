@@ -748,3 +748,53 @@ Operational actions performed by `ROLE_OPS` on reconciliation cases and balance 
 | `RECONCILIATION_CASE_MANUALLY_RESOLVED` | `RECONCILIATION_CASE` | `POST /api/reconciliation/cases/{caseId}/resolve` | `{"caseId": "<UUID>", "actorUserId": "<UUID>", "resolutionAction": "MANUAL_REVIEW_COMPLETED"}` |
 
 > **Privacy Invariant**: Investigation notes provided in `POST /api/reconciliation/cases/{caseId}/resolve` are stored only on the `reconciliation_cases` table (`resolution_note`) and are strictly excluded from `audit_events.details` to prevent redundant storage and potential PII duplication.
+
+---
+
+## 18. Prometheus Metrics API (`/actuator/prometheus`) — Phase 29
+
+### 18.1 Prometheus Metric Scrape Endpoint
+
+| Method | Endpoint | Status Code | Required Auth | Rate Limit Policy | Purpose |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `GET` | `/actuator/prometheus` | `200 OK` | None (`permitAll`) | `EXEMPT` | Expose standardized Prometheus metrics for external scrapers. |
+
+- **Security & Network Access:**
+  - Publicly accessible without JWT authentication for standard Prometheus scraper integration.
+  - No Prometheus origin is added to the LedgerGuard CORS allowlist, so browser JavaScript from an untrusted cross-origin origin is not granted permission to read the response through CORS. Server-to-server Prometheus scraping is unaffected.
+  - Exempt from application token-bucket rate limiting (`RateLimitPolicy.EXEMPT`). Prometheus scrapes perform zero custom integrity database queries and consume no LedgerGuard application rate-limit bucket. Phase 27 Tomcat/backpressure bounds still apply.
+- **Decoupled Architecture:**
+  - Served directly from in-memory atomics (`AtomicReference<IntegritySnapshot>`, Micrometer `Counter`).
+  - Pre-first-sample state: all three DB-backed gauges expose `Double.NaN`. Duplicate idempotency counters start at `0.0`.
+  - Zero SQL queries, zero database locks, and zero transaction overhead incurred per scrape request.
+
+### 18.2 Custom Financial Integrity & Business Metrics
+
+| Metric Name | Type | Description | Unit / Labels |
+| :--- | :--- | :--- | :--- |
+| `unbalanced_journal_count` | Gauge | Count of posted journal transactions that have unbalanced debits vs credits or zero entries. | `journals` |
+| `reconciliation_discrepancies` | Gauge | Count of active reconciliation discrepancy cases currently in `OPEN` or `IN_REVIEW` status. | `cases` |
+| `outbox_lag_seconds` | Gauge | Age in fractional seconds of the oldest pending event in the transactional outbox (0.0 if empty). | `seconds` |
+| `duplicate_idempotency_keys_total` | Counter | Total application-observed duplicate idempotency key encounters. | `reason="replay"`, `reason="fingerprint_conflict"`, `reason="in_progress"` |
+
+### 18.3 Sample Prometheus Output
+
+```text
+# HELP unbalanced_journal_count Count of posted journal transactions that are unbalanced or have zero entries
+# TYPE unbalanced_journal_count gauge
+unbalanced_journal_count 0.0
+
+# HELP reconciliation_discrepancies Count of active reconciliation cases with classification DISCREPANCY
+# TYPE reconciliation_discrepancies gauge
+reconciliation_discrepancies 0.0
+
+# HELP outbox_lag_seconds Age in seconds of the oldest pending outbox event
+# TYPE outbox_lag_seconds gauge
+outbox_lag_seconds 0.0
+
+# HELP duplicate_idempotency_keys_total Number of duplicate idempotency key encounters observed by the application
+# TYPE duplicate_idempotency_keys_total counter
+duplicate_idempotency_keys_total{reason="fingerprint_conflict"} 0.0
+duplicate_idempotency_keys_total{reason="in_progress"} 0.0
+duplicate_idempotency_keys_total{reason="replay"} 0.0
+```

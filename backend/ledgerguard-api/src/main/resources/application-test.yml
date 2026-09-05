@@ -13,6 +13,9 @@ ledgerguard:
       secure: false
   rate-limit:
     enabled: false
+  metrics:
+    integrity:
+      scheduler-enabled: false
 
 logging:
   level:

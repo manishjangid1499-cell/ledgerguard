@@ -657,6 +657,167 @@ When a bucket is exhausted:
   - `Strict-Transport-Security`: `max-age=31536000; includeSubDomains` (enforced on HTTPS)
   - `X-Content-Type-Options`: `nosniff`
   - `X-Frame-Options`: `DENY`
-  - `CORS`: Allowed origins pinned to `http://localhost:5173`, credentials allowed, and `Retry-After` exposed.
+  - `CORS`: Configured via `ledgerguard.security.cors.allowed-origins`, credentials allowed, and `Retry-After` exposed.
 - **Input Hardening**:
   - `ResolutionNoteValidation`: Rejects ASCII C0 control characters (0x00 through 0x1F, including NUL, CR, LF, TAB) and DEL (0x7F) on raw input *prior* to whitespace trimming, preventing bypass of character sanitation. Enforces non-blank validation and $\le 1000$ character length limit.
+
+---
+
+## 19. Business & Financial Integrity Metrics (Phase 29)
+
+### 1. Architectural Purpose & Decoupled Scrape Model
+
+Phase 29 establishes Prometheus metrics exposition via Micrometer (`io.micrometer:micrometer-registry-prometheus`) exposed at `/actuator/prometheus`.
+
+To protect financial system stability and avoid database connection exhaustion under scraper load:
+- **Zero Database Work on Scrape**: `/actuator/prometheus` reads exclusively from in-memory atomics (`AtomicReference<IntegritySnapshot>` and Micrometer `Counter`). An HTTP GET request to `/actuator/prometheus` executes zero SQL queries, acquires zero Hikari connections, acquires zero row locks, and consumes zero database CPU cycles.
+- **Asynchronous Periodic Sampling**: Database observations are gathered periodically in the background by `IntegrityMetricsSampler` (default every 15s) and published atomically to the in-memory cache.
+- **Strict Read-Only Observability**: Metric collection performs zero financial mutations, zero outbox claiming, and zero reconciliation run creation.
+
+```
++--------------------------+
+|  Prometheus Scraper      |
++--------------------------+
+             | HTTP GET /actuator/prometheus (no JWT, rate-limit exempt, no CORS)
+             v
++--------------------------+
+| Spring Actuator Endpoint |
++--------------------------+
+             | reads in-memory values directly
+             v
++-------------------------------------------------------------+
+|                      IntegrityMetrics                       |
+|  - AtomicReference<IntegritySnapshot>                       |
+|  - unbalanced_journal_count (Gauge)                         |
+|  - reconciliation_discrepancies (Gauge)                     |
+|  - outbox_lag_seconds (Gauge)                               |
+|  - duplicate_idempotency_keys_total (Counter, 3 tags)       |
++-------------------------------------------------------------+
+             ^
+             | atomic snapshot reference update
++-------------------------------------------------------------+
+|                  IntegrityMetricsSampler                    |
+|  - @Scheduled(fixedDelay = 15s)                             |
+|  - ledgerguard.metrics.integrity.scheduler-enabled          |
+|  - Single-failure WARN with exception class logging         |
++-------------------------------------------------------------+
+             |
+             | single consolidated SQL query (readOnly = true)
+             v
++-------------------------------------------------------------+
+|              IntegrityMetricsSnapshotReader                 |
++-------------------------------------------------------------+
+             | 1 round-trip SQL query
+             v
++-------------------------------------------------------------+
+|                 PostgreSQL Database                         |
+|  - invalid journals subquery                                |
+|  - active discrepancy cases subquery                        |
+|  - oldest pending outbox event subquery                     |
++-------------------------------------------------------------+
+```
+
+### 2. Consolidated Single-Query Database Snapshot
+
+To guarantee all three database metrics reflect a single coherent database state, `IntegrityMetricsSnapshotReader.readSnapshot()` executes exactly **one consolidated SQL statement** returning all three values in a single network round trip:
+
+```sql
+SELECT
+    (
+        SELECT COUNT(*)
+        FROM (
+            SELECT jt.id
+            FROM journal_transactions jt
+            LEFT JOIN journal_entries je
+                ON je.journal_transaction_id = jt.id
+            WHERE jt.status = 'POSTED'
+            GROUP BY jt.id
+            HAVING COUNT(je.id) < 2
+                OR COUNT(je.id) FILTER (WHERE je.direction = 'DEBIT') < 1
+                OR COUNT(je.id) FILTER (WHERE je.direction = 'CREDIT') < 1
+                OR COALESCE(
+                    SUM(je.amount_minor::NUMERIC) FILTER (WHERE je.direction = 'DEBIT'),
+                    0::NUMERIC
+                ) <>
+                COALESCE(
+                    SUM(je.amount_minor::NUMERIC) FILTER (WHERE je.direction = 'CREDIT'),
+                    0::NUMERIC
+                )
+        ) invalid_journals
+    ) AS unbalanced_journal_count,
+
+    (
+        SELECT COUNT(*)
+        FROM reconciliation_cases rc
+        JOIN reconciliation_items ri
+            ON ri.id = rc.reconciliation_item_id
+        WHERE rc.status IN ('OPEN', 'IN_REVIEW')
+          AND ri.classification = 'DISCREPANCY'
+    ) AS reconciliation_discrepancies,
+
+    (
+        SELECT COALESCE(
+            GREATEST(
+                0,
+                EXTRACT(
+                    EPOCH FROM (
+                        CURRENT_TIMESTAMP - MIN(created_at)
+                    )
+                )
+            ),
+            0
+        )
+        FROM outbox_events
+        WHERE status = 'PENDING'
+    ) AS outbox_lag_seconds;
+```
+
+- Executed with `@Transactional(readOnly = true)`.
+- The `unbalanced_journal_count` subquery uses a `LEFT JOIN` on `journal_entries` to guarantee that:
+  - **Zero-entry POSTED journals** produce a row with `COUNT(je.id) = 0`, satisfying `COUNT(je.id) < 2` and being visibly counted as malformed journals.
+  - **Malformed journals** (having $< 2$ entries, 0 debit entries, or 0 credit entries) are reliably detected.
+  - **Arithmetic imbalances** where $\sum \text{DEBIT} \ne \sum \text{CREDIT}$ in minor units are detected with exact `NUMERIC` comparison.
+- If the outbox has no pending events or created_at is future-skewed, `COALESCE(GREATEST(0, ...), 0)` safely guarantees non-negative `0.0`.
+
+
+### 3. Atomic Metric Snapshot Publication
+
+- An immutable `IntegritySnapshot` record holds `(long unbalancedJournalCount, long reconciliationDiscrepancies, double outboxLagSeconds)`.
+- The in-memory holder `IntegrityMetrics` maintains an `AtomicReference<IntegritySnapshot>`.
+- Initial pre-sample state: `AtomicReference` holds `null`. All three DB-backed gauges expose `Double.NaN` prior to the first successful sample.
+- The sampler writes a new snapshot via `snapshotRef.set(newSnapshot)`.
+- Each gauge reads from the current snapshot reference:
+  - `unbalanced_journal_count`: `snapshotRef.get() == null ? Double.NaN : (double) s.unbalancedJournalCount()`
+  - `reconciliation_discrepancies`: `snapshotRef.get() == null ? Double.NaN : (double) s.reconciliationDiscrepancies()`
+  - `outbox_lag_seconds`: `snapshotRef.get() == null ? Double.NaN : s.outboxLagSeconds()`
+- All three gauges are registered eagerly in `MeterRegistry` upon application startup, guaranteeing they appear immediately in `/actuator/prometheus` without waiting for first lazy access.
+
+### 4. Bounded Idempotency Encounter Metric
+
+- Metric: `duplicate_idempotency_keys_total`
+- Meter Type: `Counter`
+- Initial value: `0.0`
+- Bounded Tag: `reason` with exactly three permissible values:
+  - `replay`: identical request payload replayed after initial completion.
+  - `fingerprint_conflict`: same idempotency key submitted with different payload fingerprint.
+  - `in_progress`: concurrent or replayed request received while initial transaction is still in-flight.
+- Zero high-cardinality tags: key strings, user UUIDs, request paths, and IPs are strictly excluded from tags to prevent Prometheus memory exhaustion.
+
+### 5. Sampler Resilience & Scheduler Control
+
+- Configurable via `ledgerguard.metrics.integrity`:
+  - `sample-interval: 15s` (validated strictly $> 0$)
+  - `scheduler-enabled: true` (default `true` in production; set to `false` in `application-test.yml` for deterministic, isolated integration testing)
+- Public `sampleNow()` ignores `scheduler-enabled`, allowing explicit on-demand sampling in integration tests.
+- Failure Resilience: On database failure or query timeout:
+  - Logs exactly one `WARN` per outage transition (`firstFailure = lastSampleFailed.compareAndSet(false, true)`), outputting the exception class name only (`e.getClass().getSimpleName()`, suppressing sensitive database exception messages and stack traces).
+  - Continued failures during an ongoing outage do NOT log WARN repeatedly (logged at DEBUG level).
+  - Preserves the last-known snapshot in memory, preventing gauges from flickering to zero during transient database unavailability.
+  - On recovery, logs exactly one `INFO` message indicating successful sampling resumption (`Integrity metrics database sampling recovered`).
+  - Any subsequent outage following recovery triggers a new `WARN` for the new failure transition.
+
+### 6. Security, Rate Limiting & Network Isolation
+
+- **Authentication**: `/actuator/prometheus` is configured with `permitAll()` in Spring Security `SecurityConfig`.
+- **CORS Exclusion**: No Prometheus origin is added to the LedgerGuard CORS allowlist, so browser JavaScript from an untrusted cross-origin origin is not granted permission to read the response through CORS. Server-to-server Prometheus scraping is unaffected.
+- **Rate Limit Exemption**: Exempt from application token-bucket rate limiting (`RateLimitPolicy.EXEMPT` in `RateLimitFilter` along with `/actuator/health/**` and `/actuator/info`). Prometheus scrapes perform zero custom integrity database queries and consume no LedgerGuard application rate-limit bucket. Phase 27 Tomcat/backpressure bounds still apply.

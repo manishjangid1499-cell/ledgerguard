@@ -422,3 +422,38 @@ Phase 28 introduces database-enforced immutable operational audit logging, trans
 - **Workspace total: 658 tests, 0 failures, 0 errors, 0 skipped**
 
 Verified by `.\mvnw.cmd clean verify` (2026-09-05).
+
+---
+
+## 10. Phase 29 — Business & Integrity Metrics (Prometheus) Test Suite
+
+Phase 29 introduces Prometheus metric exposition via Micrometer, four custom business metrics, consolidated database sampling, in-memory atomic snapshot caching, and scheduler isolation.
+
+### Test Class Registry
+
+| Test Class | Module | Methods | Coverage Area |
+| :--- | :--- | :---: | :--- |
+| `IntegrityMetricsPropertiesValidationTest` | `ledgerguard-api` | 5 | Configuration validation: positive sample intervals accepted, zero/negative sample intervals rejected via Jakarta validation, default values verified (`15s`, `true`), and scheduler disablement verified. |
+| `IntegrityMetricsUnitTest` | `ledgerguard-api` | 5 | In-memory unit behavior: initial zero values, atomic snapshot reference updates, gauge observation consistency across rapid updates, duplicate counter incrementing with bounded `reason` tags (`replay`, `fingerprint_conflict`, `in_progress`), and reflection-based tag verification. |
+| `IntegrityMetricsSamplerUnitTest` | `ledgerguard-api` | 5 | Background sampler unit behavior: successful snapshot transition and atomic update, transition-aware failure logging (1 WARN on initial outage transition, repeated failures log DEBUG, 1 INFO on recovery, new WARN on second outage), database detail and stack trace suppression, and scheduler disabled suppression. |
+| `IntegrityMetricsSnapshotReaderIntegrationTest` | `ledgerguard-api` | 7 | Consolidated SQL query integration against PostgreSQL: verifies single consolidated query returns all 3 metrics with 100% precision across baseline state, unbalanced journal detection, explicit zero-entry POSTED journal detection via LEFT JOIN with trigger restoration verification, reconciliation discrepancy lifecycle (OPEN/IN_REVIEW vs RESOLVED), pending outbox lag calculation, future timestamp clamping via GREATEST(0, ...), and empty outbox COALESCE behavior. |
+| `ActuatorPrometheusIntegrationTest` | `ledgerguard-api` | 8 | End-to-end Actuator & Security: `/actuator/prometheus` returns HTTP 200 with `text/plain; version=0.0.4`, unauthenticated access succeeds (`permitAll`), rate limiting is bypassed (`RateLimitPolicy.EXEMPT`), all 4 custom metrics appear eagerly on startup, invalid journal detection reflects live in gauge, active reconciliation discrepancy reflects live in gauge, oldest pending outbox lag reflects live in gauge, and duplicate idempotency counters increment accurately for `replay`, `fingerprint_conflict`, and `in_progress`. |
+
+### Phase 29 Invariants Verified by Tests
+
+1. **Decoupled Scrape Execution**: `ActuatorPrometheusIntegrationTest` verifies that `/actuator/prometheus` serves all gauges and counters directly from memory without executing live database queries during the scrape.
+2. **Consolidated Snapshot Integrity**: `IntegrityMetricsSnapshotReaderIntegrationTest` proves that a single consolidated SQL statement reads invalid journals (including zero-entry POSTED journals via `LEFT JOIN`), discrepancy cases, and pending outbox lag in one round-trip under a read-only transaction.
+3. **Transition-Aware Sampler Logging**: `IntegrityMetricsSamplerUnitTest` proves that consecutive database failures emit exactly 1 `WARN` on the initial failure transition, 0 additional `WARN` logs for subsequent failures, 1 `INFO` on recovery, and allow a new `WARN` only upon a subsequent outage transition.
+4. **Live Metric Reflection**: `ActuatorPrometheusIntegrationTest` injects and resolves ledger anomalies, outbox events, and discrepancy cases, proving that subsequent sampling dynamically reflects in the Prometheus scrape output.
+5. **Bounded Reason Cardinality**: `IntegrityMetricsUnitTest` and `ActuatorPrometheusIntegrationTest` verify that `duplicate_idempotency_keys_total` uses strictly bounded tags (`reason` = `replay`, `fingerprint_conflict`, `in_progress`) with zero UUID or key leaks.
+6. **Scheduler Isolation in Tests**: Integration test suites run with `ledgerguard.metrics.integrity.scheduler-enabled: false`, ensuring background threads do not introduce non-deterministic race conditions during test execution.
+
+### Phase 29 Test Count
+
+- `ledgerguard-api`: **651 tests, 0 failures, 0 errors, 0 skipped** (+30 tests from Phase 28 baseline of 621)
+- `psp-simulator`: **17 tests**
+- `notification-worker`: **19 tests**
+- `failure-lab`: **1 test**
+- **Workspace total: 688 tests, 0 failures, 0 errors, 0 skipped**
+
+Verified by `.\mvnw.cmd clean verify` (2026-09-05).

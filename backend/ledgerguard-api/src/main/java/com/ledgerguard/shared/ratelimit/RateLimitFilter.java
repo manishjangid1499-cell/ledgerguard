@@ -85,8 +85,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return RateLimitPolicy.EXEMPT;
         }
 
-        // 2. Health and Info Probes
-        if (uri.equals("/actuator/health") || uri.startsWith("/actuator/health/") || uri.equals("/actuator/info")) {
+        // 2. Health, Info, and Prometheus Probes
+        if (uri.equals("/actuator/health") || uri.startsWith("/actuator/health/") || uri.equals("/actuator/info") || uri.equals("/actuator/prometheus")) {
             return RateLimitPolicy.EXEMPT;
         }
 
