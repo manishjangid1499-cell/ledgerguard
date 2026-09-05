@@ -75,7 +75,9 @@ public class KafkaConsumerConfig {
 
     @Bean
     public KafkaTemplate<String, String> dltKafkaTemplate(ProducerFactory<String, String> dltProducerFactory) {
-        return new KafkaTemplate<>(dltProducerFactory);
+        KafkaTemplate<String, String> template = new KafkaTemplate<>(dltProducerFactory);
+        template.setObservationEnabled(true);
+        return template;
     }
 
     @Bean
@@ -105,6 +107,7 @@ public class KafkaConsumerConfig {
         factory.setCommonErrorHandler(defaultErrorHandler);
         factory.setConcurrency(concurrency);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
+        factory.getContainerProperties().setObservationEnabled(true);
         return factory;
     }
 }

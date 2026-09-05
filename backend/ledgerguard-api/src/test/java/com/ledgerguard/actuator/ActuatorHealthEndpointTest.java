@@ -58,12 +58,29 @@ class ActuatorHealthEndpointTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("Unexposed actuator endpoints such as /actuator/env and /actuator/beans return 404")
+    @DisplayName("Unexposed actuator endpoints such as /actuator/env, /actuator/beans, and /actuator/metrics return 404")
     void unexposedActuatorEndpointsReturnNotFound() throws Exception {
         mockMvc.perform(get("/actuator/env"))
                 .andExpect(status().isNotFound());
 
         mockMvc.perform(get("/actuator/beans"))
                 .andExpect(status().isNotFound());
+
+        mockMvc.perform(get("/actuator/metrics"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("GET /actuator/metrics is NOT exposed and returns 404 Not Found")
+    void metricsEndpointIsNotExposed() throws Exception {
+        mockMvc.perform(get("/actuator/metrics"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("GET /actuator/info returns 200 OK")
+    void infoEndpointReturnsOk() throws Exception {
+        mockMvc.perform(get("/actuator/info"))
+                .andExpect(status().isOk());
     }
 }

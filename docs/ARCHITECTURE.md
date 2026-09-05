@@ -821,3 +821,114 @@ SELECT
 - **Authentication**: `/actuator/prometheus` is configured with `permitAll()` in Spring Security `SecurityConfig`.
 - **CORS Exclusion**: No Prometheus origin is added to the LedgerGuard CORS allowlist, so browser JavaScript from an untrusted cross-origin origin is not granted permission to read the response through CORS. Server-to-server Prometheus scraping is unaffected.
 - **Rate Limit Exemption**: Exempt from application token-bucket rate limiting (`RateLimitPolicy.EXEMPT` in `RateLimitFilter` along with `/actuator/health/**` and `/actuator/info`). Prometheus scrapes perform zero custom integrity database queries and consume no LedgerGuard application rate-limit bucket. Phase 27 Tomcat/backpressure bounds still apply.
+
+---
+
+## 20. OpenTelemetry Distributed Tracing & Correlation IDs (Phase 30)
+
+Phase 30 implements end-to-end distributed tracing and correlation ID propagation across synchronous HTTP ingress, asynchronous transactional outbox persistence, Kafka event publication, and notification worker event consumption.
+
+### 1. In-Process Tracing Architecture & OpenTelemetry Bridge
+
+```
+[Inbound HTTP Request: X-Correlation-Id]
+                    │
+                    ▼
+          [CorrelationIdFilter]  ──> [MDC: correlationId, Response: X-Correlation-Id]
+                    │
+                    ▼
+        [Spring Security FilterChain]
+                    │
+                    ▼
+          [DispatcherServlet]  ──> [Micrometer Tracing: Active Span (traceId, spanId)]
+                    │
+                    ▼
+             [OutboxService]   ──> [Flyway V17: Persist traceparent, tracestate, correlationId in outbox_events]
+                    │
+                    ▼
+         [PostgreSQL Commit]
+                    │
+                    ▼
+      [OutboxPublisherService] ──> [Extract W3C parent context, makeCurrent(), Deduplicate headers, MDC: correlationId]
+                    │
+                    ▼
+       [Kafka Producer (Record)]
+                    │
+                    ▼
+       [Kafka Topic: ledgerguard.domain-events.v1]
+                    │
+                    ▼
+  [notification-worker: Consumer] ──> [Extract trace context & X-Correlation-Id into MDC]
+```
+
+- **Micrometer Tracing Bridge & Exporter**: Both `ledgerguard-api` and `notification-worker` incorporate `io.micrometer:micrometer-tracing-bridge-otel` and `io.opentelemetry:opentelemetry-exporter-otlp` with versions managed centrally by `spring-boot-dependencies:4.1.1` (no explicit version overrides, no Brave, no Sleuth, no javaagent).
+- **Spring Boot 4.1.1 OTLP Configuration Properties**:
+  - `management.tracing.export.otlp.enabled`: `${MANAGEMENT_TRACING_EXPORT_OTLP_ENABLED:false}` — Disabled by default so that application startup and headless/test environments run reliably without requiring a live OpenTelemetry collector.
+  - `management.opentelemetry.tracing.export.otlp.endpoint`: `${MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT:${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}}` — Conforms to standard Spring Boot 4.x Actuator OTLP tracing configuration and respects the standard OpenTelemetry environment variable `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`.
+  - `management.tracing.sampling.probability: 1.0` — 100% trace sampling across services.
+- **Database & Trace Context Execution Semantics**:
+  - Database operations executed as part of an observed HTTP request or observed Kafka listener invocation execute while that enclosing trace context is active.
+  - Phase 30 does **not** add individual JDBC query spans.
+  - Phase 30 does **not** add `@Transactional` spans.
+  - Phase 30 does **not** add a JDBC observation/proxy dependency (e.g. no datasource-proxy, p6spy, or javaagent).
+  - Flyway startup migrations are **not** child operations of an HTTP request or Kafka consumer trace.
+  - Background/scheduled operations (such as periodic metrics sampling) are also **not** assumed to inherit a prior request context.
+  - The special outbox publisher path explicitly restores persisted W3C context via `W3CTraceContextPropagator` because ThreadLocal context does not survive the durable asynchronous database delay.
+  - Zero SQL parameters, zero financial amounts/balances, and zero SQL bodies/texts are captured or emitted to spans.
+- **Standardized W3C Propagation**: Trace context is formatted and propagated using W3C Trace Context specifications (`traceparent` format: `00-{traceId}-{spanId}-{traceFlags}` and optional `tracestate`).
+- **Structured Logging MDC Format**:
+  `%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-},%X{correlationId:-}]`
+  Logs include application name, trace ID, span ID, and correlation ID, providing instant end-to-end correlation across microservices and log aggregators. `traceId` and `spanId` are managed exclusively by the active Micrometer/OTel span scope (zero manual MDC writing of traceId or spanId).
+
+### 2. Ingress Correlation ID Filter & Security
+
+- **Filter Placement & Registration**: `CorrelationIdFilter` is positioned **before** `SecurityContextHolderFilter` in Spring Security's filter chain. To prevent double invocation by the servlet container, it is registered via `FilterRegistrationBean<CorrelationIdFilter>` with `setEnabled(false)`.
+- **Sanitization Specification**:
+  - Valid: Non-empty ASCII string matching `^[a-zA-Z0-9_-]{1,64}$` (or standard UUID string $\le 64$ characters).
+  - Invalid/Missing: Any header exceeding 64 characters, containing whitespace, control characters (CR, LF, TAB, NUL, DEL), HTML tags, or quotes is rejected and substituted with a clean server-generated UUIDv4.
+- **Header Echo & CORS Exposure**:
+  - The sanitized correlation ID is echoed in the HTTP response `X-Correlation-Id` across all status codes (200, 400, 401, 403, 409, 429, 500).
+  - CORS configuration in `SecurityConfig` includes `X-Correlation-Id` in `allowedHeaders` and `exposedHeaders` (`Retry-After, X-Correlation-Id`).
+- **MDC Isolation & Scope Restoration Guarantee**:
+  - Inbound correlation ID is recorded; if an outer correlation ID was already present in the calling thread, it is remembered.
+  - `MDC.put("correlationId", correlationId)` is set upon entry.
+  - The `finally` block restores any pre-existing outer correlation ID, or invokes `MDC.remove("correlationId")` if none existed, preventing thread-local leakage across thread-pool reuse.
+
+### 3. Durable Outbox Trace Context (Flyway V17)
+
+- **Database Migration `V17__add_outbox_trace_context.sql`**:
+  - Columns:
+    - `traceparent VARCHAR(128) NULL`
+    - `tracestate VARCHAR(512) NULL`
+    - `correlation_id VARCHAR(64) NULL`
+  - Bounded check constraints:
+    - `chk_outbox_events_traceparent_len`: `LENGTH(traceparent) <= 128`
+    - `chk_outbox_events_correlation_id_len`: `LENGTH(correlation_id) <= 64`
+  - Trigger Immutability: The existing trigger function `trg_fn_enforce_outbox_events_integrity()` is updated to enforce strict immutability of `traceparent`, `tracestate`, and `correlation_id` across all `UPDATE` statements (`IS DISTINCT FROM` validation).
+- **Non-Invasive Capture Invariant**:
+  - `OutboxService` captures active W3C `traceparent` and `tracestate` via `W3CTraceContextPropagator.getInstance().inject()` and extracts MDC `correlationId`.
+  - Any tracing capture failure is isolated within a try/catch block so that tracing anomalies never abort, fail, or roll back financial transactions.
+
+### 4. Asynchronous Kafka Trace Context Propagation & Header Deduplication
+
+- **Context Extraction & Restoration**:
+  - In `OutboxPublisherService`, the persisted `traceparent` and `tracestate` are converted into an OpenTelemetry `Context` via `W3CTraceContextPropagator.getInstance().extract()`.
+  - The extracted context is made current (`parentContext.makeCurrent()`) during Kafka record preparation, ensuring the outgoing Kafka producer span correctly links as a child of the original business transaction.
+  - Inbound `correlation_id` is restored into SLF4J MDC and propagated as an `X-Correlation-Id` Kafka record header.
+  - Outer thread MDC values are preserved and cleanly restored in `finally`.
+- **Strict Pre-Send Header Deduplication**:
+  - Kafka's `RecordHeaders` are marked read-only by the producer during serialization inside `kafkaTemplate.send(record)`.
+  - Header inspection and deduplication occur strictly **before** `kafkaTemplate.send(record)`:
+    - Any pre-existing `traceparent` header is removed before injecting the W3C traceparent (exactly 1 header).
+    - Any pre-existing `tracestate` header is removed before injecting (0 or 1 header).
+    - Any pre-existing `X-Correlation-Id` header is removed before injecting the correlation ID (exactly 1 header).
+  - Guarantees exactly zero duplicate trace headers on published Kafka records.
+- **Worker Consumer Continuation**:
+  - `notification-worker` enables observation on Kafka listener containers (`factory.getContainerProperties().setObservationEnabled(true)`).
+  - `DomainEventListener` inspects inbound Kafka record headers, extracts `X-Correlation-Id`, sanitizes the value, populates SLF4J MDC, and restores/clears MDC in a `finally` block upon listener completion.
+
+### 5. Client Observation & Metric Cardinality Protection
+
+- **PSP Client Observation**: `PspClient` leverages an observed `RestClient.Builder` to automatically trace outbound HTTP calls to the payment gateway simulator while maintaining existing Resilience4j decorators (CircuitBreaker, Bulkhead, Retry).
+- **Zero Cardinality Inflation**: Distributed tracing IDs (`traceId`, `spanId`, `correlationId`) are strictly confined to MDC structured logs and W3C headers. They are never registered as Prometheus metric tags or labels, preserving zero memory explosion risk.
+- **Actuator Web Exposure Set**: Web exposure in `ledgerguard-api` is strictly locked to `"health,info,prometheus"`. The diagnostic `/actuator/metrics` endpoint is unexposed (returns 404). In `notification-worker`, default minimal non-web Actuator behavior applies with zero diagnostic endpoint exposure.

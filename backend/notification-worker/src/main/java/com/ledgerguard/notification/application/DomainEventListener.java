@@ -3,18 +3,22 @@ package com.ledgerguard.notification.application;
 import com.ledgerguard.notification.domain.IncomingDomainEvent;
 import com.ledgerguard.notification.domain.ProcessingOutcome;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.common.header.Header;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @Component
 public class DomainEventListener {
@@ -36,6 +40,11 @@ public class DomainEventListener {
             TYPE_REFUND_COMPLETED
     );
 
+    public static final String CORRELATION_ID_HEADER = "X-Correlation-Id";
+    public static final String MDC_CORRELATION_ID_KEY = "correlationId";
+    private static final int MAX_CORRELATION_ID_LENGTH = 64;
+    private static final Pattern VALID_CORRELATION_ID_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{1,64}$");
+
     private final NotificationProcessingService processingService;
     private final ObjectMapper objectMapper;
 
@@ -53,15 +62,39 @@ public class DomainEventListener {
             containerFactory = "kafkaListenerContainerFactory"
     )
     public void onDomainEvent(ConsumerRecord<String, String> record) {
-        String rawMessage = record.value();
-        if (rawMessage == null || rawMessage.isBlank()) {
-            throw new InvalidDomainEventException("Received empty or blank domain event message");
+        String previousCorrelationId = MDC.get(MDC_CORRELATION_ID_KEY);
+        String correlationId = extractOrGenerateCorrelationId(record);
+        MDC.put(MDC_CORRELATION_ID_KEY, correlationId);
+        try {
+            String rawMessage = record.value();
+            if (rawMessage == null || rawMessage.isBlank()) {
+                throw new InvalidDomainEventException("Received empty or blank domain event message");
+            }
+
+            IncomingDomainEvent event = parseAndValidateEnvelope(rawMessage, record.key());
+            ProcessingOutcome outcome = processingService.processEvent(event);
+
+            log.debug("Completed domain event processing: eventId={}, outcome={}", event.eventId(), outcome);
+        } finally {
+            if (previousCorrelationId != null) {
+                MDC.put(MDC_CORRELATION_ID_KEY, previousCorrelationId);
+            } else {
+                MDC.remove(MDC_CORRELATION_ID_KEY);
+            }
         }
+    }
 
-        IncomingDomainEvent event = parseAndValidateEnvelope(rawMessage, record.key());
-        ProcessingOutcome outcome = processingService.processEvent(event);
-
-        log.debug("Completed domain event processing: eventId={}, outcome={}", event.eventId(), outcome);
+    private String extractOrGenerateCorrelationId(ConsumerRecord<String, String> record) {
+        if (record != null && record.headers() != null) {
+            Header header = record.headers().lastHeader(CORRELATION_ID_HEADER);
+            if (header != null && header.value() != null) {
+                String raw = new String(header.value(), StandardCharsets.UTF_8).trim();
+                if (!raw.isBlank() && raw.length() <= MAX_CORRELATION_ID_LENGTH && VALID_CORRELATION_ID_PATTERN.matcher(raw).matches()) {
+                    return raw;
+                }
+            }
+        }
+        return UUID.randomUUID().toString();
     }
 
     private IncomingDomainEvent parseAndValidateEnvelope(String rawMessage, String recordKey) {

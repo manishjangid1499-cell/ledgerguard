@@ -27,6 +27,9 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import com.ledgerguard.shared.ratelimit.RateLimitFilter;
+import com.ledgerguard.shared.tracing.CorrelationIdFilter;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.cors.CorsConfiguration;
@@ -51,22 +54,34 @@ public class SecurityConfig {
     private final CustomAuthenticationEntryPoint authenticationEntryPoint;
     private final CustomAccessDeniedHandler accessDeniedHandler;
     private final RateLimitFilter rateLimitFilter;
+    private final CorrelationIdFilter correlationIdFilter;
 
     public SecurityConfig(JwtProperties jwtProperties,
                           CustomAuthenticationEntryPoint authenticationEntryPoint,
                           CustomAccessDeniedHandler accessDeniedHandler) {
-        this(jwtProperties, authenticationEntryPoint, accessDeniedHandler, null);
+        this(jwtProperties, authenticationEntryPoint, accessDeniedHandler, null, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
     public SecurityConfig(JwtProperties jwtProperties,
                           CustomAuthenticationEntryPoint authenticationEntryPoint,
                           CustomAccessDeniedHandler accessDeniedHandler,
-                          RateLimitFilter rateLimitFilter) {
+                          RateLimitFilter rateLimitFilter,
+                          @org.springframework.beans.factory.annotation.Autowired(required = false) CorrelationIdFilter correlationIdFilter) {
         this.jwtProperties = jwtProperties;
         this.authenticationEntryPoint = authenticationEntryPoint;
         this.accessDeniedHandler = accessDeniedHandler;
         this.rateLimitFilter = rateLimitFilter;
+        this.correlationIdFilter = correlationIdFilter;
+    }
+
+    @Bean
+    public FilterRegistrationBean<CorrelationIdFilter> correlationIdFilterRegistration(
+            @org.springframework.beans.factory.annotation.Autowired(required = false) CorrelationIdFilter filter
+    ) {
+        FilterRegistrationBean<CorrelationIdFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
     }
 
     @Bean
@@ -85,8 +100,8 @@ public class SecurityConfig {
         if (!origins.isEmpty()) {
             configuration.setAllowedOrigins(origins);
             configuration.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
-            configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Idempotency-Key"));
-            configuration.setExposedHeaders(List.of("Retry-After"));
+            configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Idempotency-Key", "X-Correlation-Id"));
+            configuration.setExposedHeaders(List.of("Retry-After", "X-Correlation-Id"));
             configuration.setAllowCredentials(true);
             configuration.setMaxAge(3600L);
         }
@@ -187,6 +202,10 @@ public class SecurityConfig {
                         // Any other request
                         .anyRequest().permitAll()
                 );
+
+        if (correlationIdFilter != null) {
+            http.addFilterBefore(correlationIdFilter, SecurityContextHolderFilter.class);
+        }
 
         if (rateLimitFilter != null) {
             http.addFilterAfter(rateLimitFilter, AuthorizationFilter.class);

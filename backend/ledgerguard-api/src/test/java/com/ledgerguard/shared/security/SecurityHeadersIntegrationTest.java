@@ -78,7 +78,8 @@ class SecurityHeadersIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string("Access-Control-Allow-Origin", "https://app.example.test"))
                 .andExpect(header().string("Access-Control-Allow-Credentials", "true"))
-                .andExpect(header().string("Access-Control-Expose-Headers", "Retry-After"));
+                .andExpect(header().string("Access-Control-Expose-Headers", org.hamcrest.Matchers.containsString("Retry-After")))
+                .andExpect(header().string("Access-Control-Expose-Headers", org.hamcrest.Matchers.containsString("X-Correlation-Id")));
     }
 
     @Test
