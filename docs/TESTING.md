@@ -497,3 +497,41 @@ Phase 30 introduces end-to-end distributed tracing using Micrometer Tracing with
 - **Workspace total: 715 tests, 0 failures, 0 errors, 0 skipped**
 
 Verified by `.\mvnw.cmd clean verify` (2026-09-05).
+
+---
+
+## 12. Phase 31 — Grafana Operations & Financial Integrity Dashboards Verification
+
+Phase 31 provisions containerized Prometheus v3.2.1 and Grafana v11.5.2 observability infrastructure. Because Phase 31 is strictly an infrastructure phase, zero Java code or database migrations were modified. Verification confirms infrastructure syntax, container lifecycle, Prometheus scraping, Grafana provisioning, and full test suite non-regression.
+
+### Verification Matrix
+
+| Area | Tool / Method | Target / Command | Verification Outcome |
+| :--- | :--- | :--- | :--- |
+| **Prometheus Config** | `promtool check config` | `/etc/prometheus/prometheus.yml` via `prom/prometheus:v3.2.1` | **SUCCESS**: Valid Prometheus configuration syntax. |
+| **Dashboard JSON Syntax** | Node / PowerShell JSON Parser | `ledgerguard-financial-integrity.json`, `ledgerguard-api-operations.json` | **PASS**: Syntactically valid JSON, 0 parse errors. |
+| **Docker Compose** | `docker compose config` | `docker-compose.yml` | **PASS**: Services `prometheus` and `grafana` validated with volumes and networking. |
+| **Container Lifecycle** | Docker daemon | `docker compose up -d` | **PASS**: Containers start cleanly and pass health checks (`/-/healthy`, `/-/ready`, `/api/health`). |
+| **Live Target Scrape** | Prometheus HTTP API | `GET /api/v1/targets` | **PASS**: Target `host.docker.internal:8080` reported with `health = "up"`. |
+| **Custom Financial Metrics** | Prometheus HTTP API | `GET /api/v1/query?query=<metric>` | **PASS**: `unbalanced_journal_count`, `reconciliation_discrepancies`, `outbox_lag_seconds`, and `duplicate_idempotency_keys_total` return active vector series. |
+| **PromQL Queries** | Prometheus HTTP API | 22 dashboard expressions via `/api/v1/query` | **PASS**: 20 valid with data, 2 valid but empty (5xx and 429 error rates during clean baseline), 0 invalid. |
+| **Grafana Auth Security** | HTTP client | `GET /api/datasources` without auth | **PASS**: Returns 401 Unauthorized (anonymous access disabled). |
+| **Grafana Provisioning** | Grafana HTTP API | Basic auth with `GRAFANA_ADMIN_PASSWORD` | **PASS**: Datasource `ledgerguard-prometheus` loaded as default; dashboards `ledgerguard-financial-integrity` and `ledgerguard-api-operations` loaded in folder `LedgerGuard`. |
+| **Frontend Lint & Build** | npm | `npm run lint` & `npm run build` | **PASS**: 0 lint errors, production build succeeds, 0 frontend source diffs. |
+
+### Phase 31 Invariants Verified
+
+1. **Zero Financial Mutation**: Prometheus and Grafana operate as read-only telemetry components outside the financial transaction path. Any failure or restart cannot mutate ledger accounts or alter balances.
+2. **Decoupled Scraping & Correct Semantics**: Financial integrity gauges reflect asynchronous in-memory sampling from Phase 29. Panel descriptions accurately reflect Phase 24 journal integrity rules and Phase 25 reconciliation discrepancy definitions.
+3. **Cardinality & Aggregation Safety**: Average HTTP duration is computed via aggregate expressions (`sum(rate(sum))/clamp_min(sum(rate(count)), 1e-12)`), preventing series explosion or silent route partitioning. Zero high-cardinality IDs are exposed.
+4. **Local Auth Hardening**: Anonymous viewer access is disabled; administrator password requires explicit developer configuration via `.env` without default fallback.
+
+### Phase 31 Clean Verify Test Count
+
+- `ledgerguard-api`: **675 tests, 0 failures, 0 errors, 0 skipped**
+- `psp-simulator`: **17 tests, 0 failures, 0 errors, 0 skipped**
+- `notification-worker`: **22 tests, 0 failures, 0 errors, 0 skipped**
+- `failure-lab`: **1 test, 0 failures, 0 errors, 0 skipped**
+- **Workspace total: 715 tests, 0 failures, 0 errors, 0 skipped**
+
+Verified by `.\mvnw.cmd clean verify` (2026-09-05).

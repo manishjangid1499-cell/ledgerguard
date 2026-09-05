@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Phase 30 Complete (Verified)
-- **Status:** Phase 30 Complete (Verified)
+- **Current Phase:** Phase 31 Complete (Verified)
+- **Status:** Phase 31 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -36,20 +36,18 @@
   - **Phase 28 — Audit Trail & Security Hardening** (Completed: 2026-09-05)
   - **Phase 29 — Business & Integrity Metrics (Prometheus)** (Completed: 2026-09-05)
   - **Phase 30 — OpenTelemetry Tracing & Correlation IDs** (Completed: 2026-09-05)
-- **Current Work:** Phase 30 completed. Implemented end-to-end distributed tracing via Micrometer Tracing with OpenTelemetry bridge (`micrometer-tracing-bridge-otel`), OTLP exporter, and correlation ID tracking:
-  - Correlation ID lifecycle: Ingress `CorrelationIdFilter` validates and sanitizes inbound `X-Correlation-Id` (bounded token `^[a-zA-Z0-9_-]{1,64}$` or clean UUID fallback), echoes it in response headers, sets MDC `correlationId`, exposes it in CORS `Access-Control-Expose-Headers`, and guarantees outer MDC context preservation and cleanup in `finally`.
-  - Structured MDC logging: Configured `%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-},%X{correlationId:-}]` across `ledgerguard-api` and `notification-worker`.
-  - Durable outbox trace context (Flyway V17): Added `traceparent`, `tracestate`, and `correlation_id` to `outbox_events` with length constraints and strict trigger immutability enforcement. `OutboxService` captures active W3C `traceparent` and `tracestate` via `W3CTraceContextPropagator` and MDC correlation ID without failing financial transactions.
-  - Asynchronous Kafka trace propagation: `OutboxPublisherService` extracts persisted trace context via `W3CTraceContextPropagator.getInstance().extract()` and sets as active parent context, sets MDC `correlationId`, deduplicates headers to ensure exactly 0 duplicate `traceparent` or `X-Correlation-Id` headers on the Kafka record, and cleans up MDC in `finally`.
-  - Notification worker consumer observation: Enabled observation on Kafka listener containers, extracting inbound `X-Correlation-Id` into MDC with sanitization and guaranteed cleanup in `finally`.
-  - RestClient HTTP client observation: `PspClient` leverages observed `RestClient.Builder` without altering Resilience4j decorators.
-  - Zero metric cardinality inflation: Verified Prometheus metrics contain zero trace ID, span ID, or correlation ID labels.
-  - Actuator surface lockdown: `ledgerguard-api` web exposure locked to `health,info,prometheus` with `/actuator/metrics` unexposed (404); `notification-worker` is a non-web console service with no diagnostic endpoints exposed.
-  - Database Trace Context: Verified database operations executed as part of an observed HTTP request or observed Kafka listener invocation execute while that enclosing trace context is active. Phase 30 does not add individual JDBC query spans, @Transactional spans, or JDBC proxy dependencies. Flyway startup migrations and background jobs do not inherit request spans. Zero SQL parameters, financial values, or query bodies are captured.
-  - Test suites: 675 tests in `ledgerguard-api` (+24 Phase 30 tests), 17 in `psp-simulator`, 22 in `notification-worker` (+3 Phase 30 tests), 1 in `failure-lab` (total 715 workspace tests, clean verify passing with 0 failures, 0 errors, 0 skipped).
-- **Next Phase:** Phase 31 — Grafana Operations Dashboards
+  - **Phase 31 — Grafana Operations & Financial Integrity Dashboards** (Completed: 2026-09-05)
+- **Current Work:** Phase 31 completed. Provisioned containerized Prometheus v3.2.1 and Grafana v11.5.2 observability infrastructure:
+  - Docker Compose services: Added `prometheus` (`prom/prometheus:v3.2.1`) and `grafana` (`grafana/grafana:11.5.2`) services with dedicated named volumes (`ledgerguard-prometheus-data`, `ledgerguard-grafana-data`).
+  - Scrape & Refresh Alignment: Prometheus scrapes `ledgerguard-api` `/actuator/prometheus` at 15s interval via `host.docker.internal:8080`. Grafana dashboards refresh at 15s.
+  - Hardened Configuration: Disabled Grafana anonymous access (`GF_AUTH_ANONYMOUS_ENABLED=false`) with mandatory local password (`GRAFANA_ADMIN_PASSWORD` required in `.env`); disabled Prometheus HTTP lifecycle controls (`--web.enable-lifecycle` removed).
+  - Provisioned Datasources & Dashboards: Configured automated provisioning for Prometheus datasource and two Grafana dashboards in folder `LedgerGuard`:
+    1. `LedgerGuard Financial Integrity` (`ledgerguard-financial-integrity.json`, UID: `ledgerguard-financial-integrity`): Monitors Unbalanced/Malformed Posted Journals, Active Reconciliation Discrepancies, Oldest Pending Outbox Lag, and Idempotency Conflicts / Replays.
+    2. `LedgerGuard API Operations` (`ledgerguard-api-operations.json`, UID: `ledgerguard-api-operations`): Monitors HTTP Throughput by Status, 5xx & 429 Errors, Aggregate Mean HTTP Duration (`sum(rate(sum))/clamp_min(sum(rate(count)), 1e-12)`), JVM Heap Memory, Process & System CPU, HikariCP Connection Pool, and JVM Thread Pool Utilization.
+  - Zero-Impact Invariant: Zero production Java code changes, zero database migrations (V1-V17 frozen, V18 absent), zero changes to `pom.xml`. Clean verify passing with 715 tests (675 API, 17 PSP, 22 Notification Worker, 1 Failure Lab; 0 failures, 0 errors, 0 skipped).
+- **Next Phase:** Phase 32 — Alertmanager & Automated Incident Alerts
 - **Last Verified:** 2026-09-05
-- **Git Branch:** `feat/phase-30-distributed-tracing-correlation`
+- **Git Branch:** `feat/phase-31-grafana-financial-dashboards`
 
 ---
 
