@@ -719,3 +719,32 @@ When quota is exhausted, LedgerGuard immediately returns:
 ### Financial Safety & Idempotency Invariants
 - HTTP 429 is pure admission control: zero database connections consumed, zero idempotency claims recorded, zero journal transactions or entries written, zero balance holds created or released, zero outbox rows appended, and zero outbound PSP network calls dispatched.
 - Replaying a request with an existing `Idempotency-Key` after waiting the `Retry-After` window executes cleanly as the first admitted call.
+
+---
+
+## 17. Administrative Audit Trail & Security Headers (Phase 28)
+
+### Security Response Headers
+
+All HTTP responses from `ledgerguard-api` carry explicit, hardened security headers:
+
+| Header Name | Value | Purpose |
+| :--- | :--- | :--- |
+| `Content-Security-Policy` | `default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'` | Restricts injection and embedding of scripts, frames, and forms. |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | Enforces HTTPS on secure connections with 1-year max age. |
+| `X-Content-Type-Options` | `nosniff` | Blocks MIME-type confusion attacks. |
+| `X-Frame-Options` | `DENY` | Prevents framing and clickjacking. |
+| `Access-Control-Expose-Headers` | `Retry-After` | Exposes rate limiting retry timing to frontend clients. |
+
+### Reconciliation Case Audit Logging
+
+Operational actions performed by `ROLE_OPS` on reconciliation cases and balance snapshots automatically generate immutable rows in `audit_events`:
+
+| Action | Target Type | Triggered By | Details JSON Schema |
+| :--- | :--- | :--- | :--- |
+| `RECONCILIATION_CASE_CLAIMED` | `RECONCILIATION_CASE` | `POST /api/reconciliation/cases/{caseId}/claim` | `{"caseId": "<UUID>", "actorUserId": "<UUID>", "previousStatus": "OPEN", "newStatus": "IN_REVIEW"}` |
+| `RECONCILIATION_SNAPSHOT_REPAIRED` | `RECONCILIATION_CASE` | `POST /api/reconciliation/cases/{caseId}/repair-snapshot` | `{"caseId": "<UUID>", "actorUserId": "<UUID>", "accountId": "<UUID>", "repairedBalanceMinor": <BIGINT>, "previousSnapshotBalanceMinor": <BIGINT>}` |
+| `RECONCILIATION_ALREADY_CONSISTENT` | `RECONCILIATION_CASE` | `POST /api/reconciliation/cases/{caseId}/repair-snapshot` | `{"caseId": "<UUID>", "actorUserId": "<UUID>", "accountId": "<UUID>", "consistentBalanceMinor": <BIGINT>}` |
+| `RECONCILIATION_CASE_MANUALLY_RESOLVED` | `RECONCILIATION_CASE` | `POST /api/reconciliation/cases/{caseId}/resolve` | `{"caseId": "<UUID>", "actorUserId": "<UUID>", "resolutionAction": "MANUAL_REVIEW_COMPLETED"}` |
+
+> **Privacy Invariant**: Investigation notes provided in `POST /api/reconciliation/cases/{caseId}/resolve` are stored only on the `reconciliation_cases` table (`resolution_note`) and are strictly excluded from `audit_events.details` to prevent redundant storage and potential PII duplication.

@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Phase 27 Complete (Verified)
-- **Status:** Phase 27 Complete (Verified)
+- **Current Phase:** Phase 28 Complete (Verified)
+- **Status:** Phase 28 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -33,19 +33,19 @@
   - **Phase 25 — Reconciliation Recovery & Manual Review** (Completed: 2026-09-04)
   - **Phase 26 — Resilient Provider Client (Circuit Breaker & Retries)** (Completed: 2026-09-05)
   - **Phase 27 — Rate Limiting & Bounded Backpressure** (Completed: 2026-09-05)
-- **Current Work:** Phase 27 completed. Implemented token-bucket admission control, bounded server thread pools, and bounded Kafka consumer backpressure:
-  - Token-bucket rate limiting via Bucket4j 8.19.0 (`bucket4j_jdk17-core`) backed by bounded in-memory Caffeine cache (3.2.4 managed by Spring Boot BOM).
-  - Rate limiting filter placed after Spring Security `AuthorizationFilter`: authentication and authorization strictly precede rate limiting (401 and 403 returned with 0 token consumption).
-  - Keying strategy: `PUBLIC_AUTH` strictly IP-keyed (`PUBLIC_AUTH:ip:<ip>`), authenticated routes keyed by policy and JWT `sub` UUID (`FINANCIAL_WRITE:user:<uuid>`, `OPS:user:<uuid>`, `AUTHENTICATED_GENERAL:user:<uuid>`).
-  - Policies: `PUBLIC_AUTH` (10 tokens/min), `FINANCIAL_WRITE` (20 tokens/min), `OPS` (30 tokens/min), `AUTHENTICATED_GENERAL` (50 tokens/min), `EXEMPT` (OPTIONS, actuator health/info, PSP webhooks).
-  - RFC 9457 error response with `status = 429`, `errorCode = RATE_LIMIT_EXCEEDED`, and `Retry-After` header.
-  - Bounded request execution: Tomcat threads (`max=50`, `min-spare=10`, `max-queue-capacity=50`, `accept-count=50`, `max-connections=1000`), Hikari explicit maximum pool size `10`.
-  - Bounded Kafka consumer: `notification-worker` configured with `listener.concurrency=3` and `consumer.max-poll-records=10`.
-  - Financial safety & idempotency: 429 is pure admission control (zero DB queries, zero idempotency claims, zero journals, zero hold mutations, zero outbox events, zero PSP calls). Safe retry with same idempotency key executes cleanly once tokens refill.
-  - Test suites: 583 tests in `ledgerguard-api` (26 new rate-limiting and backpressure tests), 17 in `psp-simulator`, 19 in `notification-worker` (+1 backpressure test), 1 in `failure-lab` (total 620 workspace tests, 100% passing, 0 failures, 0 errors, 0 skipped).
-- **Next Phase:** Phase 28 — Audit Trail & Security Hardening
+  - **Phase 28 — Audit Trail & Security Hardening** (Completed: 2026-09-05)
+- **Current Work:** Phase 28 completed. Implemented database-level immutable audit logging for administrative operational actions, raw control character input hardening, security header hardening, and PII/secret logging verification:
+  - PostgreSQL `audit_events` table (`V16__create_audit_events.sql`) with triggers strictly prohibiting `UPDATE`, `DELETE`, and `TRUNCATE`.
+  - Strongly-typed `AuditService` operating with `Propagation.MANDATORY`, accepting only domain enums and UUIDs with zero public `Map<String, Object>` methods.
+  - Integration into `ReconciliationCaseManagementService` (case claimed, case manually resolved) and `SnapshotAutoRepairService` (snapshot repaired, snapshot already consistent). Real transitions record exactly 1 audit row; idempotent replays record 0 rows.
+  - Raw control character validation on resolution notes rejecting NUL, CR, LF, TAB, C0 controls, and DEL prior to whitespace stripping or normalization.
+  - Security header hardening: explicit Content Security Policy (`default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`), explicit Strict-Transport-Security (`max-age=31536000; includeSubDomains`), preserved `X-Content-Type-Options: nosniff` and `X-Frame-Options: DENY`, and strict CORS with exposed `Retry-After`.
+  - PII and sensitive data logging audit confirmed zero secret leaks across all services.
+  - **Scope Alignment / Architecture Decision**: Account freeze/unfreeze endpoints deferred per human approval (Option A); no administrative freeze workflow exists, existing 15-minute stateless tokens expire naturally, and per-request DB queries were intentionally avoided to protect Phase 27 backpressure guarantees.
+  - Test suites: 621 tests in `ledgerguard-api` (38 new tests across `AuditTrailIntegrationTest`, `ResolutionNoteValidationTest`, and `SecurityHeadersIntegrationTest`), 17 in `psp-simulator`, 19 in `notification-worker`, 1 in `failure-lab` (total 658 workspace tests, 100% passing, 0 failures, 0 errors, 0 skipped).
+- **Next Phase:** Phase 29 — Business & Integrity Metrics (Prometheus)
 - **Last Verified:** 2026-09-05
-- **Git Branch:** `feat/phase-27-rate-limiting-backpressure`
+- **Git Branch:** `feat/phase-28-audit-security-hardening`
 
 ---
 
@@ -113,7 +113,7 @@
 | **Phase 25** | Reconciliation Recovery & Manual Review | **Completed** | 2026-09-04 |
 | **Phase 26** | Resilient Provider Client (Circuit Breakers) | **Completed** | 2026-09-05 |
 | **Phase 27** | Rate Limiting & Bounded Backpressure | **Completed** | 2026-09-05 |
-| **Phase 28** | Audit Trail & Security Hardening | Planned | — |
+| **Phase 28** | Audit Trail & Security Hardening | **Completed** | 2026-09-05 |
 | **Phase 29** | Business & Integrity Metrics (Prometheus) | Planned | — |
 | **Phase 30** | OpenTelemetry Tracing & Correlation IDs | Planned | — |
 | **Phase 31** | Grafana Operations Dashboards | Planned | — |
@@ -134,7 +134,13 @@
 ---
 
 ## 4. Architecture Deviations & Changes
-- **Deviations Recorded:** None. Architecture strictly adheres to the locked specification.
+- **Phase 28 Administrative Account Freeze / Unfreeze Scope Adjustment (Human-Approved Option A)**:
+  - Phase 28 freeze/unfreeze was deferred by human architectural decision.
+  - Current ACTIVE/DISABLED state is authentication status only. There is no administrative account-freeze workflow.
+  - Existing access JWTs are not immediately revoked by user status changes; access JWT TTL remains approximately 15 minutes and tokens expire naturally.
+  - No per-request user DB lookup was introduced because that would conflict with Phase 27 overload/backpressure guarantees.
+  - Account freeze and unfreeze endpoints (`POST /api/ops/users/{id}/freeze`, `POST /api/ops/users/{id}/unfreeze`) and associated stateful JWT revocation mechanisms (token denylist, disabled-user cache, per-request DB lookup filter) were deferred from Phase 28 per human approval.
+  - The Phase 28 scope focused strictly on database-enforced immutable operational audit logging (`audit_events` for reconciliation workflows), transactional audit atomicity, control character input hardening, security header hardening (explicit CSP and HSTS), and PII/secret logging auditing.
 
 ---
 
