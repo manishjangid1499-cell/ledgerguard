@@ -98,9 +98,21 @@ All authentication and authorization failures return standardized RFC 9457 Probl
 
 ## 6. Audit Logging & Sensitive Data Masking
 
-- **Operations Audit Trail**: All privileged actions performed by `ROLE_OPS` (manual reconciliation overrides, account freezes, parameter modifications) generate immutable rows in `audit_events`.
+- **Operations Audit Trail (Phase 28)**: Privileged administrative actions performed on reconciliation cases (`claimCase`, `resolveManually`) and balance snapshots (`repairSnapshot`, `ALREADY_CONSISTENT`) generate immutable rows in `audit_events`.
+  - **Database Immutability Triggers**: PostgreSQL trigger `trg_audit_events_immutability` strictly rejects `UPDATE`, `DELETE`, and `TRUNCATE` operations on `audit_events`.
+  - **Database Authoritative Timestamp**: The database `DEFAULT NOW()` supplies `occurred_at`. Application inserts strictly omit `occurred_at` to prevent application clock skew or tampering.
+  - **Propagation.MANDATORY Atomicity**: `AuditService` executes with `Propagation.MANDATORY`. If the surrounding business transaction fails or conflicts, the audit row rolls back; if the audit insert fails, the business mutation rolls back.
+  - **Strong Typing & Structured Payload**: Public methods accept strongly typed domain enums (`AuditAction`, `AuditTargetType`) and UUIDs. Details JSON is constructed internally from typed fields (zero raw `Map<String, Object>` ingress).
+- **Scope Alignment / Account Freeze Deferral (Human-Approved Option A)**:
+  - Phase 28 freeze/unfreeze was deferred by human architectural decision.
+  - Current ACTIVE/DISABLED state is authentication status only. There is no administrative account-freeze workflow.
+  - Existing access JWTs are not immediately revoked by user status changes; access JWT TTL remains approximately 15 minutes and tokens expire naturally.
+  - No per-request user DB lookup was introduced because that would conflict with Phase 27 overload/backpressure guarantees.
+  - Account freeze and unfreeze administrative endpoints and stateful token revocation filters were deferred from Phase 28 per human approval.
+  - Existing disabled user enforcement in Section 3 remains authoritative: accounts with `status = DISABLED` are rejected on login (401) and cannot rotate refresh tokens (401).
 - **Sensitive Data Logging Policy**:
   - Passwords, JWT secrets, full payment card numbers, bank account numbers, and webhook secrets are strictly prohibited from log files.
+  - An exhaustive codebase audit across all microservices verified that sensitive parameters (`password`, `jwtSecret`, `webhookSecret`, `tokenHash`) are never printed in logger statements or serialized into public error representations.
   - User identifiers, correlation IDs, and transaction IDs are logged for traceability without exposing personally identifiable information (PII).
 
 ---
@@ -120,3 +132,18 @@ All authentication and authorization failures return standardized RFC 9457 Probl
   - HikariCP database pool bound: `maximum-pool-size = 10`.
   - Kafka consumer backpressure on `notification-worker`: `listener.concurrency = 3`, `consumer.max-poll-records = 10`.
 - **Standardized 429 Error Response**: Exceeded quotas return RFC 9457 `application/problem+json` with `RATE_LIMIT_EXCEEDED` error code and integer `Retry-After` header. Zero financial side effects or idempotency record poisoning.
+
+---
+
+## 8. Security Headers & Input Hardening (Phase 28)
+
+- **HTTP Security Response Headers**: Configured explicitly in Spring Security `SecurityConfig`:
+  - `Content-Security-Policy`: `default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`. Enforces zero execution or injection of unauthorized scripts, framing, or form targets.
+  - `Strict-Transport-Security`: `max-age=31536000; includeSubDomains`. Enforces HTTPS transport with 1-year HSTS on all secure requests.
+  - `X-Content-Type-Options`: `nosniff`. Prevents MIME-type confusion attacks.
+  - `X-Frame-Options`: `DENY`. Mitigates clickjacking across all pages and API endpoints.
+  - `CORS Headers`: Origin restricted strictly to the configured frontend host (`http://localhost:5173`) with `allowCredentials = true`, `maxAge = 3600s`, and explicit exposure of `Retry-After` for rate-limiting client integration.
+- **Input Hardening & Control Character Sanitization**:
+  - Administrative resolution notes on reconciliation cases undergo raw control character validation before any trimming or whitespace stripping.
+  - Rejects C0 control characters (ASCII 0x00 through 0x1F, including NUL, CR, LF, TAB) and DEL (0x7F) with `INVALID_RECONCILIATION_OPERATION` (HTTP 400).
+  - Enforces non-blank validation and maximum length constraint (1,000 characters) on normalized input.

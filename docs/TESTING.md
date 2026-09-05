@@ -389,3 +389,36 @@ Phase 27 introduces token-bucket admission control, bounded server thread pools,
 - **Workspace total: 620 tests, 0 failures, 0 errors, 0 skipped**
 
 Verified by `.\mvnw.cmd clean verify` (2026-09-05).
+
+---
+
+## 9. Phase 28 — Audit Trail & Security Hardening Test Suite
+
+Phase 28 introduces database-enforced immutable operational audit logging, transactional atomicity, raw control character input sanitization, and security response header hardening.
+
+### Test Class Registry
+
+| Test Class | Module | Methods | Coverage Area |
+| :--- | :--- | :---: | :--- |
+| `ResolutionNoteValidationTest` | `ledgerguard-api` | 16 | Raw control character rejection: NUL (0x00), CR (0x0D), LF (0x0A), TAB (0x09), DEL (0x7F), intermediate/leading/trailing C0 controls; non-blank validation; length bounds ($\le 1000$ characters); valid printable Unicode strings and space normalization. |
+| `SecurityHeadersIntegrationTest` | `ledgerguard-api` | 7 | Spring Security response headers: explicit CSP (`default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, explicit HSTS (`max-age=31536000; includeSubDomains`) on HTTPS, absence of HSTS on plain HTTP, CORS configured-origin preflight credentials + `Retry-After` header exposure, untrusted origin rejection, and wildcard rejection with credentials. |
+| `AuditTrailIntegrationTest` | `ledgerguard-api` | 15 | Audit persistence & invariants: `Propagation.MANDATORY` enforcement without transaction; absence of public Map methods via reflection; database trigger rejection of `UPDATE`, `DELETE`, and `TRUNCATE`; database clock timestamp generation; audit on case claim; zero audit on duplicate case claim; audit on manual resolution (with note excluded from details JSON); audit on snapshot repair; audit on already-consistent snapshot; rollback of audit on business conflict; rollback of business mutation on audit failure; rollback of snapshot repair on audit failure (snapshot balance, timestamp, and case restored); rollback of already-consistent resolution on audit failure; concurrent claim serialization (exactly 1 audit row). |
+
+### Phase 28 Invariants Verified by Tests
+
+1. **Database Immutability Triggers**: `AuditTrailIntegrationTest` proves that direct SQL `UPDATE`, `DELETE`, and `TRUNCATE` operations on `audit_events` are strictly rejected with an exception by PostgreSQL trigger `trg_audit_events_immutability`.
+2. **Transactional Audit Atomicity**: `AuditTrailIntegrationTest` proves that an audit event insert is rolled back if the surrounding business transaction encounters a conflict. Conversely, if audit persistence fails, the business mutation rolls back completely, including restoring snapshot balances, timestamps, and case states.
+3. **Idempotent Replay Isolation**: `AuditTrailIntegrationTest` verifies that replaying an already claimed or resolved case emits zero additional audit events, ensuring 1:1 correspondence between audit records and state transitions.
+4. **Authoritative Engine Timestamp**: `AuditTrailIntegrationTest` confirms that `occurred_at` is generated authoritatively by PostgreSQL's `DEFAULT NOW()` within a bounded execution window.
+5. **Raw Input Hardening**: `ResolutionNoteValidationTest` proves that raw notes containing control characters (CR, LF, TAB, NUL, DEL) at the beginning, end, or middle are rejected with `INVALID_RECONCILIATION_OPERATION` before any whitespace trimming takes place.
+6. **Security Header Delivery**: `SecurityHeadersIntegrationTest` proves that every response carries explicit CSP, `nosniff`, and `DENY` headers, and that HTTPS endpoints deliver the explicit 1-year HSTS header.
+
+### Phase 28 Test Count
+
+- `ledgerguard-api`: **621 tests, 0 failures, 0 errors, 0 skipped** (+38 tests from Phase 27)
+- `psp-simulator`: **17 tests**
+- `notification-worker`: **19 tests**
+- `failure-lab`: **1 test**
+- **Workspace total: 658 tests, 0 failures, 0 errors, 0 skipped**
+
+Verified by `.\mvnw.cmd clean verify` (2026-09-05).

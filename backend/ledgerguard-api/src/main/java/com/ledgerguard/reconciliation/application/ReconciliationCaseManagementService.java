@@ -11,6 +11,7 @@ import com.ledgerguard.reconciliation.domain.ReconciliationResolutionAction;
 import com.ledgerguard.reconciliation.domain.ReconciliationValidationException;
 import com.ledgerguard.reconciliation.infrastructure.ReconciliationCaseRepository;
 import com.ledgerguard.reconciliation.infrastructure.ReconciliationItemRepository;
+import com.ledgerguard.audit.application.AuditService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -31,13 +32,16 @@ public class ReconciliationCaseManagementService {
     private final ReconciliationCaseRepository caseRepository;
     private final ReconciliationItemRepository itemRepository;
     private final ReconciliationCaseQueryService queryService;
+    private final AuditService auditService;
 
     public ReconciliationCaseManagementService(ReconciliationCaseRepository caseRepository,
                                                ReconciliationItemRepository itemRepository,
-                                               ReconciliationCaseQueryService queryService) {
+                                               ReconciliationCaseQueryService queryService,
+                                               AuditService auditService) {
         this.caseRepository = caseRepository;
         this.itemRepository = itemRepository;
         this.queryService = queryService;
+        this.auditService = auditService;
     }
 
     /**
@@ -67,8 +71,10 @@ public class ReconciliationCaseManagementService {
             throw new ReconciliationConflictException("Case " + caseId + " is already claimed by another operator");
         }
 
+        ReconciliationCaseStatus previousStatus = reconCase.getStatus();
         reconCase.claim(actorUserId);
         reconCase = caseRepository.saveAndFlush(reconCase);
+        auditService.auditCaseClaimed(actorUserId, caseId);
         log.info("Case {} claimed by operator {}", caseId, actorUserId);
 
         return queryService.mapToCaseResponse(reconCase, item);
@@ -83,13 +89,7 @@ public class ReconciliationCaseManagementService {
         Objects.requireNonNull(caseId, "Case ID must not be null");
         Objects.requireNonNull(actorUserId, "Actor user ID must not be null");
 
-        if (note == null || note.trim().isEmpty()) {
-            throw new ReconciliationValidationException("Resolution note must not be blank for manual review");
-        }
-        String normalizedNote = note.trim();
-        if (normalizedNote.length() > 1000) {
-            throw new ReconciliationValidationException("Resolution note must not exceed 1000 characters");
-        }
+        String normalizedNote = validateAndNormalizeResolutionNote(note);
 
         ReconciliationCase reconCase = caseRepository.findByIdForUpdate(caseId)
                 .orElseThrow(() -> new ReconciliationNotFoundException("Reconciliation case not found: " + caseId));
@@ -119,10 +119,41 @@ public class ReconciliationCaseManagementService {
             throw new ReconciliationConflictException("Problem type SNAPSHOT_MISMATCH cannot be manually closed; it must be resolved via auto-repair");
         }
 
+        ReconciliationCaseStatus previousStatus = reconCase.getStatus();
         reconCase.resolveManualReview(actorUserId, normalizedNote);
         reconCase = caseRepository.saveAndFlush(reconCase);
+        auditService.auditCaseManuallyResolved(actorUserId, caseId, previousStatus);
         log.info("Case {} manually resolved by operator {} with note", caseId, actorUserId);
 
         return queryService.mapToCaseResponse(reconCase, item);
+    }
+
+    private String validateAndNormalizeResolutionNote(String note) {
+        if (note == null) {
+            throw new ReconciliationValidationException("Resolution note must not be blank for manual review");
+        }
+
+        // 1. Scan RAW input for C0 control characters (0x00..0x1F) and DEL (0x7F) before any strip/trim
+        for (int i = 0; i < note.length(); i++) {
+            char c = note.charAt(i);
+            if (c <= 0x1F || c == 0x7F) {
+                throw new ReconciliationValidationException("Resolution note must not contain control characters");
+            }
+        }
+
+        // 2. Normalize surrounding ordinary whitespace
+        String normalized = note.strip();
+
+        // 3. Blank check
+        if (normalized.isEmpty()) {
+            throw new ReconciliationValidationException("Resolution note must not be blank for manual review");
+        }
+
+        // 4. Length check
+        if (normalized.length() > 1000) {
+            throw new ReconciliationValidationException("Resolution note must not exceed 1000 characters");
+        }
+
+        return normalized;
     }
 }

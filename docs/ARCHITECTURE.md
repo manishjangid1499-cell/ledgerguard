@@ -618,3 +618,45 @@ When a bucket is exhausted:
   - `consumer.max-poll-records: 10`
   - `listener.concurrency: 3`
   - Limits in-flight processing memory and guarantees deterministic partition assignment across worker consumer threads.
+
+---
+
+## 18. Audit Trail & Security Hardening (Phase 28)
+
+### 1. Database-Level Immutable Audit Persistence
+
+- **`audit_events` Table (`V16__create_audit_events.sql`)**:
+  - Primary persistence schema: `(id UUID PK, action VARCHAR, target_type VARCHAR, target_id UUID, actor_user_id UUID, details JSONB, occurred_at TIMESTAMPTZ DEFAULT NOW())`.
+  - Check constraints strictly validate permissible domain actions:
+    - `RECONCILIATION_CASE_CLAIMED`
+    - `RECONCILIATION_SNAPSHOT_REPAIRED`
+    - `RECONCILIATION_ALREADY_CONSISTENT`
+    - `RECONCILIATION_CASE_MANUALLY_RESOLVED`
+  - Check constraint validates permissible target type: `RECONCILIATION_CASE`.
+  - Foreign key constraint: `actor_user_id REFERENCES users(id) ON DELETE RESTRICT`.
+- **Database Engine Immutability Trigger (`trg_audit_events_immutability`)**:
+  - Attached to `audit_events` as `BEFORE UPDATE OR DELETE OR TRUNCATE`.
+  - Explicitly rejects mutations:
+    - `UPDATE`: `RAISE EXCEPTION 'audit_events is append-only: updates are prohibited'`
+    - `DELETE`: `RAISE EXCEPTION 'audit_events is append-only: deletes are prohibited'`
+    - `TRUNCATE`: `RAISE EXCEPTION 'audit_events is append-only: truncations are prohibited'`
+
+### 2. Transactional Audit Service & Atomicity
+
+- **`AuditService` (`com.ledgerguard.audit.application.AuditService`)**:
+  - Enforces `Propagation.MANDATORY`: auditing must always run within the caller's active business transaction.
+  - Omission of `occurred_at` in SQL insert: PostgreSQL `DEFAULT NOW()` supplies authoritative engine timestamp.
+  - Zero arbitrary `Map<String, Object>` methods: public API accepts strongly-typed domain enums (`AuditAction`, `AuditTargetType`), domain UUIDs, and action-specific fields.
+  - Transactional atomicity: if the reconciliation case or snapshot update fails or encounters a concurrency conflict, the audit row rolls back cleanly. If audit logging fails, the business operation rolls back completely.
+  - Zero Audit on Idempotent Replays: replaying an already claimed case or already resolved case performs a read check under lock and skips audit emission, guaranteeing audit records correspond 1:1 with actual state transitions.
+
+### 3. Security Header Hardening & Input Sanitization
+
+- **Explicit Security Headers**:
+  - `Content-Security-Policy`: `default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`
+  - `Strict-Transport-Security`: `max-age=31536000; includeSubDomains` (enforced on HTTPS)
+  - `X-Content-Type-Options`: `nosniff`
+  - `X-Frame-Options`: `DENY`
+  - `CORS`: Allowed origins pinned to `http://localhost:5173`, credentials allowed, and `Retry-After` exposed.
+- **Input Hardening**:
+  - `ResolutionNoteValidation`: Rejects ASCII C0 control characters (0x00 through 0x1F, including NUL, CR, LF, TAB) and DEL (0x7F) on raw input *prior* to whitespace trimming, preventing bypass of character sanitation. Enforces non-blank validation and $\le 1000$ character length limit.

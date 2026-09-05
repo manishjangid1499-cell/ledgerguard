@@ -98,13 +98,16 @@ public class SnapshotAutoRepairService {
     private final ReconciliationCaseRepository caseRepository;
     private final ReconciliationItemRepository itemRepository;
     private final JdbcTemplate jdbcTemplate;
+    private final com.ledgerguard.audit.application.AuditService auditService;
 
     public SnapshotAutoRepairService(ReconciliationCaseRepository caseRepository,
                                      ReconciliationItemRepository itemRepository,
-                                     JdbcTemplate jdbcTemplate) {
+                                     JdbcTemplate jdbcTemplate,
+                                     com.ledgerguard.audit.application.AuditService auditService) {
         this.caseRepository = caseRepository;
         this.itemRepository = itemRepository;
         this.jdbcTemplate = jdbcTemplate;
+        this.auditService = auditService;
     }
 
     @Transactional
@@ -206,6 +209,12 @@ public class SnapshotAutoRepairService {
 
         // 10. Persist case resolution
         caseRepository.saveAndFlush(reconCase);
+
+        if (action == ReconciliationResolutionAction.SNAPSHOT_REPAIRED) {
+            auditService.auditSnapshotRepaired(actorUserId, caseId, accountId);
+        } else {
+            auditService.auditSnapshotAlreadyConsistent(actorUserId, caseId, accountId);
+        }
 
         return new SnapshotRepairResponse(
                 caseId,

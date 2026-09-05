@@ -300,3 +300,20 @@ $$\text{Available Balance} = \text{Posted Balance} - \sum \text{Active Holds}$$
   - Bounded Tomcat worker threads (`max = 50`) and queue capacity (`50`) bound concurrent server execution.
   - Bounded Hikari connection pool (`maximum-pool-size = 10`) ensures database connection availability.
   - Bounded Kafka consumer batching (`max.poll.records = 10`, `concurrency = 3`) guarantees worker heap stability and deterministic consumer backpressure.
+
+### Invariant 17: Immutable Audit Trail & Administrative Integrity (Phase 28)
+
+- **Database-Enforced Append-Only Audit**:
+  - Operational audit events (`audit_events`) are strictly append-only.
+  - PostgreSQL trigger `trg_audit_events_immutability` intercepts and rejects any attempted `UPDATE`, `DELETE`, or `TRUNCATE` operations on `audit_events`.
+  - The database clock (`DEFAULT NOW()`) provides the immutable authoritative timestamp `occurred_at`. Application inserts strictly omit this column.
+- **Transactional Audit Atomicity (`Propagation.MANDATORY`)**:
+  - Audit writes occur inside the caller's active business transaction.
+  - If a business action fails, encounters validation errors, or conflicts with concurrent operations, the audit record is rolled back cleanly. No phantom audit events exist for operations that never took effect.
+  - If audit insertion fails or encounters a constraint violation, the surrounding business operation rolls back completely. No un-audited administrative mutations exist.
+- **Zero Audit on Idempotent Replays**:
+  - An administrative operation replayed idempotently (e.g. claiming an already claimed case by the same actor, resolving an already resolved case, or repairing an already consistent snapshot) results in a no-op with 0 audit entries emitted.
+  - Every row in `audit_events` represents an actual historical state transition.
+- **Raw Input Hardening**:
+  - Administrative input notes are validated for forbidden ASCII control characters (0x00–0x1F including NUL, CR, LF, TAB, and DEL 0x7F) on raw strings before any whitespace trimming or normalization.
+  - Injection of control sequences is rejected with `INVALID_RECONCILIATION_OPERATION` (HTTP 400).
