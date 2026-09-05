@@ -317,3 +317,24 @@ $$\text{Available Balance} = \text{Posted Balance} - \sum \text{Active Holds}$$
 - **Raw Input Hardening**:
   - Administrative input notes are validated for forbidden ASCII control characters (0x00–0x1F including NUL, CR, LF, TAB, and DEL 0x7F) on raw strings before any whitespace trimming or normalization.
   - Injection of control sequences is rejected with `INVALID_RECONCILIATION_OPERATION` (HTTP 400).
+
+### Invariant 18: Non-Invasive Financial & Operational Observability (Phase 29)
+
+- **Strict Read-Only Observability**:
+  - The business and financial integrity metrics subsystem (`IntegrityMetricsSnapshotReader`, `IntegrityMetricsSampler`, `IntegrityMetrics`) operates strictly in read-only observation mode.
+  - Collecting, sampling, or scraping metrics guarantees:
+    - Zero modification of `journal_transactions` or `journal_entries`
+    - Zero modification or recalculation of `ledger_balance_snapshots`
+    - Zero creation, release, or consumption of `balance_holds`
+    - Zero modification of `transfers`, `payments`, `refunds`, `funding_operations`, or `payouts`
+    - Zero mutation or claiming of `outbox_events` (status remains `PENDING`; no claiming or event publication occurs during lag calculation)
+    - Zero creation or modification of `reconciliation_runs`, `reconciliation_items`, or `reconciliation_cases`
+    - Zero insertion into `audit_events` or `idempotency_records`
+- **Decoupled Metric Scraping**:
+  - `/actuator/prometheus` scrape execution is completely decoupled from database access.
+  - An external scrape request reads from memory only (`AtomicReference<IntegritySnapshot>`, Micrometer counters). Prometheus scrapes perform zero custom integrity database queries and consume no LedgerGuard application rate-limit bucket. Phase 27 Tomcat/backpressure bounds still apply.
+- **Single-Statement Database Observation**:
+  - Periodic background sampling gathers invalid journals count, active reconciliation discrepancies count, and outbox lag within a single atomic SQL statement under a read-only transaction, ensuring all three metrics observe a single coherent database state.
+- **Bounded Tag Cardinality**:
+  - Metric tags are strictly bounded. `duplicate_idempotency_keys_total` exposes only the bounded tag `reason` (`replay`, `fingerprint_conflict`, `in_progress`).
+  - No high-cardinality values (such as idempotency keys, transaction IDs, user UUIDs, account IDs, or IP addresses) are ever tagged or exposed via metrics.

@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Phase 28 Complete (Verified)
-- **Status:** Phase 28 Complete (Verified)
+- **Current Phase:** Phase 29 Complete (Verified)
+- **Status:** Phase 29 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -34,18 +34,22 @@
   - **Phase 26 — Resilient Provider Client (Circuit Breaker & Retries)** (Completed: 2026-09-05)
   - **Phase 27 — Rate Limiting & Bounded Backpressure** (Completed: 2026-09-05)
   - **Phase 28 — Audit Trail & Security Hardening** (Completed: 2026-09-05)
-- **Current Work:** Phase 28 completed. Implemented database-level immutable audit logging for administrative operational actions, raw control character input hardening, security header hardening, and PII/secret logging verification:
-  - PostgreSQL `audit_events` table (`V16__create_audit_events.sql`) with triggers strictly prohibiting `UPDATE`, `DELETE`, and `TRUNCATE`.
-  - Strongly-typed `AuditService` operating with `Propagation.MANDATORY`, accepting only domain enums and UUIDs with zero public `Map<String, Object>` methods.
-  - Integration into `ReconciliationCaseManagementService` (case claimed, case manually resolved) and `SnapshotAutoRepairService` (snapshot repaired, snapshot already consistent). Real transitions record exactly 1 audit row; idempotent replays record 0 rows.
-  - Raw control character validation on resolution notes rejecting NUL, CR, LF, TAB, C0 controls, and DEL prior to whitespace stripping or normalization.
-  - Security header hardening: explicit Content Security Policy (`default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`), explicit Strict-Transport-Security (`max-age=31536000; includeSubDomains`), preserved `X-Content-Type-Options: nosniff` and `X-Frame-Options: DENY`, and strict CORS with exposed `Retry-After`.
-  - PII and sensitive data logging audit confirmed zero secret leaks across all services.
-  - **Scope Alignment / Architecture Decision**: Account freeze/unfreeze endpoints deferred per human approval (Option A); no administrative freeze workflow exists, existing 15-minute stateless tokens expire naturally, and per-request DB queries were intentionally avoided to protect Phase 27 backpressure guarantees.
-  - Test suites: 621 tests in `ledgerguard-api` (38 new tests across `AuditTrailIntegrationTest`, `ResolutionNoteValidationTest`, and `SecurityHeadersIntegrationTest`), 17 in `psp-simulator`, 19 in `notification-worker`, 1 in `failure-lab` (total 658 workspace tests, 100% passing, 0 failures, 0 errors, 0 skipped).
-- **Next Phase:** Phase 29 — Business & Integrity Metrics (Prometheus)
+  - **Phase 29 — Business & Integrity Metrics (Prometheus)** (Completed: 2026-09-05)
+- **Current Work:** Phase 29 completed. Implemented Prometheus business and financial integrity metrics via Micrometer (`io.micrometer:micrometer-registry-prometheus`) exposed at `/actuator/prometheus`:
+  - Four custom business metrics registered eagerly:
+    - `unbalanced_journal_count` (Gauge, baseUnit: journals): count of unbalanced/malformed posted journals.
+    - `reconciliation_discrepancies` (Gauge, baseUnit: cases): count of active unresolved discrepancy cases.
+    - `outbox_lag_seconds` (Gauge, baseUnit: seconds): age in fractional seconds of the oldest pending outbox event.
+    - `duplicate_idempotency_keys_total` (Counter): count of application-observed duplicate idempotency-key encounters with bounded tag `reason` (`replay`, `fingerprint_conflict`, `in_progress`).
+  - Decoupled scrape architecture: Prometheus scrape endpoint is strictly memory-backed; it performs ZERO database queries and acquires zero DB locks.
+  - Consolidated DB sampling: single atomic SQL query in `IntegrityMetricsSnapshotReader` executed in a read-only transaction returns all 3 gauge values in one round-trip.
+  - Background sampler: `IntegrityMetricsSampler` runs on `@Scheduled(fixedDelayString = "${ledgerguard.metrics.integrity.sample-interval:15s}")` and updates in-memory snapshot via single `AtomicReference<IntegritySnapshot>`. Controlled by `ledgerguard.metrics.integrity.scheduler-enabled` (disabled in tests).
+  - Security & Rate Limiting: `/actuator/prometheus` permitted in `SecurityConfig` without authentication (for scraper integration), excluded from CORS allowlist, and explicitly exempted in `RateLimitFilter`.
+  - Invariants preserved: strictly read-only observability; zero financial mutations; zero outbox events claimed or published; zero reconciliation runs created; Flyway migrations V1-V16 frozen, V17 strictly absent.
+  - Test suites: 651 tests in `ledgerguard-api` (+30 new Phase 29 tests), 17 in `psp-simulator`, 19 in `notification-worker`, 1 in `failure-lab` (total 688 workspace tests, 100% passing, 0 failures, 0 errors, 0 skipped).
+- **Next Phase:** Phase 30 — OpenTelemetry Tracing & Correlation IDs
 - **Last Verified:** 2026-09-05
-- **Git Branch:** `feat/phase-28-audit-security-hardening`
+- **Git Branch:** `feat/phase-29-business-integrity-metrics`
 
 ---
 
@@ -114,7 +118,7 @@
 | **Phase 26** | Resilient Provider Client (Circuit Breakers) | **Completed** | 2026-09-05 |
 | **Phase 27** | Rate Limiting & Bounded Backpressure | **Completed** | 2026-09-05 |
 | **Phase 28** | Audit Trail & Security Hardening | **Completed** | 2026-09-05 |
-| **Phase 29** | Business & Integrity Metrics (Prometheus) | Planned | — |
+| **Phase 29** | Business & Integrity Metrics (Prometheus) | **Completed** | 2026-09-05 |
 | **Phase 30** | OpenTelemetry Tracing & Correlation IDs | Planned | — |
 | **Phase 31** | Grafana Operations Dashboards | Planned | — |
 | **Phase 32** | Money Integrity Failure Lab Backend | Planned | — |

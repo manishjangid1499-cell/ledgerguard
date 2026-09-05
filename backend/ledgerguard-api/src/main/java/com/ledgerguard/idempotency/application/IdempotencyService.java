@@ -5,6 +5,7 @@ import com.ledgerguard.idempotency.domain.IdempotencyOperationInProgressExceptio
 import com.ledgerguard.idempotency.domain.IdempotencyRecord;
 import com.ledgerguard.idempotency.domain.IdempotencyStatus;
 import com.ledgerguard.idempotency.infrastructure.IdempotencyRecordRepository;
+import com.ledgerguard.metrics.IntegrityMetrics;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,9 +25,12 @@ import java.util.function.Supplier;
 public class IdempotencyService {
 
     private final IdempotencyRecordRepository idempotencyRecordRepository;
+    private final IntegrityMetrics integrityMetrics;
 
-    public IdempotencyService(IdempotencyRecordRepository idempotencyRecordRepository) {
+    public IdempotencyService(IdempotencyRecordRepository idempotencyRecordRepository,
+                              IntegrityMetrics integrityMetrics) {
         this.idempotencyRecordRepository = idempotencyRecordRepository;
+        this.integrityMetrics = integrityMetrics;
     }
 
     /**
@@ -84,6 +88,7 @@ public class IdempotencyService {
 
         // Validate request fingerprint match
         if (!existing.getRequestFingerprint().equals(command.requestFingerprint())) {
+            integrityMetrics.incrementFingerprintConflict();
             throw new IdempotencyConflictException(
                     "Idempotency key '" + command.idempotencyKey() + "' was already used for operation '" +
                             command.operation() + "' with a different request fingerprint"
@@ -92,10 +97,12 @@ public class IdempotencyService {
 
         // If completed, return cached result
         if (existing.getStatus() == IdempotencyStatus.COMPLETED) {
+            integrityMetrics.incrementReplay();
             return IdempotencyExecutionResult.replayed(existing.getResultId());
         }
 
         // Record exists in IN_PROGRESS state
+        integrityMetrics.incrementInProgress();
         throw new IdempotencyOperationInProgressException(
                 "An operation with idempotency key '" + command.idempotencyKey() + "' is currently in progress for operation '" + command.operation() + "'"
         );

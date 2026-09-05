@@ -119,6 +119,10 @@ ledgerguard:
         capacity: ${LEDGERGUARD_RATE_LIMIT_AUTHENTICATED_GENERAL_CAPACITY:50}
         refill-tokens: ${LEDGERGUARD_RATE_LIMIT_AUTHENTICATED_GENERAL_REFILL_TOKENS:50}
         refill-period: ${LEDGERGUARD_RATE_LIMIT_AUTHENTICATED_GENERAL_REFILL_PERIOD:1m}
+  metrics:
+    integrity:
+      sample-interval: ${LEDGERGUARD_METRICS_INTEGRITY_SAMPLE_INTERVAL:15s}
+      scheduler-enabled: ${LEDGERGUARD_METRICS_INTEGRITY_SCHEDULER_ENABLED:true}
 
 server:
   port: 8080
@@ -134,7 +138,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: "health,info"
+        include: "health,info,prometheus"
   endpoint:
     health:
       show-details: never
