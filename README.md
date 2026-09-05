@@ -103,6 +103,7 @@ After each failure injection, the engine mathematically proves that:
 - **Audit Trail & Security Hardening (Phase 28)**: Database-enforced immutable audit trail (`audit_events` via Flyway V16) protecting privileged administrative actions with database triggers prohibiting `UPDATE`, `DELETE`, and `TRUNCATE`. Strongly typed `AuditService` operating under `Propagation.MANDATORY` atomicity for case claims, manual resolutions, and snapshot repairs (repaired and already consistent), recording zero rows on idempotent replay and rolling back atomically if the business transaction conflicts. Raw control character input hardening (rejecting NUL, CR, LF, TAB, C0 controls, and DEL before trimming or whitespace normalization). Security response headers hardened with explicit Content Security Policy (`default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`), explicit HSTS (`max-age=31536000; includeSubDomains`), preserved `nosniff`/`DENY`, and CORS allowlist with exposed `Retry-After`. Account freeze/unfreeze endpoints deferred per human approval (Option A); codebase audit verified zero PII or credential leaks in logs.
 - **Business & Financial Integrity Metrics (Phase 29)**: Standardized Prometheus metric exposition via Micrometer (`io.micrometer:micrometer-registry-prometheus`) exposed at `/actuator/prometheus`. Implements a decoupled-scrape architecture where Prometheus scrapes read directly from in-memory atomics with zero database queries. Financial integrity gauges (`unbalanced_journal_count`, `reconciliation_discrepancies`, `outbox_lag_seconds`) are sampled asynchronously by `IntegrityMetricsSampler` every 15s using a single atomic SQL statement in `IntegrityMetricsSnapshotReader` and published atomically via `AtomicReference<IntegritySnapshot>`. Application-level idempotency counter `duplicate_idempotency_keys_total` records duplicate encounter events partitioned by bounded reason tags (`replay`, `fingerprint_conflict`, `in_progress`). Endpoint is permitted without JWT, exempted from rate limiting, and excluded from CORS. Zero financial or business mutation; migrations V1-V16 frozen, V17 strictly absent.
 - **Distributed Tracing & Correlation IDs (Phase 30)**: In-process OpenTelemetry distributed tracing using Micrometer Tracing with OpenTelemetry bridge (`micrometer-tracing-bridge-otel`) and OTLP exporter (`io.opentelemetry:opentelemetry-exporter-otlp`). Configured with standard Spring Boot 4.1.1 properties: `management.opentelemetry.tracing.export.otlp.endpoint` (respecting `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`), and `management.tracing.export.otlp.enabled: false` by default for reliable headless test and standalone operation. Ingress `CorrelationIdFilter` validates and sanitizes inbound `X-Correlation-Id` headers (bounded ASCII token `^[a-zA-Z0-9_-]{1,64}$` or UUID fallback), sets SLF4J MDC `correlationId` (with outer context preservation and guaranteed `finally` cleanup), and echoes the header on responses and CORS exposed headers. Structured log formatting includes `[appName,traceId,spanId,correlationId]` with zero manual writing of traceId or spanId to MDC. Flyway migration V17 adds immutable `traceparent`, `tracestate`, and `correlation_id` columns to `outbox_events` protected by database triggers. `OutboxService` captures active W3C trace context into outbox records safely. `OutboxPublisherService` restores the trace parent context via `W3CTraceContextPropagator.getInstance().extract()`, sets MDC `correlationId`, deduplicates Kafka record headers to ensure exactly 0 duplicates, and propagates trace context to Kafka topics. `notification-worker` consumes Kafka events with enabled observation and MDC continuation. Database operations executed as part of an observed HTTP request or observed Kafka listener invocation execute while that enclosing trace context is active. Phase 30 does not add individual JDBC query spans, @Transactional spans, or JDBC proxy dependencies; Flyway startup migrations and background tasks do not inherit request traces; and zero SQL parameters, financial values, or query bodies are captured. Actuator web exposure is locked to `health,info,prometheus`, with `/actuator/metrics` unexposed (returns 404). Zero overhead or mutation on financial transactions, and zero metric label cardinality inflation.
+- **Grafana Operations & Financial Integrity Dashboards (Phase 31)**: Containerized local Prometheus (`prom/prometheus:v3.2.1`) and Grafana (`grafana/grafana:11.5.2`) observability stack provisioned via Docker Compose. Prometheus scrapes `ledgerguard-api` on `/actuator/prometheus` at a 15s interval via `host.docker.internal:8080`. Grafana provisions the `ledgerguard-prometheus` datasource and two dashboards into the `LedgerGuard` folder: `LedgerGuard Financial Integrity` (monitoring unbalanced/malformed posted journals, active reconciliation discrepancies, oldest pending outbox lag, and idempotency conflicts) and `LedgerGuard API Operations` (monitoring HTTP throughput by status, 5xx/429 error rates, aggregate average HTTP latency, JVM heap/metaspace, process/system CPU, HikariCP connection pool, and JVM thread states). Grafana anonymous access is strictly disabled, requiring local authentication. Prometheus HTTP lifecycle control is disabled. Prometheus and Grafana are decoupled local observability tools outside the financial transaction path; any telemetry outage cannot alter ledger state. Zero production Java code changes, zero database migrations (V1-V17 frozen, V18 absent).
 - **Observability**: Micrometer metrics, Prometheus, Grafana dashboards, OpenTelemetry distributed tracing, and structured logging.
 
 ---
@@ -120,8 +121,8 @@ After each failure injection, the engine mathematically proves that:
 
 ## 7. Current Project Status
 
-- **Current State:** Phase 30 Completed — OpenTelemetry Distributed Tracing & Correlation IDs: Implemented end-to-end W3C distributed tracing and correlation ID propagation across HTTP ingress, asynchronous transactional outbox persistence (Flyway V17), Kafka event publishing, and notification worker event consumption. Ingress sanitizes `X-Correlation-Id` headers and binds MDC; logging formats traceId, spanId, and correlationId; outbox publisher restores parent context without header duplication; and consumer listener continues observation. Workspace total 715 tests (675 API, 17 PSP, 22 Notification Worker, 1 Failure Lab) with 0 failures, 0 errors, 0 skipped.
-- **Next Step:** Phase 31 — Grafana Operations Dashboards.
+- **Current State:** Phase 31 Completed — Grafana Operations & Financial Integrity Dashboards: Provisioned containerized Prometheus v3.2.1 and Grafana v11.5.2 observability infrastructure. Automated provisioning of Prometheus datasource and two pre-configured Grafana dashboards in the `LedgerGuard` folder (`LedgerGuard Financial Integrity` and `LedgerGuard API Operations`). Secure defaults enforced: mandatory Grafana local authentication (anonymous access disabled), disabled Prometheus HTTP lifecycle controls, 15s aligned scraping/refresh intervals, and aggregate latency PromQL expressions. Workspace total 715 tests (675 API, 17 PSP, 22 Notification Worker, 1 Failure Lab) with 0 failures, 0 errors, 0 skipped.
+- **Next Step:** Phase 32 — Alertmanager & Automated Incident Alerts.
 - **Roadmap:** Detailed phase-by-phase progress is tracked in [docs/STATUS.md](docs/STATUS.md).
 
 ---
@@ -142,28 +143,30 @@ Copy-Item .env.example .env
 cp .env.example .env
 ```
 
-### 2. Manage Local Infrastructure (PostgreSQL & Kafka)
+### 2. Manage Local Infrastructure (PostgreSQL, Kafka, Prometheus & Grafana)
 ```bash
 # Start infrastructure in background
 docker compose up -d
 
-# Inspect service health (both services will report healthy)
+# Inspect service health
 docker compose ps
 
 # Stop infrastructure (preserves volumes)
 docker compose down
 
-# Destructive reset (WARNING: DELETES ALL LOCAL DATABASE AND KAFKA DATA)
+# Destructive reset (WARNING: DELETES ALL LOCAL DATABASE, KAFKA, AND TELEMETRY DATA)
 docker compose down -v
 ```
 
-### Local Endpoints & Database Ownership
+### Local Endpoints & Service Ownership
 | Service | Container Name | Host Port | Database / Scope | Owner Role | Owner Deployable |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **PostgreSQL 17.11** | `ledgerguard-postgres` | `5432` | `ledgerguard` | `ledgerguard_app` | `ledgerguard-api` |
 | **PostgreSQL 17.11** | `ledgerguard-postgres` | `5432` | `psp_simulator` | `psp_simulator_app` | `psp-simulator` |
 | **PostgreSQL 17.11** | `ledgerguard-postgres` | `5432` | `notification_worker` | `notification_worker_app` | `notification-worker` |
 | **Apache Kafka 4.3.1 (KRaft)** | `ledgerguard-kafka` | `29092` (host) / `9092` (container) | Broker ID 1 (Cluster ID configured) | — | Outbox event stream |
+| **Prometheus 3.2.1** | `ledgerguard-prometheus` | `9090` | Scrapes `/actuator/prometheus` (15s) | — | Metrics Scraper |
+| **Grafana 11.5.2** | `ledgerguard-grafana` | `3000` | Authenticated Dashboards | `admin` | Operations Visualizer |
 
 ---
 

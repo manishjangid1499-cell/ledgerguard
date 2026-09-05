@@ -166,3 +166,20 @@ All authentication and authorization failures return standardized RFC 9457 Probl
 - **Zero PII & Metric Cardinality Protection**:
   - Distributed tracing spans capture HTTP paths, Kafka topics, and operation types. Account balances, customer names, passwords, tokens, and payment card details are never included in span attributes or trace events.
   - Trace IDs, span IDs, and correlation IDs are excluded from Prometheus metric labels, preventing high-cardinality label explosion.
+
+---
+
+## 10. Observability Infrastructure Security & Local Grafana Authentication (Phase 31)
+
+- **Grafana Authentication Enforcement**:
+  - Anonymous access is strictly disabled (`GF_AUTH_ANONYMOUS_ENABLED=false`).
+  - Grafana does not permit unauthenticated access to dashboards, datasources, or settings (returns HTTP 401).
+  - Administrator authentication requires explicit credentials configured via `.env` (`GRAFANA_ADMIN_PASSWORD`). No default or fallback password is committed or allowed in Docker Compose.
+- **Prometheus HTTP Surface Hardening**:
+  - `--web.enable-lifecycle` is removed and disabled, preventing unauthorized reload (`POST /-/reload`) or termination (`POST /-/quit`) requests.
+  - Administrative APIs (`--web.enable-admin-api`), remote write endpoints, and OTLP ingestion receivers are disabled.
+  - Prometheus scrape target is restricted to `host.docker.internal:8080/actuator/prometheus`.
+- **Telemetry Isolation Boundary**:
+  - Prometheus and Grafana are strictly local development observability tools and are isolated from the financial transaction execution path.
+  - Telemetry collection is read-only; an outage, restart, or configuration error in Prometheus or Grafana cannot alter or compromise LedgerGuard financial invariants or ledger state.
+  - Not designed or intended as a hardened public internet deployment.

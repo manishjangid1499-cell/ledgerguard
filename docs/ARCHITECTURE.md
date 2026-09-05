@@ -932,3 +932,45 @@ Phase 30 implements end-to-end distributed tracing and correlation ID propagatio
 - **PSP Client Observation**: `PspClient` leverages an observed `RestClient.Builder` to automatically trace outbound HTTP calls to the payment gateway simulator while maintaining existing Resilience4j decorators (CircuitBreaker, Bulkhead, Retry).
 - **Zero Cardinality Inflation**: Distributed tracing IDs (`traceId`, `spanId`, `correlationId`) are strictly confined to MDC structured logs and W3C headers. They are never registered as Prometheus metric tags or labels, preserving zero memory explosion risk.
 - **Actuator Web Exposure Set**: Web exposure in `ledgerguard-api` is strictly locked to `"health,info,prometheus"`. The diagnostic `/actuator/metrics` endpoint is unexposed (returns 404). In `notification-worker`, default minimal non-web Actuator behavior applies with zero diagnostic endpoint exposure.
+
+---
+
+## 27. Grafana Operations & Financial Integrity Dashboards Architecture (Phase 31)
+
+### 1. Prometheus Scraper Architecture
+- **Service Container**: `prom/prometheus:v3.2.1` in `docker-compose.yml` on port `9090` (configured via `${PROMETHEUS_PORT:-9090}`), mounted with read-only static configuration `infrastructure/prometheus/prometheus.yml` and persistent volume `ledgerguard-prometheus-data`.
+- **Scrape Network Alignment**:
+  - Prometheus runs inside the Docker bridge network (`ledgerguard-network`).
+  - Scrapes host-running `ledgerguard-api` via `host.docker.internal:8080` enabled by `extra_hosts: ["host.docker.internal:host-gateway"]`.
+  - Scrape interval is aligned to 15s (`scrape_interval: 15s`), matching the global interval and the Phase 29 integrity sampler cycle.
+- **Security Hardening**:
+  - `--web.enable-lifecycle` is disabled (prohibiting unauthorized `POST /-/reload` and `POST /-/quit`).
+  - Admin APIs, remote write receivers, and OTLP receivers are not enabled.
+
+### 2. Grafana Provisioning Architecture
+- **Service Container**: `grafana/grafana:11.5.2` on port `3000` (configured via `${GRAFANA_PORT:-3000}`), mounted with persistent volume `ledgerguard-grafana-data`.
+- **Automated Datasource Provisioning**: Mounted at `/etc/grafana/provisioning/datasources/prometheus.yml`, provisions `ledgerguard-prometheus` pointing to `http://prometheus:9090` as default and read-only.
+- **Automated Dashboard Provisioning**: Mounted at `/etc/grafana/provisioning/dashboards/dashboards.yml`, provisions all JSON files from `/etc/grafana/dashboards` into folder `LedgerGuard`.
+- **Authentication Hardening**:
+  - Anonymous access is strictly disabled (`GF_AUTH_ANONYMOUS_ENABLED=false`).
+  - Mandatory local administrator password (`GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set in .env` without default fallback).
+
+### 3. Dashboard Specifications & Financial Semantics
+- **Financial Integrity Dashboard (`ledgerguard-financial-integrity.json`, UID: `ledgerguard-financial-integrity`)**:
+  - **Unbalanced / Malformed Posted Journals** (`unbalanced_journal_count`): Stat panel. Represents count of POSTED journals violating Phase 24 journal integrity rules (fewer than 2 entries, missing debit side, missing credit side, or debit/credit sum mismatch). Must strictly be 0.
+  - **Active Reconciliation Discrepancies** (`reconciliation_discrepancies`): Stat panel. Active reconciliation cases whose associated reconciliation item is classified `DISCREPANCY` and whose status is `OPEN` or `IN_REVIEW`. Originates from journal, snapshot, or provider reconciliation; does not imply every discrepancy means money loss.
+  - **Oldest Pending Outbox Lag** (`outbox_lag_seconds`): Stat and Time Series panels. Age in seconds of oldest pending message in `outbox_events`. Visual threshold indicators (0–5s green, 5–30s yellow, >30s red) represent local/portfolio visualization thresholds, not financial correctness rules, provider SLAs, or data corruption.
+  - **Idempotency Conflict Rate** (`duplicate_idempotency_keys_total`): Stat and Time Series panels partitioned by bounded operational reason (`replay`, `fingerprint_conflict`, `in_progress`).
+- **API Operations Dashboard (`ledgerguard-api-operations.json`, UID: `ledgerguard-api-operations`)**:
+  - **HTTP Request Throughput by Status** (`sum by (status) (rate(http_server_requests_seconds_count[1m]))`).
+  - **HTTP 5xx Server Errors & 429 Rate Limits** (`sum(rate(http_server_requests_seconds_count{status=~"5.."}[1m]))` and `status="429"`).
+  - **Average HTTP Request Duration**: Aggregate mean duration across all endpoints: `sum(rate(http_server_requests_seconds_sum[5m])) / clamp_min(sum(rate(http_server_requests_seconds_count[5m])), 1e-12)`.
+  - **JVM Heap Memory Usage** (`jvm_memory_used_bytes`, `jvm_memory_committed_bytes`, `jvm_memory_max_bytes` with `area="heap"`).
+  - **Process & System CPU Utilization** (`process_cpu_usage * 100`, `system_cpu_usage * 100`).
+  - **HikariCP Connection Pool** (`hikaricp_connections_active`, `idle`, `pending`, `max`).
+  - **JVM Thread Pool Utilization** (`jvm_threads_live_threads`, `daemon_threads`, `peak_threads`, `states_threads{state="runnable"}`).
+
+### 4. Non-Invasive Observability Invariant
+- Prometheus and Grafana operate strictly as read-only telemetry collectors outside the financial transaction path.
+- An outage or failure of Prometheus or Grafana cannot alter, corrupt, or block LedgerGuard financial transactions.
+- Zero production Java code changes, zero database migrations (V1–V17 frozen, V18 strictly absent).

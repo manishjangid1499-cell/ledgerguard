@@ -61,11 +61,55 @@ services:
     networks:
       - ledgerguard-network
 
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    container_name: ledgerguard-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ledgerguard-prometheus-data:/prometheus
+    networks:
+      - ledgerguard-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    container_name: ledgerguard-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set in .env}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/dashboards/ledgerguard-financial-integrity.json
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./infrastructure/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./infrastructure/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./infrastructure/grafana/dashboards:/etc/grafana/dashboards:ro
+      - ledgerguard-grafana-data:/var/lib/grafana
+    networks:
+      - ledgerguard-network
+    depends_on:
+      - prometheus
+
 volumes:
   ledgerguard-postgres-data:
     name: ledgerguard-postgres-data
   ledgerguard-kafka-data:
     name: ledgerguard-kafka-data
+  ledgerguard-prometheus-data:
+    name: ledgerguard-prometheus-data
+  ledgerguard-grafana-data:
+    name: ledgerguard-grafana-data
 
 networks:
   ledgerguard-network:
