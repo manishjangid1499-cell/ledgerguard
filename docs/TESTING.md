@@ -457,3 +457,43 @@ Phase 29 introduces Prometheus metric exposition via Micrometer, four custom bus
 - **Workspace total: 688 tests, 0 failures, 0 errors, 0 skipped**
 
 Verified by `.\mvnw.cmd clean verify` (2026-09-05).
+---
+
+## 11. Phase 30 — OpenTelemetry Tracing & Correlation IDs Test Suite
+
+Phase 30 introduces end-to-end distributed tracing using Micrometer Tracing with OpenTelemetry bridge, correlation ID ingress filtering and sanitization, structured MDC logging, Flyway V17 durable outbox trace context persistence, Kafka trace header deduplication, notification worker event observation, and actuator exposure lockdown.
+
+### Test Class Registry
+
+| Test Class | Module | Methods | Coverage Area |
+| :--- | :--- | :---: | :--- |
+| `CorrelationIdFilterTest` | `ledgerguard-api` | 11 | Ingress correlation filter unit tests: valid custom correlation ID preservation, missing header fallback to UUID, blank/whitespace fallback to UUID, CRLF injection sanitization, control characters/null bytes sanitization, excessive length (>64 chars) rejection, response header echoing, sequential thread reuse zero MDC leakage, outer MDC context restoration, and disallowed character sanitization (script/quotes/spaces/DEL). |
+| `CorrelationIdSecurityIntegrationTest` | `ledgerguard-api` | 5 | Security filter chain integration: 401 Unauthorized returns `X-Correlation-Id`, unauthenticated Actuator health returns `X-Correlation-Id`, CORS preflight exposes `X-Correlation-Id` in `Access-Control-Expose-Headers` alongside `Retry-After`, and header sanitization operates before Spring Security authentication. |
+| `ActuatorHealthEndpointTest` | `ledgerguard-api` | 5 | Actuator web endpoint exposure lockdown: `/actuator/health`, `/actuator/health/liveness`, `/actuator/health/readiness`, and `/actuator/info` return 200 OK; `/actuator/metrics`, `/actuator/env`, and `/actuator/beans` return 404 Not Found. |
+| `OutboxTraceContextIntegrationTest` | `ledgerguard-api` | 3 | V17 migration & DB trigger integrity: persisting outbox event with traceparent, tracestate, and correlation_id; database trigger `trg_fn_enforce_outbox_events_integrity` rejecting `UPDATE` to trace context fields (`IS DISTINCT FROM`); and check constraints bounding column lengths (traceparent $\le 128$, correlation_id $\le 64$). |
+| `OutboxPublisherTracingIntegrationTest` | `ledgerguard-api` | 2 | Asynchronous Kafka publishing trace propagation: outbox publisher restores parent W3C context, injects `X-Correlation-Id`, propagates headers to Kafka, verifies fallback UUID when correlation_id is null, and proves 0 duplicate headers on published Kafka records. |
+| `TraceCardinalityMetricsVerificationTest` | `ledgerguard-api` | 1 | Observability cardinality protection: verifies `/actuator/prometheus` contains zero trace ID, span ID, or correlation ID tags or labels, while Phase 29 business metrics remain fully functional. |
+| `NotificationWorkerTracingIntegrationTest` | `notification-worker` | 2 | Worker consumer tracing continuation: consumer listener continues observation from inbound trace headers, extracts `X-Correlation-Id` into MDC, and handles malformed or missing headers gracefully without disrupting event processing. |
+| `NotificationWorkerApplicationTests` | `notification-worker` | 3 | Worker application bootstrap & observation: bounded consumer backpressure properties, verification that Actuator `/metrics` and `/prometheus` are not exposed, and zero web server port binding. |
+
+### Phase 30 Invariants Verified by Tests
+
+1. **Header Sanitization & CRLF Injection Prevention**: `CorrelationIdFilterTest` and `CorrelationIdSecurityIntegrationTest` prove that all incoming `X-Correlation-Id` values are sanitized against `^[a-zA-Z0-9_-]{1,64}$`. Malformed headers, CRLF sequences, and oversized tokens are discarded and replaced with clean server UUIDs.
+2. **Durable Outbox Trace Context & Immutability**: `OutboxTraceContextIntegrationTest` verifies that Flyway V17 schema captures traceparent, tracestate, and correlation_id durably in PostgreSQL `outbox_events`, and that trigger `trg_fn_enforce_outbox_events_integrity` prevents mutations on update.
+3. **Kafka Trace Context Restoration & Header Deduplication**: `OutboxPublisherTracingIntegrationTest` verifies that `OutboxPublisherService` restores the W3C parent context from outbox records and deduplicates headers before calling `kafkaTemplate.send()`, guaranteeing zero duplicate `traceparent` or `X-Correlation-Id` headers.
+4. **MDC Thread Isolation & Context Restoration**: Tests prove that `correlationId` is bound to MDC upon request entry and Kafka consumer invocation, and cleaned up / restored reliably in `finally` blocks, preventing thread leak across pooled worker threads.
+5. **Zero Prometheus Metric Cardinality Inflation**: `TraceCardinalityMetricsVerificationTest` asserts that Prometheus scrape output contains zero high-cardinality trace or span labels, preserving collector stability.
+6. **Non-Invasive Fail-Safe Telemetry Boundary**: Verifies that telemetry capture errors never fail financial transactions or cause database rollbacks.
+7. **Database Trace Context Execution Without Child JDBC Spans**: Verifies that database operations executed as part of an observed HTTP request or observed Kafka listener invocation execute while that enclosing trace context is active. Phase 30 does not add individual JDBC query spans, @Transactional spans, or JDBC proxy dependencies. Flyway startup migrations and background/scheduled operations do not inherit request trace context. Zero SQL parameters, financial values, or query bodies are captured or emitted.
+8. **Headless & Test Safe Telemetry Export**: Verifies that telemetry export is disabled by default (`management.tracing.export.otlp.enabled: false`), allowing headless test runs and local test suites to execute reliably without an external OpenTelemetry collector.
+9. **Actuator Web Exposure Lockdown**: Verifies that `/actuator/metrics` is not exposed in `ledgerguard-api` (returns 404), while `/actuator/health`, `/actuator/info`, and `/actuator/prometheus` remain accessible and functional according to their Phase 29 contracts. Verifies that `notification-worker` is a non-web console service with zero web diagnostic endpoints exposed.
+
+### Phase 30 Test Count
+
+- `ledgerguard-api`: **675 tests, 0 failures, 0 errors, 0 skipped** (+24 tests from Phase 29 baseline of 651)
+- `psp-simulator`: **17 tests, 0 failures, 0 errors, 0 skipped**
+- `notification-worker`: **22 tests, 0 failures, 0 errors, 0 skipped** (+3 tests from Phase 29 baseline of 19)
+- `failure-lab`: **1 test, 0 failures, 0 errors, 0 skipped**
+- **Workspace total: 715 tests, 0 failures, 0 errors, 0 skipped**
+
+Verified by `.\mvnw.cmd clean verify` (2026-09-05).

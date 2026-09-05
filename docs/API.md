@@ -734,7 +734,7 @@ All HTTP responses from `ledgerguard-api` carry explicit, hardened security head
 | `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | Enforces HTTPS on secure connections with 1-year max age. |
 | `X-Content-Type-Options` | `nosniff` | Blocks MIME-type confusion attacks. |
 | `X-Frame-Options` | `DENY` | Prevents framing and clickjacking. |
-| `Access-Control-Expose-Headers` | `Retry-After` | Exposes rate limiting retry timing to frontend clients. |
+| `Access-Control-Expose-Headers` | `Retry-After, X-Correlation-Id` | Exposes rate limiting retry timing and correlation ID to frontend clients. |
 
 ### Reconciliation Case Audit Logging
 
@@ -798,3 +798,48 @@ duplicate_idempotency_keys_total{reason="fingerprint_conflict"} 0.0
 duplicate_idempotency_keys_total{reason="in_progress"} 0.0
 duplicate_idempotency_keys_total{reason="replay"} 0.0
 ```
+
+---
+
+## 19. Distributed Tracing & Correlation Header Specification (Phase 30)
+
+### 19.1 Correlation ID Ingress Header (`X-Correlation-Id`)
+
+All HTTP endpoints across `ledgerguard-api` support and propagate the `X-Correlation-Id` header for cross-service request correlation.
+
+| Header | Direction | Type | Format | Default Behavior |
+| :--- | :--- | :--- | :--- | :--- |
+| `X-Correlation-Id` | Request (Inbound) | Optional | `^[a-zA-Z0-9_-]{1,64}$` or UUID | If omitted, blank, or malformed, server generates a fresh UUIDv4. |
+| `X-Correlation-Id` | Response (Outbound) | Guaranteed | Same as resolved correlation ID | Always returned on all responses (success, error, 401, 403, 429). |
+
+- **Sanitization Rules:**
+  - Length: Maximum 64 characters.
+  - Permitted characters: Letters (`a-z`, `A-Z`), digits (`0-9`), underscores (`_`), hyphens (`-`).
+  - Strict rejection: Headers containing spaces, control characters (`\r`, `\n`, `\0`, `\t`), quotes, or HTML brackets are rejected and replaced with a clean server-generated UUIDv4.
+- **CORS Support:**
+  - Inbound: Included in `Access-Control-Allow-Headers`.
+  - Outbound: Included in `Access-Control-Expose-Headers` alongside `Retry-After`.
+
+### 19.2 Structured Log Context (MDC)
+
+All log statements emitted during request execution automatically include distributed tracing identifiers in SLF4J MDC:
+
+| MDC Key | Description | Example |
+| :--- | :--- | :--- |
+| `traceId` | 128-bit W3C OpenTelemetry trace identifier (32 hex characters) | `4bf92f3577b34da6a3ce929d0e0e4736` |
+| `spanId` | 64-bit W3C OpenTelemetry span identifier (16 hex characters) | `00f067aa0ba902b7` |
+| `correlationId` | Active sanitized correlation identifier | `corr-4bf92f35-77b3` |
+
+Log format: `%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-},%X{correlationId:-}]`
+
+### 19.3 W3C Trace Context Headers (`traceparent`, `tracestate`)
+
+`ledgerguard-api` supports standard W3C Trace Context propagation:
+
+| Header | Direction | Type | Format | Default Behavior |
+| :--- | :--- | :--- | :--- | :--- |
+| `traceparent` | Request (Inbound) | Optional | `00-{trace_id}-{parent_id}-{trace_flags}` (e.g. `00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01`) | Micrometer/OTel extracts parent trace context; if missing, initiates root span. |
+| `tracestate` | Request (Inbound) | Optional | Comma-separated opaque vendor pairs | Preserved and propagated downstream through transactional outbox and Kafka. |
+
+- Database transactions execute within the active distributed trace context; individual SQL queries are not wrapped in child spans, ensuring no query text or parameters leak.
+- Asynchronous Kafka event publishing restores the W3C parent context and deduplicates headers before emitting records to Kafka topics.

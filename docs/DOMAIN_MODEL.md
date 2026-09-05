@@ -338,3 +338,19 @@ $$\text{Available Balance} = \text{Posted Balance} - \sum \text{Active Holds}$$
 - **Bounded Tag Cardinality**:
   - Metric tags are strictly bounded. `duplicate_idempotency_keys_total` exposes only the bounded tag `reason` (`replay`, `fingerprint_conflict`, `in_progress`).
   - No high-cardinality values (such as idempotency keys, transaction IDs, user UUIDs, account IDs, or IP addresses) are ever tagged or exposed via metrics.
+
+### Invariant 19: Non-Invasive Distributed Tracing & Correlation Integrity (Phase 30)
+
+- **Fail-Safe Observability Boundary**:
+  - Tracing capture and correlation propagation operate strictly non-invasively.
+  - Failures to initialize a tracer, extract W3C headers, format span IDs, or connect to the OpenTelemetry collector must NEVER abort or roll back business transactions (e.g. transfers, payments, holds, settlements).
+  - Outbox trace context capture in `OutboxService` wraps tracing retrieval in a fail-safe try/catch block. If an exception occurs, the outbox record is persisted with null tracing fields rather than failing the financial commit.
+- **Trace Context Immutability & Bounds (Flyway V17)**:
+  - Database migration V17 adds bounded columns (`traceparent VARCHAR(128)`, `tracestate VARCHAR(512)`, `correlation_id VARCHAR(64)`) to `outbox_events`.
+  - Database trigger `trg_fn_enforce_outbox_events_integrity()` enforces strict immutability of `traceparent`, `tracestate`, and `correlation_id` across updates (`IS DISTINCT FROM`), guaranteeing trace history cannot be overwritten or cleared during publisher claiming.
+- **Header Deduplication & Propagation Purity**:
+  - Kafka trace context injection must never generate duplicate header entries (`traceparent` or `X-Correlation-Id`).
+  - `OutboxPublisherService` purges pre-existing headers before injecting context, ensuring at-most-one occurrence of each trace header per Kafka record.
+- **Zero Label Cardinality Pollution**:
+  - Neither trace IDs, span IDs, nor correlation IDs may ever be injected into Micrometer metrics or Prometheus label sets.
+  - Prometheus metrics maintain strictly bounded label cardinality to prevent memory exhaustion on monitoring collectors.

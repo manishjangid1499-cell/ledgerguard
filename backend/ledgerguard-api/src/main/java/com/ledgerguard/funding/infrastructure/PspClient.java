@@ -59,13 +59,27 @@ public class PspClient {
             ObjectMapper objectMapper,
             ProviderResilienceProperties properties
     ) {
+        this(baseUrl, connectTimeoutMs, readTimeoutMs, webhookUrl, objectMapper, properties, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public PspClient(
+            @Value("${ledgerguard.psp.base-url:http://localhost:8081}") String baseUrl,
+            @Value("${ledgerguard.psp.connect-timeout-ms:2000}") int connectTimeoutMs,
+            @Value("${ledgerguard.psp.read-timeout-ms:2000}") int readTimeoutMs,
+            @Value("${ledgerguard.psp.webhook-url:http://localhost:8080/api/provider/webhooks}") String webhookUrl,
+            ObjectMapper objectMapper,
+            ProviderResilienceProperties properties,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) RestClient.Builder restClientBuilder
+    ) {
         this.webhookUrl = webhookUrl;
         this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(Duration.ofMillis(connectTimeoutMs));
         requestFactory.setReadTimeout(Duration.ofMillis(readTimeoutMs));
 
-        this.restClient = RestClient.builder()
+        RestClient.Builder builder = (restClientBuilder != null) ? restClientBuilder : RestClient.builder();
+        this.restClient = builder
                 .baseUrl(baseUrl)
                 .requestFactory(requestFactory)
                 .build();

@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Phase 29 Complete (Verified)
-- **Status:** Phase 29 Complete (Verified)
+- **Current Phase:** Phase 30 Complete (Verified)
+- **Status:** Phase 30 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -35,21 +35,21 @@
   - **Phase 27 — Rate Limiting & Bounded Backpressure** (Completed: 2026-09-05)
   - **Phase 28 — Audit Trail & Security Hardening** (Completed: 2026-09-05)
   - **Phase 29 — Business & Integrity Metrics (Prometheus)** (Completed: 2026-09-05)
-- **Current Work:** Phase 29 completed. Implemented Prometheus business and financial integrity metrics via Micrometer (`io.micrometer:micrometer-registry-prometheus`) exposed at `/actuator/prometheus`:
-  - Four custom business metrics registered eagerly:
-    - `unbalanced_journal_count` (Gauge, baseUnit: journals): count of unbalanced/malformed posted journals.
-    - `reconciliation_discrepancies` (Gauge, baseUnit: cases): count of active unresolved discrepancy cases.
-    - `outbox_lag_seconds` (Gauge, baseUnit: seconds): age in fractional seconds of the oldest pending outbox event.
-    - `duplicate_idempotency_keys_total` (Counter): count of application-observed duplicate idempotency-key encounters with bounded tag `reason` (`replay`, `fingerprint_conflict`, `in_progress`).
-  - Decoupled scrape architecture: Prometheus scrape endpoint is strictly memory-backed; it performs ZERO database queries and acquires zero DB locks.
-  - Consolidated DB sampling: single atomic SQL query in `IntegrityMetricsSnapshotReader` executed in a read-only transaction returns all 3 gauge values in one round-trip.
-  - Background sampler: `IntegrityMetricsSampler` runs on `@Scheduled(fixedDelayString = "${ledgerguard.metrics.integrity.sample-interval:15s}")` and updates in-memory snapshot via single `AtomicReference<IntegritySnapshot>`. Controlled by `ledgerguard.metrics.integrity.scheduler-enabled` (disabled in tests).
-  - Security & Rate Limiting: `/actuator/prometheus` permitted in `SecurityConfig` without authentication (for scraper integration), excluded from CORS allowlist, and explicitly exempted in `RateLimitFilter`.
-  - Invariants preserved: strictly read-only observability; zero financial mutations; zero outbox events claimed or published; zero reconciliation runs created; Flyway migrations V1-V16 frozen, V17 strictly absent.
-  - Test suites: 651 tests in `ledgerguard-api` (+30 new Phase 29 tests), 17 in `psp-simulator`, 19 in `notification-worker`, 1 in `failure-lab` (total 688 workspace tests, 100% passing, 0 failures, 0 errors, 0 skipped).
-- **Next Phase:** Phase 30 — OpenTelemetry Tracing & Correlation IDs
+  - **Phase 30 — OpenTelemetry Tracing & Correlation IDs** (Completed: 2026-09-05)
+- **Current Work:** Phase 30 completed. Implemented end-to-end distributed tracing via Micrometer Tracing with OpenTelemetry bridge (`micrometer-tracing-bridge-otel`), OTLP exporter, and correlation ID tracking:
+  - Correlation ID lifecycle: Ingress `CorrelationIdFilter` validates and sanitizes inbound `X-Correlation-Id` (bounded token `^[a-zA-Z0-9_-]{1,64}$` or clean UUID fallback), echoes it in response headers, sets MDC `correlationId`, exposes it in CORS `Access-Control-Expose-Headers`, and guarantees outer MDC context preservation and cleanup in `finally`.
+  - Structured MDC logging: Configured `%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-},%X{correlationId:-}]` across `ledgerguard-api` and `notification-worker`.
+  - Durable outbox trace context (Flyway V17): Added `traceparent`, `tracestate`, and `correlation_id` to `outbox_events` with length constraints and strict trigger immutability enforcement. `OutboxService` captures active W3C `traceparent` and `tracestate` via `W3CTraceContextPropagator` and MDC correlation ID without failing financial transactions.
+  - Asynchronous Kafka trace propagation: `OutboxPublisherService` extracts persisted trace context via `W3CTraceContextPropagator.getInstance().extract()` and sets as active parent context, sets MDC `correlationId`, deduplicates headers to ensure exactly 0 duplicate `traceparent` or `X-Correlation-Id` headers on the Kafka record, and cleans up MDC in `finally`.
+  - Notification worker consumer observation: Enabled observation on Kafka listener containers, extracting inbound `X-Correlation-Id` into MDC with sanitization and guaranteed cleanup in `finally`.
+  - RestClient HTTP client observation: `PspClient` leverages observed `RestClient.Builder` without altering Resilience4j decorators.
+  - Zero metric cardinality inflation: Verified Prometheus metrics contain zero trace ID, span ID, or correlation ID labels.
+  - Actuator surface lockdown: `ledgerguard-api` web exposure locked to `health,info,prometheus` with `/actuator/metrics` unexposed (404); `notification-worker` is a non-web console service with no diagnostic endpoints exposed.
+  - Database Trace Context: Verified database operations executed as part of an observed HTTP request or observed Kafka listener invocation execute while that enclosing trace context is active. Phase 30 does not add individual JDBC query spans, @Transactional spans, or JDBC proxy dependencies. Flyway startup migrations and background jobs do not inherit request spans. Zero SQL parameters, financial values, or query bodies are captured.
+  - Test suites: 675 tests in `ledgerguard-api` (+24 Phase 30 tests), 17 in `psp-simulator`, 22 in `notification-worker` (+3 Phase 30 tests), 1 in `failure-lab` (total 715 workspace tests, clean verify passing with 0 failures, 0 errors, 0 skipped).
+- **Next Phase:** Phase 31 — Grafana Operations Dashboards
 - **Last Verified:** 2026-09-05
-- **Git Branch:** `feat/phase-29-business-integrity-metrics`
+- **Git Branch:** `feat/phase-30-distributed-tracing-correlation`
 
 ---
 
@@ -119,7 +119,7 @@
 | **Phase 27** | Rate Limiting & Bounded Backpressure | **Completed** | 2026-09-05 |
 | **Phase 28** | Audit Trail & Security Hardening | **Completed** | 2026-09-05 |
 | **Phase 29** | Business & Integrity Metrics (Prometheus) | **Completed** | 2026-09-05 |
-| **Phase 30** | OpenTelemetry Tracing & Correlation IDs | Planned | — |
+| **Phase 30** | OpenTelemetry Tracing & Correlation IDs | **Completed** | 2026-09-05 |
 | **Phase 31** | Grafana Operations Dashboards | Planned | — |
 | **Phase 32** | Money Integrity Failure Lab Backend | Planned | — |
 | **Phase 33** | Failure Lab Frontend & Visualizer | Planned | — |

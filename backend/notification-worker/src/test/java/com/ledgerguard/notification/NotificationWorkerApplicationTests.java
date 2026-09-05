@@ -28,4 +28,16 @@ class NotificationWorkerApplicationTests extends AbstractNotificationWorkerInteg
         assertThat(environment.getProperty("spring.kafka.consumer.max-poll-records", Integer.class)).isEqualTo(10);
         assertThat(environment.getProperty("spring.kafka.listener.concurrency", Integer.class)).isEqualTo(3);
     }
+
+    @Test
+    @DisplayName("Actuator /metrics and /prometheus are not exposed in notification worker")
+    void metricsAndPrometheusNotExposed() {
+        String exposure = environment.getProperty("management.endpoints.web.exposure.include");
+        if (exposure != null) {
+            assertThat(exposure).doesNotContain("metrics");
+            assertThat(exposure).doesNotContain("prometheus");
+        }
+        // Worker is a non-web console service with no web server listening
+        assertThat(environment.getProperty("server.port")).isNull();
+    }
 }

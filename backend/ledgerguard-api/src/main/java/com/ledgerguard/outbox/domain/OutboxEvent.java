@@ -54,6 +54,15 @@ public class OutboxEvent {
     @Column(name = "published_at")
     private Instant publishedAt;
 
+    @Column(name = "traceparent", length = 128, updatable = false)
+    private String traceparent;
+
+    @Column(name = "tracestate", length = 512, updatable = false)
+    private String tracestate;
+
+    @Column(name = "correlation_id", length = 64, updatable = false)
+    private String correlationId;
+
     protected OutboxEvent() {
     }
 
@@ -69,6 +78,24 @@ public class OutboxEvent {
             Instant createdAt,
             Instant publishedAt
     ) {
+        this(id, aggregateType, aggregateId, eventType, eventVersion, payload, status, occurredAt, createdAt, publishedAt, null, null, null);
+    }
+
+    public OutboxEvent(
+            UUID id,
+            String aggregateType,
+            UUID aggregateId,
+            String eventType,
+            int eventVersion,
+            String payload,
+            OutboxStatus status,
+            Instant occurredAt,
+            Instant createdAt,
+            Instant publishedAt,
+            String traceparent,
+            String tracestate,
+            String correlationId
+    ) {
         this.id = Objects.requireNonNull(id, "id must not be null");
         this.aggregateType = Objects.requireNonNull(aggregateType, "aggregateType must not be null");
         this.aggregateId = Objects.requireNonNull(aggregateId, "aggregateId must not be null");
@@ -79,6 +106,9 @@ public class OutboxEvent {
         this.occurredAt = Objects.requireNonNull(occurredAt, "occurredAt must not be null");
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
         this.publishedAt = publishedAt;
+        this.traceparent = traceparent;
+        this.tracestate = tracestate;
+        this.correlationId = correlationId;
     }
 
     public static OutboxEvent pending(
@@ -91,6 +121,22 @@ public class OutboxEvent {
             Instant occurredAt,
             Instant createdAt
     ) {
+        return pending(id, aggregateType, aggregateId, eventType, eventVersion, payload, occurredAt, createdAt, null, null, null);
+    }
+
+    public static OutboxEvent pending(
+            UUID id,
+            String aggregateType,
+            UUID aggregateId,
+            String eventType,
+            int eventVersion,
+            String payload,
+            Instant occurredAt,
+            Instant createdAt,
+            String traceparent,
+            String tracestate,
+            String correlationId
+    ) {
         return new OutboxEvent(
                 id,
                 aggregateType,
@@ -101,7 +147,10 @@ public class OutboxEvent {
                 OutboxStatus.PENDING,
                 occurredAt,
                 createdAt,
-                null
+                null,
+                traceparent,
+                tracestate,
+                correlationId
         );
     }
 
@@ -153,5 +202,17 @@ public class OutboxEvent {
         Instant safePublishedAt = timestamp.isBefore(this.createdAt) ? this.createdAt : timestamp;
         this.status = OutboxStatus.PUBLISHED;
         this.publishedAt = safePublishedAt;
+    }
+
+    public String getTraceparent() {
+        return traceparent;
+    }
+
+    public String getTracestate() {
+        return tracestate;
+    }
+
+    public String getCorrelationId() {
+        return correlationId;
     }
 }
