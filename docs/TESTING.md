@@ -571,3 +571,100 @@ Phase 32 introduces the programmatic chaos execution engine and mathematical fin
 - **Workspace total: 729 tests, 0 failures, 0 errors, 0 skipped**
 
 Verified by `.\mvnw.cmd clean verify` (2026-09-06).
+
+---
+
+## 18. Phase 33 — Failure Lab Frontend & Interactive Invariant Visualizer
+
+### Phase 33 Test Registry
+
+| Test Class | Module | Tests | Description |
+| :--- | :--- | :--- | :--- |
+| `FailureLabControllerTest` | `failure-lab` | 14 | REST API integration tests: validates `GET /api/lab/environment` (200 enabled vs 503 disabled), `GET /api/lab/scenarios` (all 4 scenarios with metadata), `POST /api/lab/runs` (202 Accepted launch vs 409 Conflict when locked vs 400 validation), `GET /api/lab/runs/active` (200 when active vs 204 when idle), `GET /api/lab/runs/{runId}` (200 found vs 404 missing), `GET /api/lab/runs?limit=10` (bounded history), limit validation (400 on <= 0), and CORS headers (allowed origin vs 403 on disallowed origin). |
+| `LabRunCoordinatorTest` | `failure-lab` | 5 | Asynchronous coordinator engine tests: verifies single active run concurrency enforcement, atomic admission (202 vs 409 under concurrency), timeout overlap prevention (retains exclusive guard while worker thread is alive after timeout, permits new run after worker exits), live timeline streaming, and bounded history storage. |
+| `EnvironmentGuardTest` | `failure-lab` | 9 | Preserved from Phase 32: Positive authorization and fail-closed environment safety tests. |
+| `OpposingTransfersScenarioTest` | `failure-lab` | 1 | Preserved from Phase 32: Scenario 1 Opposing Transfers real execution. |
+| `TimeoutAfterCommitScenarioTest` | `failure-lab` | 1 | Preserved from Phase 32: Scenario 2 Timeout After Commit real execution. |
+| `CorruptedSnapshotScenarioTest` | `failure-lab` | 1 | Preserved from Phase 32: Scenario 3 Corrupted Snapshot real execution. |
+| `WebhookRaceScenarioTest` | `failure-lab` | 1 | Preserved from Phase 32: Scenario 4 Webhook Race real execution. |
+| `FailureLabSuiteRunnerTest` | `failure-lab` | 1 | Preserved from Phase 32: Sequential suite runner across all 4 scenarios. |
+| `ScenarioRunnerConcurrencyTest` | `failure-lab` | 1 | Preserved from Phase 32: Concurrency lock acquisition and release bounds. |
+
+### Frontend Build & Typecheck Verification
+- `npm run lint`: **PASS** (0 warnings, 0 errors)
+- `npm run build`: **PASS** (TypeScript 5.7.3 compilation + Vite bundle generated clean in 434ms)
+
+### Phase 33 Verified Test Count
+
+- `ledgerguard-api`: **675 tests, 0 failures, 0 errors, 0 skipped**
+- `psp-simulator`: **17 tests, 0 failures, 0 errors, 0 skipped**
+- `notification-worker`: **22 tests, 0 failures, 0 errors, 0 skipped**
+- `failure-lab`: **34 tests, 0 failures, 0 errors, 0 skipped** (+19 tests)
+- **Workspace total: 748 tests, 0 failures, 0 errors, 0 skipped**
+
+Verified by `.\mvnw.cmd clean verify` (2026-09-06).
+
+### Manual Browser Walkthrough Procedures
+
+1. **Start Failure Lab Executable Backend**:
+   ```powershell
+   .\mvnw.cmd -pl backend/failure-lab spring-boot:run "-Dspring-boot.run.arguments=--ledgerguard.lab.enabled=true"
+   ```
+   Confirm backend starts on `127.0.0.1:8083` with ephemeral PostgreSQL 17.11 and Kafka 4.3.1 Testcontainers.
+2. **Start Frontend Development Server**:
+   ```powershell
+   cd frontend/ledgerguard-web
+   npm run dev
+   ```
+3. **Log in as Operations Engineer**:
+   Navigate to `http://localhost:5173/login`, authenticate with `ops@ledgerguard.com` / valid password.
+4. **Inspect Role-Based Navigation**:
+   Verify the "Failure Lab" button (with `ScienceIcon`) is present in the top navigation bar and in the user menu.
+5. **Role Guard Verification**:
+   Log out, log in as Customer (`customer@ledgerguard.com`), navigate to `http://localhost:5173/app/failure-lab`. Verify immediate redirection to `/app` with no chaos controls exposed.
+6. **Access Failure Lab Console (as OPS)**:
+   Navigate to `http://localhost:5173/app/failure-lab`.
+7. **Verify Safety Disclaimer & Environment Status**:
+   - Confirm prominent banner: `EPHEMERAL LAB ENVIRONMENT (ISOLATED)`.
+   - Verify status chips: `PostgreSQL 17.11: UP`, `Kafka 4.3.1: UP`, `Mock PSP Adapter: UP`.
+8. **Verify Scenario Grid**:
+   Confirm all 4 scenarios are displayed with their respective category chips, fault mechanisms, and invariant contracts:
+   - Opposing Concurrent Transfers (`CONCURRENCY`)
+   - Payout Timeout After Success (`DISTRIBUTED_FAULT`)
+   - Snapshot Balance Drift & Auto-Repair (`DATA_INTEGRITY`)
+   - Concurrent Duplicate Webhooks Race (`IDEMPOTENCY`)
+9. **Execute Scenario 1 (Opposing Transfers)**:
+   - Click "Execute Chaos Run" on Scenario 1.
+   - Observe immediate transition to `RUNNING` status and elapsed timer start.
+   - Watch live timeline step events arrive: `SETUP` $\to$ `DISPATCH` $\to$ `COMPLETED` $\to$ `IDEMPOTENCY_VERIFIED` $\to$ `ORACLE_AUDIT`.
+   - Observe terminal status `PASSED`.
+   - Switch to "Mathematical Invariants" tab and confirm:
+     - Journal Integrity: $\sum \text{Debit} = \sum \text{Credit}$ (Difference $= 0$) $\to$ `VERIFIED`
+     - Snapshot Parity: $\text{Snapshot} = \sum \text{Posted Journals}$ $\to$ `VERIFIED`
+     - Available Balance: $\text{Available} \ge 0$ $\to$ `VERIFIED`
+     - Internal Transfer Conservation: $\Delta A + \Delta B = 0$ $\to$ `VERIFIED`
+10. **Execute Scenario 2 (Timeout After Commit)**:
+    - Click "Execute Chaos Run" on Scenario 2.
+    - Observe timeline steps: `INJECT_FAULT` (sets adapter to `TIMEOUT_AFTER_SUCCESS`), `AMBIGUITY_CONFIRMED` (`UNKNOWN` status, hold `ACTIVE`, 0 settlement journals), `TRIGGER_RECOVERY` (poller sweep), `SETTLED` (`SUCCEEDED`, hold `CONSUMED`), `ORACLE_AUDIT`.
+    - Confirm Single Economic Effect invariant: `Settlement Journal Count = 1` $\to$ `VERIFIED`.
+11. **Execute Scenario 3 (Corrupted Snapshot)**:
+    - Click "Execute Chaos Run" on Scenario 3.
+    - Observe `INJECT_DRIFT` (authorized mutation under `LabDatabaseTarget`), `RUN_DETECTION` (Level 2 reconciliation detects `SNAPSHOT_MISMATCH`), `RUN_REPAIR` (auto-repair dynamic reconstruction from immutable journals), `REPAIRED`, `ORACLE_AUDIT`.
+    - Confirm Snapshot Parity restored to immutable journal truth.
+12. **Execute Scenario 4 (Webhook Race)**:
+    - Click "Execute Chaos Run" on Scenario 4.
+    - Observe `DISPATCH_RACE` (5 concurrent signed webhooks via `CyclicBarrier`), `RACE_SETTLED` (1 accepted, 4 deduplicated), `ORACLE_AUDIT`.
+    - Confirm Single Economic Effect ($\le 1$ journal) and zero duplicate payouts.
+13. **Verify Concurrency Guard (409 Conflict UX)**:
+    - Launch Scenario 1 and immediately click "Execute Chaos Run" on Scenario 2.
+    - Confirm rejection banner: "Another scenario is currently executing. Max 1 active run permitted."
+14. **Verify Run History Table**:
+    - Observe all completed runs listed with their Run ID, Scenario, Duration, Status, and timestamp.
+    - Click "Inspect" on an earlier run and verify the active run console updates to display that run's timeline and invariant results.
+15. **Verify Page Refresh State Recovery**:
+    - Launch a scenario and refresh the browser mid-execution.
+    - Confirm the UI automatically queries `GET /api/lab/runs/active` and resumes live polling and progress display seamlessly.
+16. **Verify Offline Backend State**:
+    - Stop the `FailureLabApplication` process.
+    - Refresh the browser.
+    - Confirm the UI displays the graceful offline alert banner with instructions on how to start the backend with `.\mvnw.cmd -pl backend/failure-lab spring-boot:run "-Dspring-boot.run.arguments=--ledgerguard.lab.enabled=true"`.

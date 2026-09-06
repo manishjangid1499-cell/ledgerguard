@@ -47,30 +47,29 @@ public class ScenarioRunner {
         this.concurrencyGuard = Objects.requireNonNull(concurrencyGuard, "concurrencyGuard must not be null");
     }
 
-    /**
-     * Executes the given chaos scenario with default timeout (30 seconds).
-     */
     public ScenarioRunResult runScenario(ChaosScenario scenario, DataSource dataSource) {
-        return runScenario(scenario, dataSource, DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        return runScenario(scenario, dataSource, ScenarioEventSink.NO_OP, DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
 
-    /**
-     * Executes the given chaos scenario with a specific timeout.
-     */
     public ScenarioRunResult runScenario(ChaosScenario scenario, DataSource dataSource, long timeout, TimeUnit unit) {
+        return runScenario(scenario, dataSource, ScenarioEventSink.NO_OP, timeout, unit);
+    }
+
+    public ScenarioRunResult runScenario(ChaosScenario scenario, DataSource dataSource, ScenarioEventSink sink, long timeout, TimeUnit unit) {
         Objects.requireNonNull(scenario, "scenario must not be null");
         Objects.requireNonNull(dataSource, "dataSource must not be null");
+        ScenarioEventSink eventSink = sink != null ? sink : ScenarioEventSink.NO_OP;
 
         UUID runId = UUID.randomUUID();
         Instant startTime = Instant.now();
         List<ScenarioStepEvent> timeline = new ArrayList<>();
 
-        timeline.add(ScenarioStepEvent.of("INIT", "Starting scenario: " + scenario.getId().getKey()));
+        emit(timeline, eventSink, ScenarioStepEvent.of("INIT", "Starting scenario: " + scenario.getId().getKey()));
 
         // 1. Hard safety check against target database
         try {
             EnvironmentGuard.assertLabEnvironment(dataSource);
-            timeline.add(ScenarioStepEvent.of("ENVIRONMENT_VERIFIED", "Target database verified as safe lab/test environment"));
+            emit(timeline, eventSink, ScenarioStepEvent.of("ENVIRONMENT_VERIFIED", "Target database verified as safe lab/test environment"));
         } catch (SecurityException e) {
             log.error("Environment verification failed for run {}: {}", runId, e.getMessage());
             Instant endTime = Instant.now();
@@ -111,12 +110,12 @@ public class ScenarioRunner {
         }
 
         try {
-            timeline.add(ScenarioStepEvent.of("LOCK_ACQUIRED", "Acquired exclusive scenario runner lock"));
+            emit(timeline, eventSink, ScenarioStepEvent.of("LOCK_ACQUIRED", "Acquired exclusive scenario runner lock"));
 
             // 3. Timed asynchronous execution
             CompletableFuture<ScenarioRunResult> future = CompletableFuture.supplyAsync(() -> {
                 try {
-                    return scenario.execute(runId, dataSource);
+                    return scenario.execute(runId, dataSource, eventSink);
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
@@ -129,7 +128,7 @@ public class ScenarioRunner {
         } catch (TimeoutException e) {
             log.warn("Scenario {} timed out after {} {}", scenario.getId(), timeout, unit);
             Instant endTime = Instant.now();
-            timeline.add(ScenarioStepEvent.of("TIMEOUT", "Scenario exceeded maximum duration: " + timeout + " " + unit));
+            emit(timeline, eventSink, ScenarioStepEvent.of("TIMEOUT", "Scenario exceeded maximum duration: " + timeout + " " + unit));
             ScenarioRunResult timeoutResult = new ScenarioRunResult(
                     runId, scenario.getId(), ScenarioStatus.TIMED_OUT,
                     startTime, endTime, endTime.toEpochMilli() - startTime.toEpochMilli(),
@@ -141,7 +140,7 @@ public class ScenarioRunner {
         } catch (ExecutionException e) {
             log.error("Execution error in scenario {}: {}", scenario.getId(), e.getCause().getMessage(), e);
             Instant endTime = Instant.now();
-            timeline.add(ScenarioStepEvent.of("ERROR", "Execution threw exception: " + e.getCause().getMessage()));
+            emit(timeline, eventSink, ScenarioStepEvent.of("ERROR", "Execution threw exception: " + e.getCause().getMessage()));
             ScenarioRunResult errorResult = new ScenarioRunResult(
                     runId, scenario.getId(), ScenarioStatus.FAILED,
                     startTime, endTime, endTime.toEpochMilli() - startTime.toEpochMilli(),
@@ -163,6 +162,13 @@ public class ScenarioRunner {
 
         } finally {
             concurrencyGuard.release();
+        }
+    }
+
+    private void emit(List<ScenarioStepEvent> timeline, ScenarioEventSink sink, ScenarioStepEvent event) {
+        timeline.add(event);
+        if (sink != null) {
+            sink.onStep(event);
         }
     }
 

@@ -1,0 +1,13 @@
+server:
+  port: 8083
+  address: 127.0.0.1
+
+spring:
+  application:
+    name: failure-lab
+  main:
+    banner-mode: console
+
+ledgerguard:
+  lab:
+    enabled: false

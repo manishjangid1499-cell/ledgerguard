@@ -122,8 +122,8 @@ After each failure injection, the engine mathematically proves that:
 
 ## 7. Current Project Status
 
-- **Current State:** Phase 32 Completed — Money Integrity Failure Lab Backend: Built the programmatic chaos execution engine in `backend/failure-lab` with real-system Spring integration test architecture, fail-closed environment safety (`EnvironmentGuard`), independent financial invariant oracle (`FinancialInvariantOracle`), single-scenario concurrency locking (`ConcurrencyGuard`), execution timeouts, and bounded in-memory history. Implemented and verified all 4 real-system automated chaos scenarios (`OPPOSING_TRANSFERS`, `TIMEOUT_AFTER_COMMIT`, `CORRUPTED_SNAPSHOT`, `WEBHOOK_RACE`) exercising real production services under fault injection. Workspace total 729 tests (675 API, 17 PSP, 22 Notification Worker, 15 Failure Lab) passing cleanly with 0 failures, 0 errors, 0 skipped. Zero production Java code changes, zero migrations (V1–V17 frozen, V18 absent).
-- **Next Step:** Phase 33 — Failure Lab Frontend & Visualizer.
+- **Current State:** Phase 33 Completed — Failure Lab Frontend & Interactive Invariant Visualizer: Delivered the interactive operations console in `frontend/ledgerguard-web` and executable local Failure Lab backend in `backend/failure-lab` on loopback `127.0.0.1:8083`. Features fail-closed CLI enablement, bounded single-thread async coordinator (`SynchronousQueue`, max 1 active run, 30s timeout), real-time step streaming, bounded 100-run in-memory history, and 5 scenario-scoped invariant report cards. Workspace total 748 tests (675 API, 17 PSP, 22 Notification Worker, 34 Failure Lab) passing cleanly with 0 failures, 0 errors, 0 skipped. Zero production Java code changes, zero database migrations (V1–V17 frozen, V18 strictly absent).
+- **Next Step:** Phase 34 — Complete Testcontainers & End-to-End Suite.
 - **Roadmap:** Detailed phase-by-phase progress is tracked in [docs/STATUS.md](docs/STATUS.md).
 
 ---
@@ -168,6 +168,21 @@ docker compose down -v
 | **Apache Kafka 4.3.1 (KRaft)** | `ledgerguard-kafka` | `29092` (host) / `9092` (container) | Broker ID 1 (Cluster ID configured) | — | Outbox event stream |
 | **Prometheus 3.2.1** | `ledgerguard-prometheus` | `9090` | Scrapes `/actuator/prometheus` (15s) | — | Metrics Scraper |
 | **Grafana 11.5.2** | `ledgerguard-grafana` | `3000` | Authenticated Dashboards | `admin` | Operations Visualizer |
+| **Failure Lab Backend** | *(ephemeral Testcontainers)* | `8083` (loopback only) | Ephemeral Testcontainers DB | Loopback isolation + explicit flag (Frontend: OPS-only route) | `failure-lab` |
+
+### 3. Run Money Integrity Failure Lab Operations Console
+```bash
+# 1. Start Failure Lab Local Backend (binds to 127.0.0.1:8083, boots ephemeral Testcontainers)
+# Requires explicit --ledgerguard.lab.enabled=true (fail-closed default is disabled)
+.\mvnw.cmd -pl backend/failure-lab spring-boot:run "-Dspring-boot.run.arguments=--ledgerguard.lab.enabled=true"
+
+# 2. Start Frontend (Vite)
+cd frontend/ledgerguard-web
+npm run dev
+
+# 3. Log in as OPS user (ops@ledgerguard.com) and navigate to:
+# http://localhost:5173/app/failure-lab
+```
 
 ---
 

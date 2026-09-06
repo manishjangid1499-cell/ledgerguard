@@ -1082,3 +1082,52 @@ The oracle executes direct, independent SQL queries against PostgreSQL to verify
    - Dispatches 5 concurrent duplicate signed HMAC-SHA256 webhooks for the same provider operation.
    - Validates that the unique constraint on `provider_events(provider_id, provider_event_id)` ensures exactly 1 event is accepted for processing and 4 are safely deduplicated.
    - Validates that exactly 1 double-entry settlement journal is posted and customer/clearing balances reflect strictly a single economic effect.
+
+### 6. Interactive Operations Console & Runtime Architecture (Phase 33)
+
+Phase 33 delivers an interactive operations console and visualizer that bridges the gap between programmatic chaos test suites and real-time operations visibility:
+
+```
+Browser (React / MUI / TanStack Query)
+  |
+  |  HTTP REST (127.0.0.1:8083, JSON only, Strict CORS)
+  v
+backend/failure-lab (FailureLabApplication - Spring Boot Web)
+  |-- LabRunCoordinator (Single-Thread Executor + ConcurrencyGuard = 1 active run)
+  |-- LabDatabaseTarget (Fail-closed Positive Authorization + Ephemeral Tokens)
+  |-- ScenarioRegistry (OPPOSING_TRANSFERS, TIMEOUT_AFTER_COMMIT, CORRUPTED_SNAPSHOT, WEBHOOK_RACE)
+  |     |
+  |     +---> Real Production Beans (TransferService, PayoutService, PspClient, etc.)
+  |             |
+  |             v
+  |-- Ephemeral Testcontainers (PostgreSQL 17.11 + Kafka 4.3.1)
+  |-- In-Process HttpProviderTestAdapter (Ephemeral HTTP port)
+  +-- Independent FinancialInvariantOracle (Pure Direct JDBC SQL Assertions)
+```
+
+1. **Local Executable Runtime (`FailureLabApplication`)**:
+   - Binds strictly to `127.0.0.1:8083` (loopback only), preventing any external network ingress.
+   - Imports `LedgerGuardApplication`, including production service beans and registering production controllers against the isolated ephemeral database.
+   - Dedicated lab control surface is `/api/lab/**`, which is `permitAll` under `failureLabSecurityFilterChain` (`@Order(1)`).
+   - Normal production application endpoints registered on port 8083 (e.g. `/api/transfers/**`, `/api/payouts/**`) remain protected by the standard JWT/RBAC `securityFilterChain` (`@Order(2)`); unauthenticated requests receive HTTP 401 Unauthorized.
+   - Manages its own disposable PostgreSQL 17.11 and Kafka 4.3.1 Testcontainers instances, with zero connection to production/developer databases (`ledgerguard_db`).
+   - Requires explicit enablement (`ledgerguard.lab.enabled=true`, default `false`).
+   - Generates high-entropy passwords and tokens dynamically via `SecureRandom` Base64 encoding.
+2. **Asynchronous Execution & Single-Run Concurrency Guard**:
+   - `LabRunCoordinator` guarantees that at most one scenario run is active across the process.
+   - Concurrent launch attempts are rejected immediately with `409 Conflict`.
+   - Dispatches scenario execution asynchronously on a dedicated single-thread executor with a 30-second bounded timeout.
+   - Incremental timeline steps are streamed in real time to the polling UI via `ScenarioEventSink`.
+   - Maintains a bounded in-memory ring buffer of the latest 100 runs.
+3. **Interactive Operations Console (`frontend/ledgerguard-web/src/failure-lab`)**:
+   - Route `/app/failure-lab` guarded by `OpsRoute` (accessible only to authenticated users with role `OPS`; non-OPS users redirected to authenticated app home `/app`).
+   - Real-time container health status banner (PostgreSQL, Kafka, Mock PSP Adapter) with graceful offline backend detection.
+   - Responsive scenario selection grid with fault mechanisms and verified invariant contracts.
+   - Active run monitor with copyable Run ID, live elapsed duration timer, status badges (`PENDING`, `RUNNING`, `PASSED`, `FAILED`, `TIMED_OUT`), step timeline, and error inspection.
+   - Five mathematical invariant report cards visualizing live verification evidence, dynamically filtered to show only scenario-relevant invariants:
+     1. Journal Integrity ($\sum \text{Debit} = \sum \text{Credit}$, Difference $= 0$)
+     2. Snapshot Parity ($\text{Snapshot} = \sum \text{Posted Entries}$)
+     3. Available Balance Bound ($\text{Available} = \text{Balance} - \sum \text{Active Holds} \ge 0$, scoped to payout/hold workflows)
+     4. Internal Transfer Conservation ($\Delta \text{Balance}(A) + \Delta \text{Balance}(B) = 0$, scoped strictly to opposing transfers)
+     5. Exactly-Once Settlement ($\text{Settlement Journal Count} = 1$, scoped strictly to external payout/webhook settlement)
+   - Bounded execution history table with run selection and inspection.

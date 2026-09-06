@@ -19,6 +19,7 @@ import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import LogoutIcon from '@mui/icons-material/Logout';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import PersonIcon from '@mui/icons-material/Person';
+import ScienceIcon from '@mui/icons-material/Science';
 import { useAuth } from '../../auth/hooks/useAuth';
 import { BrandLogo } from '../components/BrandLogo';
 import { UserRole } from '../types/user.types';
@@ -103,6 +104,18 @@ export const AppLayout: React.FC = () => {
                 >
                   Profile
                 </Button>
+                {user?.role === 'OPS' && (
+                  <Button
+                    component={RouterLink}
+                    to="/app/failure-lab"
+                    size="small"
+                    variant={location.pathname.startsWith('/app/failure-lab') ? 'contained' : 'text'}
+                    color={location.pathname.startsWith('/app/failure-lab') ? 'primary' : 'inherit'}
+                    startIcon={<ScienceIcon />}
+                  >
+                    Failure Lab
+                  </Button>
+                )}
               </Stack>
             </Stack>
 
@@ -165,6 +178,19 @@ export const AppLayout: React.FC = () => {
                   </ListItemIcon>
                   <ListItemText primary="Profile" />
                 </MenuItem>
+                {user?.role === 'OPS' && (
+                  <MenuItem
+                    component={RouterLink}
+                    to="/app/failure-lab"
+                    onClick={handleMenuClose}
+                    selected={location.pathname.startsWith('/app/failure-lab')}
+                  >
+                    <ListItemIcon>
+                      <ScienceIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText primary="Failure Lab" />
+                  </MenuItem>
+                )}
                 <MenuItem onClick={handleLogout}>
                   <ListItemIcon>
                     <LogoutIcon fontSize="small" />

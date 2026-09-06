@@ -9,8 +9,10 @@ import { AppHomePage } from '../../shared/pages/AppHomePage';
 import { ProfilePage } from '../../shared/pages/ProfilePage';
 import { TransferDetailPage } from '../../transfer/pages/TransferDetailPage';
 import { NotFoundPage } from '../../shared/pages/NotFoundPage';
+import { FailureLabPage } from '../../failure-lab/pages/FailureLabPage';
 import { ProtectedRoute } from './ProtectedRoute';
 import { PublicOnlyRoute } from './PublicOnlyRoute';
+import { OpsRoute } from './OpsRoute';
 
 export const AppRouter: React.FC = () => {
   return (
@@ -35,6 +37,9 @@ export const AppRouter: React.FC = () => {
             <Route path="/app" element={<AppHomePage />} />
             <Route path="/app/transfers/:transferId" element={<TransferDetailPage />} />
             <Route path="/profile" element={<ProfilePage />} />
+            <Route element={<OpsRoute />}>
+              <Route path="/app/failure-lab" element={<FailureLabPage />} />
+            </Route>
           </Route>
         </Route>
 

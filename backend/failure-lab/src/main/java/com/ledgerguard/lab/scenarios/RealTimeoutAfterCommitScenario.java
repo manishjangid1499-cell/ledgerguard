@@ -9,6 +9,7 @@ import com.ledgerguard.identity.domain.UserRole;
 import com.ledgerguard.identity.domain.UserStatus;
 import com.ledgerguard.lab.adapter.HttpProviderTestAdapter;
 import com.ledgerguard.lab.engine.ChaosScenario;
+import com.ledgerguard.lab.engine.ScenarioEventSink;
 import com.ledgerguard.lab.invariants.FinancialInvariantOracle;
 import com.ledgerguard.lab.model.InvariantCheckResult;
 import com.ledgerguard.lab.model.ScenarioId;
@@ -89,12 +90,12 @@ public class RealTimeoutAfterCommitScenario implements ChaosScenario {
     }
 
     @Override
-    public ScenarioRunResult execute(UUID runId, DataSource dataSource) throws Exception {
+    public ScenarioRunResult execute(UUID runId, DataSource dataSource, ScenarioEventSink sink) throws Exception {
         Instant startTime = Instant.now();
         List<ScenarioStepEvent> timeline = new ArrayList<>();
         List<InvariantCheckResult> invariantResults = new ArrayList<>();
 
-        timeline.add(ScenarioStepEvent.of("SETUP", "Seeding user, customer account, and initial wallet funding"));
+        emit(timeline, sink, ScenarioStepEvent.of("SETUP", "Seeding user, customer account, and initial wallet funding"));
 
         UUID userId = UUID.randomUUID();
         userRepository.save(new User(userId, "payout." + userId + "@lab.local", "$2a$10$hash", UserRole.CUSTOMER, UserStatus.ACTIVE));
@@ -113,10 +114,10 @@ public class RealTimeoutAfterCommitScenario implements ChaosScenario {
                 )
         ));
 
-        timeline.add(ScenarioStepEvent.of("INJECT_FAULT", "Configuring provider adapter for TIMEOUT_AFTER_SUCCESS"));
+        emit(timeline, sink, ScenarioStepEvent.of("INJECT_FAULT", "Configuring provider adapter for TIMEOUT_AFTER_SUCCESS"));
         providerAdapter.setMode(HttpProviderTestAdapter.Mode.TIMEOUT_AFTER_SUCCESS);
 
-        timeline.add(ScenarioStepEvent.of("DISPATCH_PAYOUT", "Requesting payout via production PayoutService"));
+        emit(timeline, sink, ScenarioStepEvent.of("DISPATCH_PAYOUT", "Requesting payout via production PayoutService"));
         CreatePayoutCommand cmd = new CreatePayoutCommand(userId, "idem-payout-" + UUID.randomUUID(), Money.inr(payoutAmount));
         PayoutResult result = payoutService.requestPayout(cmd);
 
@@ -130,10 +131,10 @@ public class RealTimeoutAfterCommitScenario implements ChaosScenario {
         if (inFlightHold.getStatus() != HoldStatus.ACTIVE) {
             throw new IllegalStateException("Expected ACTIVE hold during UNKNOWN but found: " + inFlightHold.getStatus());
         }
-        timeline.add(ScenarioStepEvent.of("AMBIGUITY_CONFIRMED", "Payout marked UNKNOWN, hold preserved ACTIVE, 0 journals"));
+        emit(timeline, sink, ScenarioStepEvent.of("AMBIGUITY_CONFIRMED", "Payout marked UNKNOWN, hold preserved ACTIVE, 0 journals"));
 
         // Recovery phase
-        timeline.add(ScenarioStepEvent.of("TRIGGER_RECOVERY", "Advancing poll schedule and triggering ProviderStatusPollingService"));
+        emit(timeline, sink, ScenarioStepEvent.of("TRIGGER_RECOVERY", "Advancing poll schedule and triggering ProviderStatusPollingService"));
         jdbcTemplate.update(
                 "UPDATE payouts SET next_provider_poll_at = CURRENT_TIMESTAMP - INTERVAL '1 minute' WHERE id = ?",
                 inFlightPayout.getId()
@@ -150,9 +151,9 @@ public class RealTimeoutAfterCommitScenario implements ChaosScenario {
         if (settledHold.getStatus() != HoldStatus.CONSUMED) {
             throw new IllegalStateException("Expected CONSUMED hold after recovery but got: " + settledHold.getStatus());
         }
-        timeline.add(ScenarioStepEvent.of("SETTLED", "Payout settled to SUCCEEDED and hold CONSUMED"));
+        emit(timeline, sink, ScenarioStepEvent.of("SETTLED", "Payout settled to SUCCEEDED and hold CONSUMED"));
 
-        timeline.add(ScenarioStepEvent.of("ORACLE_AUDIT", "Running independent oracle verification"));
+        emit(timeline, sink, ScenarioStepEvent.of("ORACLE_AUDIT", "Running independent oracle verification"));
         try (Connection conn = dataSource.getConnection()) {
             invariantResults.addAll(oracle.checkJournalStructure(conn));
             invariantResults.addAll(oracle.checkDebitCreditEquality(conn));
@@ -169,5 +170,12 @@ public class RealTimeoutAfterCommitScenario implements ChaosScenario {
                 startTime, endTime, endTime.toEpochMilli() - startTime.toEpochMilli(),
                 invariantResults, timeline, allPassed ? null : "Invariant check failed"
         );
+    }
+
+    private void emit(List<ScenarioStepEvent> timeline, ScenarioEventSink sink, ScenarioStepEvent event) {
+        timeline.add(event);
+        if (sink != null) {
+            sink.onStep(event);
+        }
     }
 }

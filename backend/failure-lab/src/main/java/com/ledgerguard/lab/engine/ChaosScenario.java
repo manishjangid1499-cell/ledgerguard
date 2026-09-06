@@ -23,5 +23,20 @@ public interface ChaosScenario {
      * @return structured scenario execution result
      * @throws Exception if unexpected runtime failure occurs
      */
-    ScenarioRunResult execute(UUID runId, DataSource dataSource) throws Exception;
+    default ScenarioRunResult execute(UUID runId, DataSource dataSource) throws Exception {
+        return execute(runId, dataSource, ScenarioEventSink.NO_OP);
+    }
+
+    /**
+     * Executes the chaos scenario against the provided verified lab DataSource with an incremental event sink.
+     *
+     * @param runId unique identifier for this run
+     * @param dataSource target lab database
+     * @param sink real-time event sink for emitting timeline progress
+     * @return structured scenario execution result
+     * @throws Exception if unexpected runtime failure occurs
+     */
+    default ScenarioRunResult execute(UUID runId, DataSource dataSource, ScenarioEventSink sink) throws Exception {
+        return execute(runId, dataSource);
+    }
 }

@@ -183,3 +183,38 @@ All authentication and authorization failures return standardized RFC 9457 Probl
   - Prometheus and Grafana are strictly local development observability tools and are isolated from the financial transaction execution path.
   - Telemetry collection is read-only; an outage, restart, or configuration error in Prometheus or Grafana cannot alter or compromise LedgerGuard financial invariants or ledger state.
   - Not designed or intended as a hardened public internet deployment.
+
+---
+
+## 11. Money Integrity Failure Lab Security & Isolation Boundary (Phases 32–33)
+
+The Failure Lab execution engine and web operations console are designed with a **fail-closed, defense-in-depth security model** to guarantee zero blast radius against production systems, accounts, and databases:
+
+1. **Deny-by-Default Environment Gate (`EnvironmentGuard` & `LabDatabaseTarget`)**:
+   - Before executing any scenario step or fault injection, `EnvironmentGuard.assertLabEnvironment()` strictly verifies the database connection metadata.
+   - Requires a valid cryptographically signed `LabDatabaseTarget` ownership token for intrusive mutations (such as `SnapshotFaultInjector`).
+   - Unconditionally rejects any target database matching production or staging keywords (`prod`, `staging`, `live`, `primary`), public hostnames, or non-local IP addresses (e.g. `10.0.0.8`).
+2. **Loopback-Only Interface Binding (`127.0.0.1:8083`)**:
+   - `FailureLabApplication` binds exclusively to the local loopback interface `127.0.0.1`.
+   - External network requests or remote incoming connections are dropped at the TCP socket layer.
+3. **Dedicated Ephemeral Testcontainers Infrastructure**:
+   - The lab executes against dedicated, disposable PostgreSQL 17.11 and Kafka 4.3.1 Testcontainers instances started specifically for the lab.
+   - Ephemeral containers run Flyway migrations V1–V17 on startup and are automatically destroyed upon process termination.
+   - Zero connection or data access to local developer databases (`ledgerguard_db`, `ledgerguard`).
+4. **Dynamic Cryptographic Secrets (`SecureRandom`)**:
+   - All runtime credentials (ephemeral database password, JWT signing secret, webhook verification secret) are generated dynamically at startup via `SecureRandom` Base64 encoding.
+   - Zero hardcoded passwords, tokens, or credentials exist in source code or configuration files.
+5. **Strict CORS Policy & Closed Mutation Surface**:
+   - CORS is restricted exclusively to the Vite development server origins (`http://localhost:5173` and `http://127.0.0.1:5173`).
+   - The mutation API strictly accepts `application/json` with a closed enum `ScenarioId` (`OPPOSING_TRANSFERS`, `TIMEOUT_AFTER_COMMIT`, `CORRUPTED_SNAPSHOT`, `WEBHOOK_RACE`).
+   - Rejects arbitrary SQL, arbitrary JDBC URLs, arbitrary provider URLs, or custom executable script payloads.
+6. **Role-Based Access Control (RBAC) & UX Navigation**:
+   - Navigation links in `AppLayout` and the web operations route `/app/failure-lab` are protected by `OpsRoute`.
+   - Accessible strictly to users authenticated with role `OPS`; non-OPS users are redirected to `/app` with zero exposure of chaos execution controls.
+7. **Dual SecurityFilterChain Architecture**:
+   - `failureLabSecurityFilterChain` (`@Order(1)`): Matches `/api/lab/**` exclusively with `cors(withDefaults())` and `permitAll()`. Provides an unauthenticated local control surface bound strictly to `127.0.0.1:8083`.
+   - `securityFilterChain` (`@Order(2)`): Standard production security chain inherited via `@Import(LedgerGuardApplication.class)`. Any normal LedgerGuard application endpoints registered on port 8083 (e.g. `/api/transfers/**`, `/api/payouts/**`) remain protected by JWT authentication and RBAC; unauthenticated requests receive HTTP 401 Unauthorized.
+   - Zero production chaos endpoints are introduced into `ledgerguard-api` or exposed on production port 8080.
+8. **CORS as Browser Policy**:
+   - CORS is an enforcement mechanism implemented by web browsers to restrict cross-origin requests; it is not backend authentication.
+   - Backend security relies upon loopback-only binding (`127.0.0.1`), explicit CLI enablement (`ledgerguard.lab.enabled=true`), closed scenario enum dispatch, and complete ephemeral database isolation.
