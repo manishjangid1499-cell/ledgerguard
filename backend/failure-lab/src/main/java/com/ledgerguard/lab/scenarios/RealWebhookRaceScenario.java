@@ -8,6 +8,7 @@ import com.ledgerguard.identity.domain.UserRepository;
 import com.ledgerguard.identity.domain.UserRole;
 import com.ledgerguard.identity.domain.UserStatus;
 import com.ledgerguard.lab.engine.ChaosScenario;
+import com.ledgerguard.lab.engine.ScenarioEventSink;
 import com.ledgerguard.lab.invariants.FinancialInvariantOracle;
 import com.ledgerguard.lab.model.InvariantCheckResult;
 import com.ledgerguard.lab.model.ScenarioId;
@@ -75,12 +76,12 @@ public class RealWebhookRaceScenario implements ChaosScenario {
     }
 
     @Override
-    public ScenarioRunResult execute(UUID runId, DataSource dataSource) throws Exception {
+    public ScenarioRunResult execute(UUID runId, DataSource dataSource, ScenarioEventSink sink) throws Exception {
         Instant startTime = Instant.now();
         List<ScenarioStepEvent> timeline = new ArrayList<>();
         List<InvariantCheckResult> invariantResults = new ArrayList<>();
 
-        timeline.add(ScenarioStepEvent.of("SETUP", "Seeding user, account, and in-flight FundingOperation in PROCESSING"));
+        emit(timeline, sink, ScenarioStepEvent.of("SETUP", "Seeding user, account, and in-flight FundingOperation in PROCESSING"));
 
         UUID userId = UUID.randomUUID();
         userRepository.save(new User(userId, "webhook." + userId + "@lab.local", "$2a$10$hash", UserRole.CUSTOMER, UserStatus.ACTIVE));
@@ -110,7 +111,7 @@ public class RealWebhookRaceScenario implements ChaosScenario {
         byte[] rawBody = payloadJson.getBytes(StandardCharsets.UTF_8);
         String signatureHeader = computeHmac(timestampHeader, rawBody, webhookSecret);
 
-        timeline.add(ScenarioStepEvent.of("DISPATCH_RACE", "Dispatching 5 concurrent duplicate signed webhooks to ProviderWebhookController"));
+        emit(timeline, sink, ScenarioStepEvent.of("DISPATCH_RACE", "Dispatching 5 concurrent duplicate signed webhooks to ProviderWebhookController"));
 
         int concurrency = 5;
         CyclicBarrier barrier = new CyclicBarrier(concurrency);
@@ -141,9 +142,9 @@ public class RealWebhookRaceScenario implements ChaosScenario {
             throw new IllegalStateException("Expected SUCCEEDED funding operation but got: " + settledFunding.getStatus());
         }
 
-        timeline.add(ScenarioStepEvent.of("RACE_SETTLED", "5 webhooks processed: 1 accepted, 4 deduplicated, settled to SUCCEEDED"));
+        emit(timeline, sink, ScenarioStepEvent.of("RACE_SETTLED", "5 webhooks processed: 1 accepted, 4 deduplicated, settled to SUCCEEDED"));
 
-        timeline.add(ScenarioStepEvent.of("ORACLE_AUDIT", "Running independent oracle verification"));
+        emit(timeline, sink, ScenarioStepEvent.of("ORACLE_AUDIT", "Running independent oracle verification"));
         try (Connection conn = dataSource.getConnection()) {
             invariantResults.addAll(oracle.checkJournalStructure(conn));
             invariantResults.addAll(oracle.checkDebitCreditEquality(conn));
@@ -160,6 +161,13 @@ public class RealWebhookRaceScenario implements ChaosScenario {
                 startTime, endTime, endTime.toEpochMilli() - startTime.toEpochMilli(),
                 invariantResults, timeline, allPassed ? null : "Invariant check failed"
         );
+    }
+
+    private void emit(List<ScenarioStepEvent> timeline, ScenarioEventSink sink, ScenarioStepEvent event) {
+        timeline.add(event);
+        if (sink != null) {
+            sink.onStep(event);
+        }
     }
 
     private String computeHmac(String timestamp, byte[] rawBody, String secret) throws Exception {

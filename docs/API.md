@@ -843,3 +843,76 @@ Log format: `%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-},%X{corr
 
 - Database transactions execute within the active distributed trace context; individual SQL queries are not wrapped in child spans, ensuring no query text or parameters leak.
 - Asynchronous Kafka event publishing restores the W3C parent context and deduplicates headers before emitting records to Kafka topics.
+
+---
+
+## 20. Money Integrity Failure Lab API Specification (Phase 33)
+
+The Failure Lab control plane is hosted exclusively by the local executable `failure-lab` module on loopback `127.0.0.1:8083`. It is completely decoupled from the production `ledgerguard-api` server (`localhost:8080`).
+
+The local failure-lab Spring context includes LedgerGuard production beans and registers normal production application endpoints against the isolated ephemeral lab environment. The dedicated lab control surface is:
+`/api/lab/**`
+
+- **Base URL**: `http://127.0.0.1:8083`
+- **Content Type**: `application/json`
+- **CORS Allowed Origins**: `http://localhost:5173`, `http://127.0.0.1:5173` (browser origin policy, not backend authentication)
+- **Security Boundary**:
+  - **Lab Control Surface**: Only `/api/lab/**` is `permitAll` under the local lab security chain (`failureLabSecurityFilterChain` `@Order(1)`).
+  - **Production Endpoints**: Normal LedgerGuard application endpoints (e.g. `/api/transfers/**`, `/api/payouts/**`) remain registered on port 8083 against the ephemeral database and remain strictly governed by the normal JWT/RBAC security chain (`securityFilterChain` `@Order(2)`). Unauthenticated requests return HTTP 401 Unauthorized.
+  - **Backend Isolation**: Strict loopback-only binding (`127.0.0.1:8083`), fail-closed default enablement (`ledgerguard.lab.enabled=false`), closed scenario API, and ephemeral Testcontainers isolation. No production chaos endpoints are added to `ledgerguard-api`, and no routes or configuration on production port 8080 are changed.
+  - **Frontend UX**: Route protection via `OpsRoute` (requires `OPS` role; non-OPS authenticated users are redirected to `/app`).
+
+### 20.1 Endpoints Summary
+
+| Method | Endpoint | Description | Status Codes |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/lab/environment` | Returns health of ephemeral containers (PostgreSQL, Kafka, Mock PSP) | `200 OK`, `503 Service Unavailable` |
+| `GET` | `/api/lab/scenarios` | Returns metadata for all 4 supported chaos scenarios | `200 OK` |
+| `POST` | `/api/lab/runs` | Dispatches an asynchronous chaos scenario execution | `202 Accepted`, `400 Bad Request`, `409 Conflict`, `503 Service Unavailable` |
+| `GET` | `/api/lab/runs/{runId}` | Returns real-time or completed snapshot of a specific run | `200 OK`, `404 Not Found` |
+| `GET` | `/api/lab/runs/active` | Returns the currently executing scenario run, if any | `200 OK`, `204 No Content` |
+| `GET` | `/api/lab/runs` | Returns bounded history of recent runs (`?limit=20`, max 100) | `200 OK`, `400 Bad Request` |
+
+### 20.2 Start Scenario Run Request (`POST /api/lab/runs`)
+
+**Request Payload:**
+```json
+{
+  "scenarioId": "OPPOSING_TRANSFERS"
+}
+```
+
+**Permitted `scenarioId` Enum Values:**
+- `OPPOSING_TRANSFERS`
+- `TIMEOUT_AFTER_COMMIT`
+- `CORRUPTED_SNAPSHOT`
+- `WEBHOOK_RACE`
+
+**Response (`202 Accepted`):**
+```json
+{
+  "runId": "4a71bf5d-2b36-4d1a-8fc7-ec20dbd67d71",
+  "scenarioId": "OPPOSING_TRANSFERS",
+  "status": "RUNNING",
+  "startedAt": "2026-09-06T16:20:00.123Z",
+  "completedAt": null,
+  "durationMs": null,
+  "timeline": [
+    {
+      "timestamp": "2026-09-06T16:20:00.124Z",
+      "stepName": "INIT",
+      "description": "Starting scenario: opposing_transfers",
+      "details": null
+    }
+  ],
+  "invariantResults": [],
+  "error": null
+}
+```
+
+**Conflict Response (`409 Conflict`):**
+```json
+{
+  "error": "Another scenario is currently running. Max 1 active run permitted."
+}
+```

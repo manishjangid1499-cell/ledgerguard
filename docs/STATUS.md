@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Phase 32 Complete (Verified)
-- **Status:** Phase 32 Complete (Verified)
+- **Current Phase:** Phase 33 Complete (Verified)
+- **Status:** Phase 33 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -38,22 +38,24 @@
   - **Phase 30 — OpenTelemetry Tracing & Correlation IDs** (Completed: 2026-09-05)
   - **Phase 31 — Grafana Operations & Financial Integrity Dashboards** (Completed: 2026-09-05)
   - **Phase 32 — Money Integrity Failure Lab Backend** (Completed: 2026-09-06)
-- **Current Work:** Phase 32 completed. Built the Money Integrity Failure Lab execution engine in `backend/failure-lab`:
-  - Decoupled Real-System Architecture (Model C): `src/main` contains generic runner, independent SQL financial invariant oracle (`FinancialInvariantOracle`), fail-closed safety guard with positive authorization (`EnvironmentGuard`, `LabDatabaseTarget`), snapshot fault injector (`SnapshotFaultInjector`), scenario models and interfaces. `src/test` contains real LedgerGuard production system integration test harness booting `@SpringBootTest(classes = LedgerGuardApplication.class)` with test-scoped dependency on `ledgerguard-api`.
-  - Fail-Closed Safety Guard (`EnvironmentGuard`): Deny-by-default positive authorization model requiring local target confirmation (`LabDatabaseTarget`) and rejecting production/staging hostnames, non-local IP addresses (e.g. `10.0.0.8`), and forbidden keywords.
-  - Snapshot Fault Injector (`SnapshotFaultInjector`): Parameterized narrow mutation affecting only target snapshot balance row under valid `LabDatabaseTarget`.
-  - Independent SQL Oracle (`FinancialInvariantOracle`): Executes direct SQL queries against database asserting structural journal integrity, debit/credit zero-sum balance, snapshot reconstruction parity from `POSTED` journals under V3 normal balance rules, scoped non-negative available balances, internal transfer conservation, and exactly-once settlement journal counts.
-  - Concurrency Lock & Runner (`ScenarioRunner`, `ConcurrencyGuard`, `ScenarioRegistry`): Enforces max 1 concurrent scenario execution via bounded semaphore, 30s timeout safety, structured timeline events, and in-memory bounded execution history (100 runs).
-  - 4 Real Production Chaos Scenarios:
-    1. `OPPOSING_TRANSFERS`: Concurrent A->B and B->A transfers via real `TransferService.createTransfer` under `CyclicBarrier(2)` validating deterministic `ORDER BY ledger_account_id ASC` deadlock-free locking, idempotency replay, and money conservation.
-    2. `TIMEOUT_AFTER_COMMIT`: Real `PayoutService.requestPayout` under external provider transport timeout (`HttpProviderTestAdapter.Mode.TIMEOUT_AFTER_SUCCESS`); verifies `UNKNOWN != FAILED`, hold remains `ACTIVE`, and real `ProviderStatusPollingService` status recovery settles to `SUCCEEDED` with exactly-once journal posting.
-    3. `CORRUPTED_SNAPSHOT`: Deliberately mutates `ledger_balance_snapshots.balance_minor` via `SnapshotFaultInjector` under `LabDatabaseTarget`; real Phase 24 `SnapshotConsistencyChecker` detects `SNAPSHOT_MISMATCH`, and real Phase 25 `SnapshotAutoRepairService` auto-repairs snapshot from immutable `POSTED` journals.
-    4. `WEBHOOK_RACE`: 5 concurrent duplicate HMAC-SHA256 signed webhooks dispatched to real `ProviderWebhookController.receiveWebhook`; verifies real HMAC validation, provider event deduplication on `(provider_id, provider_event_id)`, and strictly single settlement journal posting.
-  - Test Suite: 15 tests in `backend/failure-lab` (6 test classes: `EnvironmentGuardTest` [9 tests], `OpposingTransfersScenarioTest` [1 test], `TimeoutAfterCommitScenarioTest` [1 test], `CorruptedSnapshotScenarioTest` [1 test], `WebhookRaceScenarioTest` [1 test], `FailureLabSuiteRunnerTest` [1 test]) validating individual real scenarios, suite execution, environment safety, and concurrency bounds.
-  - Zero-Impact Invariant: Zero production Java code changes (`ledgerguard-api/src/main/java` 0 lines modified), zero database migrations (V1-V17 frozen, V18 absent). Total workspace tests: 729 tests (675 API, 17 PSP, 22 Notification Worker, 15 Failure Lab; 0 failures, 0 errors, 0 skipped).
-- **Next Phase:** Phase 33 — Failure Lab Frontend & Visualizer
+  - **Phase 33 — Failure Lab Frontend & Interactive Invariant Visualizer** (Completed: 2026-09-06)
+- **Current Work:** Phase 33 completed. Implemented the interactive Failure Lab Operations Console and Invariant Visualizer:
+  - Local Executable Failure Lab Backend (`FailureLabApplication`): Binds strictly to `127.0.0.1:8083` with explicit enablement flag (`ledgerguard.lab.enabled=true`, default `false`), managing ephemeral PostgreSQL 17.11 and Kafka 4.3.1 Testcontainers lifecycle with zero hardcoded credentials (`SecureRandom` Base64 secrets).
+  - Bounded Async Run Coordinator (`LabRunCoordinator`): Single-thread bounded executor enforcing at-most-one active run via `ConcurrencyGuard` (HTTP 409 Conflict rejection), 30-second bounded timeout, real-time incremental timeline event stream (`ScenarioEventSink`), and bounded in-memory history ring buffer (100 runs, no database tables).
+  - REST Control Plane (`FailureLabController`): Exposes `/api/lab/environment`, `/api/lab/scenarios`, `/api/lab/runs`, `/api/lab/runs/{runId}`, `/api/lab/runs/active`, and `/api/lab/runs?limit=20` with strict CORS locked to `localhost:5173` / `127.0.0.1:5173`.
+  - Zero Scenario Logic Duplication: Reusable scenario classes (`RealOpposingTransfersScenario`, `RealTimeoutAfterCommitScenario`, `RealCorruptedSnapshotScenario`, `RealWebhookRaceScenario`, `HttpProviderTestAdapter`) moved to `src/main`, executed identically by both JUnit test harnesses and the HTTP runtime API.
+  - Interactive Web Operations Console (`frontend/ledgerguard-web/src/failure-lab`):
+    - Safety disclaimer banner highlighting ephemeral isolated execution and loopback binding.
+    - Container status chips for PostgreSQL, Kafka, and Mock PSP adapter with offline backend diagnostic notice.
+    - Responsive 4-card chaos scenario grid with category badges, fault mechanisms, and invariant contracts.
+    - Live active run console with elapsed duration timer, copyable Run ID, and status badges (`PENDING`, `RUNNING`, `PASSED`, `FAILED`, `TIMED_OUT`).
+    - Real-time step timeline and mathematical report cards scoped dynamically to applicable scenario invariants (Journal Integrity, Snapshot Parity, Available Balance Bound, Internal Transfer Conservation ΔA + ΔB = 0, Single Economic Effect).
+    - Compact recent execution history table with inspection capabilities.
+  - Role-Based Navigation & Security: Frontend navigation links in `AppLayout` and route `/app/failure-lab` guarded by `OpsRoute` (requires role `OPS`). Backend control plane is strictly bound to loopback `127.0.0.1:8083`, requiring explicit `--ledgerguard.lab.enabled=true` activation with CORS locked to `localhost:5173` / `127.0.0.1:5173`.
+  - Zero-Impact Invariant: Zero production Java code changes (`ledgerguard-api/src/main/java` 0 lines modified), zero database migrations (V1-V17 frozen, V18 strictly absent). Total workspace tests: 748 tests (675 API, 17 PSP, 22 Notification Worker, 34 Failure Lab; 0 failures, 0 errors, 0 skipped).
+- **Next Phase:** Phase 34 — Complete Testcontainers & End-to-End Suite
 - **Last Verified:** 2026-09-06
-- **Git Branch:** feat/phase-32-money-integrity-failure-lab
+- **Git Branch:** feat/phase-33-failure-lab-visualizer
 
 ---
 

@@ -5,6 +5,7 @@ import com.ledgerguard.identity.domain.UserRepository;
 import com.ledgerguard.identity.domain.UserRole;
 import com.ledgerguard.identity.domain.UserStatus;
 import com.ledgerguard.lab.engine.ChaosScenario;
+import com.ledgerguard.lab.engine.ScenarioEventSink;
 import com.ledgerguard.lab.fault.SnapshotFaultInjector;
 import com.ledgerguard.lab.guard.LabDatabaseTarget;
 import com.ledgerguard.lab.invariants.FinancialInvariantOracle;
@@ -77,12 +78,12 @@ public class RealCorruptedSnapshotScenario implements ChaosScenario {
     }
 
     @Override
-    public ScenarioRunResult execute(UUID runId, DataSource dataSource) throws Exception {
+    public ScenarioRunResult execute(UUID runId, DataSource dataSource, ScenarioEventSink sink) throws Exception {
         Instant startTime = Instant.now();
         List<ScenarioStepEvent> timeline = new ArrayList<>();
         List<InvariantCheckResult> invariantResults = new ArrayList<>();
 
-        timeline.add(ScenarioStepEvent.of("SETUP", "Seeding customer and OPS users, accounts, and valid initial posting"));
+        emit(timeline, sink, ScenarioStepEvent.of("SETUP", "Seeding customer and OPS users, accounts, and valid initial posting"));
 
         UUID userId = UUID.randomUUID();
         UUID opsUserId = UUID.randomUUID();
@@ -102,14 +103,14 @@ public class RealCorruptedSnapshotScenario implements ChaosScenario {
                 )
         ));
 
-        timeline.add(ScenarioStepEvent.of("INJECT_DRIFT", "Injecting deliberate balance corruption into snapshot via SnapshotFaultInjector"));
+        emit(timeline, sink, ScenarioStepEvent.of("INJECT_DRIFT", "Injecting deliberate balance corruption into snapshot via SnapshotFaultInjector"));
         long corruptedBalance = 10000L;
         int updated = SnapshotFaultInjector.corruptSnapshotBalance(labTarget, dataSource, customerAccount.getId(), corruptedBalance);
         if (updated != 1) {
             throw new IllegalStateException("Failed to inject snapshot drift: updated " + updated + " rows");
         }
 
-        timeline.add(ScenarioStepEvent.of("RUN_DETECTION", "Executing real Phase 24 SnapshotConsistencyChecker"));
+        emit(timeline, sink, ScenarioStepEvent.of("RUN_DETECTION", "Executing real Phase 24 SnapshotConsistencyChecker"));
         UUID reconRunId = UUID.randomUUID();
         jdbcTemplate.update(
                 "INSERT INTO reconciliation_runs (id, status, trigger_source, started_at) VALUES (?, 'RUNNING', 'ON_DEMAND', NOW())",
@@ -127,14 +128,14 @@ public class RealCorruptedSnapshotScenario implements ChaosScenario {
         if (caseId == null) {
             throw new IllegalStateException("Reconciliation failed to generate case for snapshot mismatch!");
         }
-        timeline.add(ScenarioStepEvent.of("DISCREPANCY_DETECTED", "Detected SNAPSHOT_MISMATCH case: " + caseId));
+        emit(timeline, sink, ScenarioStepEvent.of("DISCREPANCY_DETECTED", "Detected SNAPSHOT_MISMATCH case: " + caseId));
 
-        timeline.add(ScenarioStepEvent.of("RUN_REPAIR", "Executing real Phase 25 SnapshotAutoRepairService"));
+        emit(timeline, sink, ScenarioStepEvent.of("RUN_REPAIR", "Executing real Phase 25 SnapshotAutoRepairService"));
         SnapshotRepairResponse repairResponse = autoRepairService.repairSnapshot(caseId, opsUserId);
-        timeline.add(ScenarioStepEvent.of("REPAIRED", "Repaired balance restored from " + repairResponse.previousBalanceMinor()
+        emit(timeline, sink, ScenarioStepEvent.of("REPAIRED", "Repaired balance restored from " + repairResponse.previousBalanceMinor()
                 + " to " + repairResponse.repairedBalanceMinor()));
 
-        timeline.add(ScenarioStepEvent.of("ORACLE_AUDIT", "Running independent oracle verification"));
+        emit(timeline, sink, ScenarioStepEvent.of("ORACLE_AUDIT", "Running independent oracle verification"));
         try (Connection conn = dataSource.getConnection()) {
             invariantResults.addAll(oracle.checkJournalStructure(conn));
             invariantResults.addAll(oracle.checkDebitCreditEquality(conn));
@@ -150,5 +151,12 @@ public class RealCorruptedSnapshotScenario implements ChaosScenario {
                 startTime, endTime, endTime.toEpochMilli() - startTime.toEpochMilli(),
                 invariantResults, timeline, allPassed ? null : "Invariant check failed"
         );
+    }
+
+    private void emit(List<ScenarioStepEvent> timeline, ScenarioEventSink sink, ScenarioStepEvent event) {
+        timeline.add(event);
+        if (sink != null) {
+            sink.onStep(event);
+        }
     }
 }

@@ -5,6 +5,7 @@ import com.ledgerguard.identity.domain.UserRepository;
 import com.ledgerguard.identity.domain.UserRole;
 import com.ledgerguard.identity.domain.UserStatus;
 import com.ledgerguard.lab.engine.ChaosScenario;
+import com.ledgerguard.lab.engine.ScenarioEventSink;
 import com.ledgerguard.lab.invariants.FinancialInvariantOracle;
 import com.ledgerguard.lab.model.InvariantCheckResult;
 import com.ledgerguard.lab.model.ScenarioId;
@@ -70,12 +71,12 @@ public class RealOpposingTransfersScenario implements ChaosScenario {
     }
 
     @Override
-    public ScenarioRunResult execute(UUID runId, DataSource dataSource) throws Exception {
+    public ScenarioRunResult execute(UUID runId, DataSource dataSource, ScenarioEventSink sink) throws Exception {
         Instant startTime = Instant.now();
         List<ScenarioStepEvent> timeline = new ArrayList<>();
         List<InvariantCheckResult> invariantResults = new ArrayList<>();
 
-        timeline.add(ScenarioStepEvent.of("SETUP", "Seeding real users, accounts, and initial funded balances"));
+        emit(timeline, sink, ScenarioStepEvent.of("SETUP", "Seeding real users, accounts, and initial funded balances"));
 
         UUID userAId = UUID.randomUUID();
         UUID userBId = UUID.randomUUID();
@@ -106,7 +107,7 @@ public class RealOpposingTransfersScenario implements ChaosScenario {
                 )
         ));
 
-        timeline.add(ScenarioStepEvent.of("DISPATCH", "Dispatching concurrent A->B and B->A via production TransferService"));
+        emit(timeline, sink, ScenarioStepEvent.of("DISPATCH", "Dispatching concurrent A->B and B->A via production TransferService"));
 
         long transferAmount = 5000L;
         CreateTransferCommand cmdAtoB = new CreateTransferCommand(
@@ -133,15 +134,15 @@ public class RealOpposingTransfersScenario implements ChaosScenario {
         TransferResult res2 = future2.get(10, TimeUnit.SECONDS);
         executor.shutdown();
 
-        timeline.add(ScenarioStepEvent.of("COMPLETED", "Both transfers completed without deadlock"));
+        emit(timeline, sink, ScenarioStepEvent.of("COMPLETED", "Both transfers completed without deadlock"));
 
         // Idempotency replay check
         TransferResult replay = transferService.createTransfer(cmdAtoB);
         if (replay.replayed()) {
-            timeline.add(ScenarioStepEvent.of("IDEMPOTENCY_VERIFIED", "Idempotent replay produced zero duplicate transfers"));
+            emit(timeline, sink, ScenarioStepEvent.of("IDEMPOTENCY_VERIFIED", "Idempotent replay produced zero duplicate transfers"));
         }
 
-        timeline.add(ScenarioStepEvent.of("ORACLE_AUDIT", "Executing independent financial invariant oracle"));
+        emit(timeline, sink, ScenarioStepEvent.of("ORACLE_AUDIT", "Executing independent financial invariant oracle"));
 
         try (Connection conn = dataSource.getConnection()) {
             invariantResults.addAll(oracle.checkJournalStructure(conn));
@@ -160,5 +161,12 @@ public class RealOpposingTransfersScenario implements ChaosScenario {
                 startTime, endTime, endTime.toEpochMilli() - startTime.toEpochMilli(),
                 invariantResults, timeline, allPassed ? null : "Invariant check failed"
         );
+    }
+
+    private void emit(List<ScenarioStepEvent> timeline, ScenarioEventSink sink, ScenarioStepEvent event) {
+        timeline.add(event);
+        if (sink != null) {
+            sink.onStep(event);
+        }
     }
 }
