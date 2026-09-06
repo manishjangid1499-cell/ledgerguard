@@ -974,3 +974,111 @@ Phase 30 implements end-to-end distributed tracing and correlation ID propagatio
 - Prometheus and Grafana operate strictly as read-only telemetry collectors outside the financial transaction path.
 - An outage or failure of Prometheus or Grafana cannot alter, corrupt, or block LedgerGuard financial transactions.
 - Zero production Java code changes, zero database migrations (V1–V17 frozen, V18 strictly absent).
+
+---
+
+## 28. Money Integrity Failure Lab Architecture (Phase 32)
+
+Phase 32 introduces the **Money Integrity Failure Lab**, an automated programmatic chaos execution engine and mathematical financial verification suite contained entirely within the `backend/failure-lab` module.
+
+### 1. Decoupled Standalone Engine Architecture (Model C)
+
+```
++-------------------------------------------------------------------------+
+|                        Failure Lab Engine Runner                        |
+|                                                                         |
+|  +------------------+   +-------------------+   +--------------------+  |
+|  | EnvironmentGuard |-->| ConcurrencyGuard  |-->|  ScenarioRunner    |  |
+|  | (Safety Gate)    |   | (Semaphore Lock)  |   |  (Bounded History) |  |
+|  +------------------+   +-------------------+   +--------------------+  |
+|                                                            |            |
+|                                 +--------------------------+            |
+|                                 |                                       |
+|                                 v                                       |
+|              +-------------------------------------+                    |
+|              |         ChaosScenario Runner        |                    |
+|              +-------------------------------------+                    |
+|                |                                 |                      |
+|       Step 1-4 | Chaos Operations       Step 5   | Audit Invariants     |
+|                v                                 v                      |
+|     +---------------------+           +--------------------------+      |
+|     |  PostgreSQL Server  |           | FinancialInvariantOracle |      |
+|     |  (Testcontainers /  |<----------| (Independent SQL Checks) |      |
+|     |   Local Lab DB)     |           +--------------------------+      |
+|     +---------------------+                                             |
++-------------------------------------------------------------------------+
+```
+
+- **Architectural Decoupling**: Rather than coupling directly to `ledgerguard-api` internal service beans (which are packaged into a Spring Boot executable fat-jar with internal classes located under `BOOT-INF/classes`), `failure-lab` operates as an independent, decoupled test runner and chaos harness.
+- **Protocol**: Direct JDBC connectivity using standard SQL and database trigger contracts, ensuring zero compile-time or runtime classpath pollution of production application artifacts.
+- **Zero Production Java Mutations**: Zero lines of code in `ledgerguard-api/src/main/java` are modified.
+- **Zero Database Migrations**: Migrations V1–V17 remain completely frozen; V18 is strictly absent.
+
+### 2. Fail-Closed Safety Gate (`EnvironmentGuard`)
+
+- **Purpose**: Prevents chaos scenarios, artificial snapshot corruption, and concurrent load injection from executing against production, staging, or unverified databases.
+- **Verification Rule**:
+  1. Inspects the JDBC connection URL (parsing host and database path prior to query parameters).
+  2. Rejects any URL containing forbidden environment keywords: `prod`, `production`, `staging`, `stage`, `live`, `cloud`, `replica`.
+  3. Verifies that the host is explicitly a local development or test address (`localhost`, `127.0.0.1`, `[::1]`, `host.docker.internal`, or `testcontainers`).
+  4. Inspects the database catalog name, confirming it matches safe lab patterns (`ledgerguard_lab`, `lab`, `test`, `testcontainers`) or has an explicit lab test container signature.
+  5. Throws `UnsafeEnvironmentException` and halts execution if any check fails.
+
+### 3. Independent Financial Invariant Oracle (`FinancialInvariantOracle`)
+
+The oracle executes direct, independent SQL queries against PostgreSQL to verify the five core financial invariants without relying on the application's own service layer:
+
+1. **Balanced Journal Structure (`checkPostedJournalBalance`)**:
+   - Every `POSTED` journal transaction must have at least 2 entries.
+   - Every `POSTED` journal must contain at least 1 `DEBIT` entry and at least 1 `CREDIT` entry.
+   - Every journal entry must have a strictly positive amount (`amount_minor > 0`).
+   - The sum of debits must equal the sum of credits exactly: $\sum \text{DEBIT} - \sum \text{CREDIT} = 0$.
+2. **Snapshot Reconstruction Consistency (`checkSnapshotReconstruction`)**:
+   - Reconstructs expected account balances directly from the sum of debits and credits of all historical `POSTED` journal entries:
+     $$\text{expected} = \sum \text{CREDIT} - \sum \text{DEBIT} \quad (\text{for liability/wallet accounts})$$
+   - Compares the mathematical reconstruction against `ledger_balance_snapshots.balance_minor`.
+   - Flags any discrepancy as a snapshot drift or corruption.
+3. **Available Balance Invariant (`checkAvailableBalanceInvariant`)**:
+   - For all accounts, available balance must equal posted balance minus the sum of all `ACTIVE` holds:
+     $$\text{available\_minor} = \text{balance\_minor} - \sum_{\text{status} = \text{'ACTIVE'}} \text{hold\_amount\_minor}$$
+   - Non-credit accounts must strictly maintain $\text{available\_minor} \ge 0$.
+4. **Conservation of Money (`checkSystemMoneyConservation`)**:
+   - Asserts that across any closed internal transfer cycle:
+     $$\Delta \text{Balance}(A) + \Delta \text{Balance}(B) = 0$$
+   - Total system currency is conserved; zero currency units are lost or created.
+5. **Single Economic Effect (`checkSingleEconomicEffect`)**:
+   - Asserts that for any business operation (such as a payout, payment, or webhook settlement), the number of associated `POSTED` double-entry journals is at most 1 ($\le 1$), and duplicate submissions produce zero additional postings.
+
+### 4. Concurrency Guard & Scenario Execution Runner
+
+- **`ConcurrencyGuard`**: Uses a `Semaphore(1)` to enforce that at most **one** chaos scenario executes at any time across the process, preventing concurrent test interference and resource exhaustion.
+- **`ScenarioRunner`**:
+  - Validates environment safety via `EnvironmentGuard` before every run.
+  - Acquires the concurrency permit.
+  - Enforces a strict execution timeout (default 30 seconds) via `CompletableFuture`.
+  - Captures structured timeline events (`ScenarioStepEvent`) recording timestamps, step descriptions, and contextual metadata.
+  - Maintains a bounded in-memory execution history of the last 100 scenario runs (`ConcurrentLinkedDeque` capped at 100).
+  - Guarantees permit release in all success, error, and timeout outcomes.
+
+### 5. Automated Chaos Scenarios
+
+1. **Scenario 1: Opposing Concurrent Transfers (`OPPOSING_TRANSFERS`)**:
+   - Simulates high-concurrency opposing transfers between Account A and Account B.
+   - Synchronizes competing threads using `CyclicBarrier(2)` so that A $\to$ B and B $\to$ A transfers hit the database concurrently.
+   - Validates that deterministic account locking (`ORDER BY ledger_account_id ASC`) completely eliminates circular-wait deadlocks.
+   - Confirms money conservation ($\Delta A + \Delta B = 0$) and balanced journal entries.
+2. **Scenario 2: PSP Timeout After Commit (`TIMEOUT_AFTER_COMMIT`)**:
+   - Simulates an external PSP network drop after the provider successfully commits a payout transaction (`TIMEOUT_AFTER_SUCCESS`).
+   - Validates that the system correctly marks the local payout as `UNKNOWN` rather than `FAILED` (`UNKNOWN != FAILED`).
+   - Verifies that reserved customer funds remain securely held (`balance_holds.status = 'ACTIVE'`).
+   - Executes status recovery: confirms provider success, marks payout `SUCCEEDED`, consumes the hold (`CONSUMED`), and verifies exactly one double-entry settlement journal.
+3. **Scenario 3: Corrupted Snapshot Detection & Auto-Repair (`CORRUPTED_SNAPSHOT`)**:
+   - Deliberately injects balance corruption into `ledger_balance_snapshots.balance_minor` (simulating bit-flip or out-of-band modification).
+   - Validates that `POSTED` journal entries remain strictly immutable and untampered.
+   - Simulates Level 2 reconciliation to detect the `SNAPSHOT_MISMATCH` discrepancy.
+   - Triggers dynamic snapshot auto-repair by recalculating the exact balance from immutable historical journals and updating the snapshot under row-level lock (`FOR UPDATE`).
+   - Asserts that post-repair snapshot balance perfectly matches reconstructed journal history.
+4. **Scenario 4: Webhook Race & Deduplication (`WEBHOOK_RACE`)**:
+   - Dispatches 5 concurrent duplicate signed HMAC-SHA256 webhooks for the same provider operation.
+   - Validates that the unique constraint on `provider_events(provider_id, provider_event_id)` ensures exactly 1 event is accepted for processing and 4 are safely deduplicated.
+   - Validates that exactly 1 double-entry settlement journal is posted and customer/clearing balances reflect strictly a single economic effect.
