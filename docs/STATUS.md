@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Phase 31 Complete (Verified)
-- **Status:** Phase 31 Complete (Verified)
+- **Current Phase:** Phase 32 Complete (Verified)
+- **Status:** Phase 32 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -37,17 +37,23 @@
   - **Phase 29 — Business & Integrity Metrics (Prometheus)** (Completed: 2026-09-05)
   - **Phase 30 — OpenTelemetry Tracing & Correlation IDs** (Completed: 2026-09-05)
   - **Phase 31 — Grafana Operations & Financial Integrity Dashboards** (Completed: 2026-09-05)
-- **Current Work:** Phase 31 completed. Provisioned containerized Prometheus v3.2.1 and Grafana v11.5.2 observability infrastructure:
-  - Docker Compose services: Added `prometheus` (`prom/prometheus:v3.2.1`) and `grafana` (`grafana/grafana:11.5.2`) services with dedicated named volumes (`ledgerguard-prometheus-data`, `ledgerguard-grafana-data`).
-  - Scrape & Refresh Alignment: Prometheus scrapes `ledgerguard-api` `/actuator/prometheus` at 15s interval via `host.docker.internal:8080`. Grafana dashboards refresh at 15s.
-  - Hardened Configuration: Disabled Grafana anonymous access (`GF_AUTH_ANONYMOUS_ENABLED=false`) with mandatory local password (`GRAFANA_ADMIN_PASSWORD` required in `.env`); disabled Prometheus HTTP lifecycle controls (`--web.enable-lifecycle` removed).
-  - Provisioned Datasources & Dashboards: Configured automated provisioning for Prometheus datasource and two Grafana dashboards in folder `LedgerGuard`:
-    1. `LedgerGuard Financial Integrity` (`ledgerguard-financial-integrity.json`, UID: `ledgerguard-financial-integrity`): Monitors Unbalanced/Malformed Posted Journals, Active Reconciliation Discrepancies, Oldest Pending Outbox Lag, and Idempotency Conflicts / Replays.
-    2. `LedgerGuard API Operations` (`ledgerguard-api-operations.json`, UID: `ledgerguard-api-operations`): Monitors HTTP Throughput by Status, 5xx & 429 Errors, Aggregate Mean HTTP Duration (`sum(rate(sum))/clamp_min(sum(rate(count)), 1e-12)`), JVM Heap Memory, Process & System CPU, HikariCP Connection Pool, and JVM Thread Pool Utilization.
-  - Zero-Impact Invariant: Zero production Java code changes, zero database migrations (V1-V17 frozen, V18 absent), zero changes to `pom.xml`. Clean verify passing with 715 tests (675 API, 17 PSP, 22 Notification Worker, 1 Failure Lab; 0 failures, 0 errors, 0 skipped).
-- **Next Phase:** Phase 32 — Money Integrity Failure Lab Backend
-- **Last Verified:** 2026-09-05
-- **Git Branch:** main
+  - **Phase 32 — Money Integrity Failure Lab Backend** (Completed: 2026-09-06)
+- **Current Work:** Phase 32 completed. Built the Money Integrity Failure Lab execution engine in `backend/failure-lab`:
+  - Decoupled Real-System Architecture (Model C): `src/main` contains generic runner, independent SQL financial invariant oracle (`FinancialInvariantOracle`), fail-closed safety guard with positive authorization (`EnvironmentGuard`, `LabDatabaseTarget`), snapshot fault injector (`SnapshotFaultInjector`), scenario models and interfaces. `src/test` contains real LedgerGuard production system integration test harness booting `@SpringBootTest(classes = LedgerGuardApplication.class)` with test-scoped dependency on `ledgerguard-api`.
+  - Fail-Closed Safety Guard (`EnvironmentGuard`): Deny-by-default positive authorization model requiring local target confirmation (`LabDatabaseTarget`) and rejecting production/staging hostnames, non-local IP addresses (e.g. `10.0.0.8`), and forbidden keywords.
+  - Snapshot Fault Injector (`SnapshotFaultInjector`): Parameterized narrow mutation affecting only target snapshot balance row under valid `LabDatabaseTarget`.
+  - Independent SQL Oracle (`FinancialInvariantOracle`): Executes direct SQL queries against database asserting structural journal integrity, debit/credit zero-sum balance, snapshot reconstruction parity from `POSTED` journals under V3 normal balance rules, scoped non-negative available balances, internal transfer conservation, and exactly-once settlement journal counts.
+  - Concurrency Lock & Runner (`ScenarioRunner`, `ConcurrencyGuard`, `ScenarioRegistry`): Enforces max 1 concurrent scenario execution via bounded semaphore, 30s timeout safety, structured timeline events, and in-memory bounded execution history (100 runs).
+  - 4 Real Production Chaos Scenarios:
+    1. `OPPOSING_TRANSFERS`: Concurrent A->B and B->A transfers via real `TransferService.createTransfer` under `CyclicBarrier(2)` validating deterministic `ORDER BY ledger_account_id ASC` deadlock-free locking, idempotency replay, and money conservation.
+    2. `TIMEOUT_AFTER_COMMIT`: Real `PayoutService.requestPayout` under external provider transport timeout (`HttpProviderTestAdapter.Mode.TIMEOUT_AFTER_SUCCESS`); verifies `UNKNOWN != FAILED`, hold remains `ACTIVE`, and real `ProviderStatusPollingService` status recovery settles to `SUCCEEDED` with exactly-once journal posting.
+    3. `CORRUPTED_SNAPSHOT`: Deliberately mutates `ledger_balance_snapshots.balance_minor` via `SnapshotFaultInjector` under `LabDatabaseTarget`; real Phase 24 `SnapshotConsistencyChecker` detects `SNAPSHOT_MISMATCH`, and real Phase 25 `SnapshotAutoRepairService` auto-repairs snapshot from immutable `POSTED` journals.
+    4. `WEBHOOK_RACE`: 5 concurrent duplicate HMAC-SHA256 signed webhooks dispatched to real `ProviderWebhookController.receiveWebhook`; verifies real HMAC validation, provider event deduplication on `(provider_id, provider_event_id)`, and strictly single settlement journal posting.
+  - Test Suite: 15 tests in `backend/failure-lab` (6 test classes: `EnvironmentGuardTest` [9 tests], `OpposingTransfersScenarioTest` [1 test], `TimeoutAfterCommitScenarioTest` [1 test], `CorruptedSnapshotScenarioTest` [1 test], `WebhookRaceScenarioTest` [1 test], `FailureLabSuiteRunnerTest` [1 test]) validating individual real scenarios, suite execution, environment safety, and concurrency bounds.
+  - Zero-Impact Invariant: Zero production Java code changes (`ledgerguard-api/src/main/java` 0 lines modified), zero database migrations (V1-V17 frozen, V18 absent). Total workspace tests: 729 tests (675 API, 17 PSP, 22 Notification Worker, 15 Failure Lab; 0 failures, 0 errors, 0 skipped).
+- **Next Phase:** Phase 33 — Failure Lab Frontend & Visualizer
+- **Last Verified:** 2026-09-06
+- **Git Branch:** feat/phase-32-money-integrity-failure-lab
 
 ---
 
@@ -119,7 +125,7 @@
 | **Phase 29** | Business & Integrity Metrics (Prometheus) | **Completed** | 2026-09-05 |
 | **Phase 30** | OpenTelemetry Tracing & Correlation IDs | **Completed** | 2026-09-05 |
 | **Phase 31** | Grafana Operations Dashboards | **Completed** | 2026-09-05 |
-| **Phase 32** | Money Integrity Failure Lab Backend | Planned | — |
+| **Phase 32** | Money Integrity Failure Lab Backend | **Completed** | 2026-09-06 |
 | **Phase 33** | Failure Lab Frontend & Visualizer | Planned | — |
 | **Phase 34** | Complete Testcontainers & E2E Suite | Planned | — |
 | **Phase 35** | Production Docker Images & Compose | Planned | — |

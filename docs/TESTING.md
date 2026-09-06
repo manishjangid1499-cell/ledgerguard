@@ -535,3 +535,39 @@ Phase 31 provisions containerized Prometheus v3.2.1 and Grafana v11.5.2 observab
 - **Workspace total: 715 tests, 0 failures, 0 errors, 0 skipped**
 
 Verified by `.\mvnw.cmd clean verify` (2026-09-05).
+
+---
+
+## 13. Phase 32 — Money Integrity Failure Lab Backend Test Suite
+
+Phase 32 introduces the programmatic chaos execution engine and mathematical financial verification suite in `backend/failure-lab`. It operates as a decoupled test harness executing against PostgreSQL via Testcontainers with Flyway V1–V17 migrations, enforcing strict environment safety (`EnvironmentGuard`), concurrency locking (`ConcurrencyGuard`), execution timeouts (30s), structured timeline events, and direct SQL financial invariant assertions (`FinancialInvariantOracle`).
+
+### Test Class Registry
+
+| Test Class | Module | Methods | Coverage Area |
+| :--- | :--- | :---: | :--- |
+| `EnvironmentGuardTest` | `failure-lab` | 9 | Safety gate unit tests: verifies deny-by-default positive authorization model (`LabDatabaseTarget`), ephemeral ownership token verification, and explicit rejection of non-local IP addresses (`10.0.0.8`), external hostnames (`db.internal`, `example.com`), and forbidden keywords (`prod`, `staging`, `live`, etc.). |
+| `OpposingTransfersScenarioTest` | `failure-lab` | 1 | Scenario 1 real-system test: executes 2 concurrent opposing transfers (A->B and B->A) through real production `TransferService.createTransfer` under `CyclicBarrier(2)`; verifies deadlock-free completion, idempotency replay, debits == credits, and strict conservation of total money. |
+| `TimeoutAfterCommitScenarioTest` | `failure-lab` | 1 | Scenario 2 real-system test: executes real `PayoutService.requestPayout` against `HttpProviderTestAdapter` configured for `TIMEOUT_AFTER_SUCCESS`; verifies payout enters `UNKNOWN` (`UNKNOWN != FAILED`), balance hold remains `ACTIVE`, and real `ProviderStatusPollingService` recovers state to `SUCCEEDED`, consumes hold, and posts exactly 1 balanced settlement journal. |
+| `CorruptedSnapshotScenarioTest` | `failure-lab` | 1 | Scenario 3 real-system test: deliberately injects snapshot drift via `SnapshotFaultInjector` under `LabDatabaseTarget`; executes real Phase 24 `SnapshotConsistencyChecker` to detect `SNAPSHOT_MISMATCH` discrepancy item; executes real Phase 25 `SnapshotAutoRepairService` to auto-repair snapshot from immutable journals under `FOR UPDATE` lock. |
+| `WebhookRaceScenarioTest` | `failure-lab` | 1 | Scenario 4 real-system test: dispatches 5 concurrent duplicate signed HMAC-SHA256 webhooks to real `ProviderWebhookController.receiveWebhook`; verifies real HMAC validation, provider event deduplication on `(provider_id, provider_event_id)` accepting 1 and deduplicating 4, and strictly single settlement journal posting. |
+| `FailureLabSuiteRunnerTest` | `failure-lab` | 1 | End-to-end suite runner integration test: registers and executes all 4 real chaos scenarios sequentially through `ScenarioRunner` and `ScenarioRegistry`; validates scenario execution reports, timeline step events, and clean invariant audits. |
+
+### Phase 32 Invariants Verified by Tests
+
+1. **Real-System Execution vs Fake JDBC Simulation**: All chaos scenarios exercise real LedgerGuard Spring application services (`TransferService`, `PayoutService`, `ProviderStatusPollingService`, `SnapshotConsistencyChecker`, `SnapshotAutoRepairService`, `ProviderWebhookController`), providing genuine proof of production behavior under concurrency and faults.
+2. **Deterministic Lock Ordering Eliminates Circular-Wait Deadlocks**: Opposing transfers executed concurrently across threads complete without deadlock when accounts are locked ordered by `ledger_account_id ASC`.
+3. **Ambiguous Outcome Safety (`UNKNOWN != FAILED`)**: A transport timeout following a provider commit leaves the transaction in `UNKNOWN` and preserves the balance hold as `ACTIVE`, preventing premature release or double-spending until authoritative status resolution.
+4. **Journal Immutability & Snapshot Auto-Repair**: Direct balance snapshot drift does not alter immutable historical journal entries; Level 2 reconciliation detects the discrepancy, and dynamic reconstruction from `POSTED` journals restores mathematical accuracy.
+5. **Webhook Deduplication & Single Economic Effect**: Concurrent identical webhooks are deduplicated at the database boundary via unique constraints, guaranteeing at most one state transition and exactly one financial settlement journal.
+6. **Fail-Closed Environment Safety with Positive Authorization**: `EnvironmentGuard` requires explicit ephemeral target authorization via `LabDatabaseTarget` and rejects any non-local or production/staging target.
+
+### Phase 32 Verified Test Count
+
+- `ledgerguard-api`: **675 tests, 0 failures, 0 errors, 0 skipped**
+- `psp-simulator`: **17 tests, 0 failures, 0 errors, 0 skipped**
+- `notification-worker`: **22 tests, 0 failures, 0 errors, 0 skipped**
+- `failure-lab`: **15 tests, 0 failures, 0 errors, 0 skipped** (+14 net tests, placeholder test deleted)
+- **Workspace total: 729 tests, 0 failures, 0 errors, 0 skipped**
+
+Verified by `.\mvnw.cmd clean verify` (2026-09-06).
