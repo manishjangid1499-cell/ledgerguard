@@ -31,7 +31,7 @@ flowchart TD
 
     subgraph Application_Core["LedgerGuard Modular Monolith (ledgerguard-api)"]
         API_GW["REST API Controllers\n(Spring MVC / Validation / Security)"]
-        
+
         subgraph Financial_Modules["Domain Modules"]
             IdentityMod["Identity & Access\n(JWT / RBAC)"]
             IdempotencyMod["Idempotency Engine\n(Request Fingerprints)"]
@@ -64,7 +64,7 @@ flowchart TD
 
     Browser -->|HTTPS / REST| Nginx
     Nginx -->|Proxy Pass| API_GW
-    
+
     API_GW --> IdentityMod
     API_GW --> IdempotencyMod
     IdempotencyMod --> TransferMod
@@ -1131,3 +1131,68 @@ backend/failure-lab (FailureLabApplication - Spring Boot Web)
      4. Internal Transfer Conservation ($\Delta \text{Balance}(A) + \Delta \text{Balance}(B) = 0$, scoped strictly to opposing transfers)
      5. Exactly-Once Settlement ($\text{Settlement Journal Count} = 1$, scoped strictly to external payout/webhook settlement)
    - Bounded execution history table with run selection and inspection.
+
+---
+
+## 29. Complete Testcontainers & Cross-Service End-to-End Suite Architecture (Phase 34)
+
+### 1. Architectural Scope & Purpose
+The end-to-end test suite in `backend/e2e-tests` provides hermetic, cross-service validation of the entire LedgerGuard platform. Unlike unit and single-service integration tests, the E2E suite tests real packaged fat JARs inside real JVM containers running on an isolated virtual network alongside real infrastructure (PostgreSQL 17.11 and Apache Kafka 4.3.1). While Phase 34 focuses on non-adversarial cross-service journeys of packaged applications, adversarial transport failure modes and ambiguous provider timeout recovery remain authoritatively covered by the dedicated Failure Lab (`backend/failure-lab`).
+
+```
++---------------------------------------------------------------------------------------------------+
+|                                 Testcontainers Virtual Bridge Network                             |
+|                                                                                                   |
+|  +------------------+      +------------------+      +-------------------+                        |
+|  | PostgreSQL 17.11 |      |   Kafka 4.3.1    |      |   PSP Simulator   |                        |
+|  | (Flyway V1-V17)  |      |   (Broker + ZK)  |      |   (:8081 / JVM)   |                        |
+|  +--------^---------+      +--------^---------+      +---------^---------+                        |
+|           |                         |                          |                                  |
+|           +-------------------------+--------------------------+                                  |
+|                                     |                                                             |
+|                          +----------v---------+      +---------v---------+                        |
+|                          |  LedgerGuard API   |      |   Notification    |                        |
+|                          |   (:8080 / JVM)    |----->|      Worker       |                        |
+|                          |                    |      |     (JVM)         |                        |
+|                          +----------^---------+      +-------------------+                        |
++-------------------------------------|-------------------------------------------------------------+
+                                      | HTTP REST / JDBC Verification
+                           +----------+----------+
+                           |   JUnit 5 Flow Test |
+                           |  (E2EDatabaseProbe) |
+                           +---------------------+
+```
+
+### 2. Multi-Service Container Topology
+- **PostgreSQL 17.11**: Provisions separate logical databases (`ledgerguard`, `psp_simulator`, and `notification_worker`). Flyway automatically runs migrations independently for each service.
+- **Apache Kafka 4.3.1**: Ephemeral broker configured with advertised internal listener on private network alias `kafka:19092`.
+- **PSP Simulator Container**: Runs `psp-simulator-0.1.0-SNAPSHOT.jar` listening on internal port 8081, handling external operations and HTTP webhook callbacks to `http://ledgerguard-api:8080/api/provider/webhooks`.
+- **Notification Worker Container**: Asynchronous non-web worker running `notification-worker-0.1.0-SNAPSHOT.jar`, consuming transactional outbox events from Kafka `kafka:19092`.
+- **LedgerGuard API Container**: Runs `ledgerguard-api-0.1.0-SNAPSHOT-exec.jar` listening on internal port 8080 with all production services active (transfer, funding, payout, outbox publisher, status polling). Readiness verified via `/actuator/health`.
+
+### 3. Packaging & Classpath Decoupling
+To ensure module interoperability:
+- `ledgerguard-api` configures `<classifier>exec</classifier>` on its Spring Boot repackage goal. This keeps the primary `ledgerguard-api.jar` as a clean library JAR (allowing `backend/failure-lab` to depend on it without duplicate nested jar classloader conflicts) while producing `ledgerguard-api-0.1.0-SNAPSHOT-exec.jar` for containerized execution.
+- `psp-simulator` and `notification-worker` configure standard Spring Boot repackage without explicit mainClass overrides, allowing Spring Boot to auto-detect their single main application classes.
+- `backend/e2e-tests` resolves executable JARs deterministically via `JarResolver`, verifying file existence, size (> 1 MB), and `Main-Class` manifest attributes before mounting into `eclipse-temurin:21-jre` containers.
+
+### 4. Real Provider Contract Compliance
+Phase 34 E2E testing uncovered a genuine integration contract mismatch: `PspOperationResponse` in the API expected `boolean replayed`, but `OperationResponse` in `psp-simulator` did not serialize it.
+This was corrected at the real production provider boundary:
+- `OperationResponse` in `backend/psp-simulator` includes `boolean replayed`.
+- `ProviderOperationController` serializes `replayed=false` on fresh operation creation and status lookup GETs, and `replayed=true` on idempotent replay.
+- Deserialization in `PspClient` succeeds out-of-the-box using the real packaged Jackson 3 configuration without any javaagent, bytecode manipulation, or Jackson property tampering.
+
+### 5. Outbox & Asynchronous Settlement Validation
+The E2E suite verifies the complete transactional outbox pattern:
+1. Business mutation persists outbox records atomically with financial journal entries.
+2. `OutboxPublisherService` poller scans pending records and dispatches them to Kafka with W3C distributed trace headers.
+3. `notification-worker` consumes Kafka records asynchronously.
+4. `E2EDatabaseProbe` audits outbox status transitions from `PENDING` to `SENT` directly in PostgreSQL.
+
+### 6. Non-Invasive Invariant Verification
+The E2E suite verifies domain invariants through external HTTP REST calls and direct read-only SQL assertions via `E2EDatabaseProbe`:
+- **Double-Entry Balance**: $\sum \text{Debit} = \sum \text{Credit}$ across all generated journal entries.
+- **Snapshot Parity**: Balance snapshot reconstructed from immutable journal history matches current snapshot state.
+- **Available Balance Bound**: Available balance $\ge 0$ across holds and settlements.
+- **Zero-Sum Transfer Conservation**: Sender and recipient balances conserve funds exactly without leakage or creation.

@@ -13,9 +13,10 @@ public record OperationResponse(
         String amountMinor,
         String currency,
         Instant createdAt,
-        Instant completedAt
+        Instant completedAt,
+        boolean replayed
 ) {
-    public static OperationResponse from(ProviderOperation op) {
+    public static OperationResponse from(ProviderOperation op, boolean replayed) {
         return new OperationResponse(
                 op.getId(),
                 op.getClientOperationId(),
@@ -24,7 +25,12 @@ public record OperationResponse(
                 String.valueOf(op.getAmountMinor()),
                 op.getCurrency(),
                 op.getCreatedAt(),
-                op.getCompletedAt()
+                op.getCompletedAt(),
+                replayed
         );
+    }
+
+    public static OperationResponse from(ProviderOperation op) {
+        return from(op, false);
     }
 }

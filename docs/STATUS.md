@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Phase 33 Complete (Verified)
-- **Status:** Phase 33 Complete (Verified)
+- **Current Phase:** Phase 34 Complete (Verified)
+- **Status:** Phase 34 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -39,23 +39,17 @@
   - **Phase 31 — Grafana Operations & Financial Integrity Dashboards** (Completed: 2026-09-05)
   - **Phase 32 — Money Integrity Failure Lab Backend** (Completed: 2026-09-06)
   - **Phase 33 — Failure Lab Frontend & Interactive Invariant Visualizer** (Completed: 2026-09-06)
-- **Current Work:** Phase 33 completed. Implemented the interactive Failure Lab Operations Console and Invariant Visualizer:
-  - Local Executable Failure Lab Backend (`FailureLabApplication`): Binds strictly to `127.0.0.1:8083` with explicit enablement flag (`ledgerguard.lab.enabled=true`, default `false`), managing ephemeral PostgreSQL 17.11 and Kafka 4.3.1 Testcontainers lifecycle with zero hardcoded credentials (`SecureRandom` Base64 secrets).
-  - Bounded Async Run Coordinator (`LabRunCoordinator`): Single-thread bounded executor enforcing at-most-one active run via `ConcurrencyGuard` (HTTP 409 Conflict rejection), 30-second bounded timeout, real-time incremental timeline event stream (`ScenarioEventSink`), and bounded in-memory history ring buffer (100 runs, no database tables).
-  - REST Control Plane (`FailureLabController`): Exposes `/api/lab/environment`, `/api/lab/scenarios`, `/api/lab/runs`, `/api/lab/runs/{runId}`, `/api/lab/runs/active`, and `/api/lab/runs?limit=20` with strict CORS locked to `localhost:5173` / `127.0.0.1:5173`.
-  - Zero Scenario Logic Duplication: Reusable scenario classes (`RealOpposingTransfersScenario`, `RealTimeoutAfterCommitScenario`, `RealCorruptedSnapshotScenario`, `RealWebhookRaceScenario`, `HttpProviderTestAdapter`) moved to `src/main`, executed identically by both JUnit test harnesses and the HTTP runtime API.
-  - Interactive Web Operations Console (`frontend/ledgerguard-web/src/failure-lab`):
-    - Safety disclaimer banner highlighting ephemeral isolated execution and loopback binding.
-    - Container status chips for PostgreSQL, Kafka, and Mock PSP adapter with offline backend diagnostic notice.
-    - Responsive 4-card chaos scenario grid with category badges, fault mechanisms, and invariant contracts.
-    - Live active run console with elapsed duration timer, copyable Run ID, and status badges (`PENDING`, `RUNNING`, `PASSED`, `FAILED`, `TIMED_OUT`).
-    - Real-time step timeline and mathematical report cards scoped dynamically to applicable scenario invariants (Journal Integrity, Snapshot Parity, Available Balance Bound, Internal Transfer Conservation ΔA + ΔB = 0, Single Economic Effect).
-    - Compact recent execution history table with inspection capabilities.
-  - Role-Based Navigation & Security: Frontend navigation links in `AppLayout` and route `/app/failure-lab` guarded by `OpsRoute` (requires role `OPS`). Backend control plane is strictly bound to loopback `127.0.0.1:8083`, requiring explicit `--ledgerguard.lab.enabled=true` activation with CORS locked to `localhost:5173` / `127.0.0.1:5173`.
-  - Zero-Impact Invariant: Zero production Java code changes (`ledgerguard-api/src/main/java` 0 lines modified), zero database migrations (V1-V17 frozen, V18 strictly absent). Total workspace tests: 748 tests (675 API, 17 PSP, 22 Notification Worker, 34 Failure Lab; 0 failures, 0 errors, 0 skipped).
-- **Next Phase:** Phase 34 — Complete Testcontainers & End-to-End Suite
-- **Last Verified:** 2026-09-06
-- **Git Branch:** feat/phase-33-failure-lab-visualizer
+  - **Phase 34 — Complete Testcontainers & End-to-End Suite** (Completed: 2026-09-07)
+- **Current Work:** Phase 34 completed. Implemented unified cross-service Testcontainers integration and End-to-End test suite:
+  - New dedicated reactor test module `backend/e2e-tests` registered in root `pom.xml`.
+  - Runs all 3 packaged microservices (`ledgerguard-api`, `psp-simulator`, `notification-worker`) in real JVM containers (`eclipse-temurin:21-jre`) on a shared private virtual bridge network alongside PostgreSQL 17.11 (`postgres:17.11-alpine`) and Apache Kafka 4.3.1 (`apache/kafka:4.3.1`).
+  - Full end-to-end multi-service flows verified across 7 flow test classes (11 tests): Platform Startup, Authentication & Wallet lifecycle, External Wallet Funding & Settlement, External Payout & Balance Hold consumption, Internal Transfers, Merchant Payments & Refunds with fee deductions, and Asynchronous Outbox-Kafka-Inbox messaging with notification delivery (with adversarial provider timeout and ambiguous outcome recovery authoritatively covered by the Failure Lab).
+  - Real contract compliance: Fixed real provider wire contract in `backend/psp-simulator` (`OperationResponse.java` and `ProviderOperationController.java` serialize `boolean replayed`), completely eliminating the need for Jackson runtime patching or Java agents. Provider controller diff strictly contains response mapping with `replayed`, with zero wildcard hacks or webhook suppression.
+  - Zero-Impact Invariant strictly preserved: Upstream production Java code (`backend/ledgerguard-api/src/main/**`, `backend/notification-worker/src/main/**`, `backend/failure-lab/src/main/**`) 0 lines modified, database migrations V1-V17 frozen, V18 strictly absent.
+  - Total workspace tests: 760 tests (675 API, 18 PSP, 22 Notification Worker, 34 Failure Lab, 11 E2E; 0 failures, 0 errors, 0 skipped).
+- **Next Phase:** Phase 35 — Production Docker Images & Multi-Stage Compose
+- **Last Verified:** 2026-09-07
+- **Git Branch:** test/phase-34-complete-e2e-suite
 
 ---
 

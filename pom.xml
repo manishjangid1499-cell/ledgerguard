@@ -17,6 +17,7 @@
         <module>backend/psp-simulator</module>
         <module>backend/notification-worker</module>
         <module>backend/failure-lab</module>
+        <module>backend/e2e-tests</module>
     </modules>
 
     <properties>

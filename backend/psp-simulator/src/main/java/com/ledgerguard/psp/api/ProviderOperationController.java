@@ -96,13 +96,13 @@ public class ProviderOperationController {
         }
 
         HttpStatus status = result.isReplay() ? HttpStatus.OK : HttpStatus.CREATED;
-        return ResponseEntity.status(status).body(OperationResponse.from(result.operation()));
+        return ResponseEntity.status(status).body(OperationResponse.from(result.operation(), result.isReplay()));
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<OperationResponse> getOperationById(@PathVariable("id") UUID id) {
         ProviderOperation operation = operationService.getById(id);
-        return ResponseEntity.ok(OperationResponse.from(operation));
+        return ResponseEntity.ok(OperationResponse.from(operation, false));
     }
 
     @GetMapping("/by-client/{clientOperationId}")
@@ -110,6 +110,6 @@ public class ProviderOperationController {
             @PathVariable("clientOperationId") UUID clientOperationId
     ) {
         ProviderOperation operation = operationService.getByClientOperationId(clientOperationId);
-        return ResponseEntity.ok(OperationResponse.from(operation));
+        return ResponseEntity.ok(OperationResponse.from(operation, false));
     }
 }
