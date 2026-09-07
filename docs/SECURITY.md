@@ -218,3 +218,30 @@ The Failure Lab execution engine and web operations console are designed with a 
 8. **CORS as Browser Policy**:
    - CORS is an enforcement mechanism implemented by web browsers to restrict cross-origin requests; it is not backend authentication.
    - Backend security relies upon loopback-only binding (`127.0.0.1`), explicit CLI enablement (`ledgerguard.lab.enabled=true`), closed scenario enum dispatch, and complete ephemeral database isolation.
+
+---
+
+## 12. Container & Production Deployment Security (Phase 35)
+
+Phase 35 establishes a defense-in-depth security model for containerized production execution across all microservices and web components:
+
+### 1. Non-Root Execution & Least Privilege
+- **Java Microservices**: Every backend container image (`ledgerguard-api`, `psp-simulator`, `notification-worker`) provisions a dedicated non-login system user and group (`ledgerguard:ledgerguard`, `UID 1001`, `GID 1001`). Processes execute strictly as `USER ledgerguard:ledgerguard`.
+- **Frontend Nginx**: Runs under the pre-configured unprivileged `nginx` user (`UID 101`, `GID 101`) in `nginxinc/nginx-unprivileged:1.27-alpine`. The web server binds to unprivileged port `8080` rather than standard privileged port `80`.
+### 2. Service Isolation & Network Segmentation
+- **Private Bridge Network**: All inter-service traffic routes exclusively through `ledgerguard-prod-network`. Containers communicate via DNS service names (`postgres`, `kafka`, `ledgerguard-api`, `psp-simulator`, `notification-worker`, `prometheus`, `grafana`).
+- **PostgreSQL Access Control**:
+  - PostgreSQL revokes public database connection rights (`REVOKE CONNECT ON DATABASE ... FROM PUBLIC`).
+  - Three isolated logical databases (`ledgerguard`, `psp_simulator`, `notification_worker`) are accessed using dedicated database credentials (`ledgerguard_app`, `psp_simulator_app`, `notification_worker_app`).
+  - Microservices cannot access or query tables belonging to peer microservices.
+- **Port Exposure Policy**: Databases (`postgres`) and message brokers (`kafka`) do not publish host ports, remaining purely internal to the Docker network.
+
+### 3. Stateful Volume Integrity
+- Stateful data directories (`/var/lib/postgresql/data`, `/var/lib/kafka/data`, `/prometheus`, `/var/lib/grafana`) are backed by dedicated named Docker volumes, ensuring persistence and permissions integrity across restarts.
+
+### 4. Secret Hygiene & Configuration Safety
+- **No Hardcoded Secrets**: Container images and Compose files contain zero hardcoded passwords, tokens, or encryption keys.
+- **Environment Template (`.env.prod.example`)**: Documents all required security variables with blank placeholder values.
+- **Git & Build Context Protection**:
+  - `.gitignore` prevents real `.env*` secret files from entering version control.
+  - `.dockerignore` files prevent local environment secrets, development keystores, `.git` history, and build artifacts from leaking into container images during `docker build`.

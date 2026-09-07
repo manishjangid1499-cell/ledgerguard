@@ -106,6 +106,7 @@ After each failure injection, the engine mathematically proves that:
 - **Grafana Operations & Financial Integrity Dashboards (Phase 31)**: Containerized local Prometheus (`prom/prometheus:v3.2.1`) and Grafana (`grafana/grafana:11.5.2`) observability stack provisioned via Docker Compose. Prometheus scrapes `ledgerguard-api` on `/actuator/prometheus` at a 15s interval via `host.docker.internal:8080`. Grafana provisions the `ledgerguard-prometheus` datasource and two dashboards into the `LedgerGuard` folder: `LedgerGuard Financial Integrity` (monitoring unbalanced/malformed posted journals, active reconciliation discrepancies, oldest pending outbox lag, and idempotency conflicts) and `LedgerGuard API Operations` (monitoring HTTP throughput by status, 5xx/429 error rates, aggregate average HTTP latency, JVM heap/metaspace, process/system CPU, HikariCP connection pool, and JVM thread states). Grafana anonymous access is strictly disabled, requiring local authentication. Prometheus HTTP lifecycle control is disabled. Prometheus and Grafana are decoupled local observability tools outside the financial transaction path; any telemetry outage cannot alter ledger state. Zero production Java code changes, zero database migrations (V1-V17 frozen, V18 absent).
 - **Money Integrity Failure Lab Backend (Phase 32)**: Programmatic chaos execution engine and mathematical financial verification suite in `backend/failure-lab`. Features a decoupled standalone architecture (Model C) communicating via direct JDBC and Testcontainers, fail-closed database environment protection (`EnvironmentGuard`), an independent SQL oracle (`FinancialInvariantOracle`) asserting double-entry balance, snapshot reconstruction parity, available balance invariants, money conservation, and single economic effect, process-level concurrency locking (`ConcurrencyGuard` `Semaphore(1)`), 30s timeout guards, and structured timeline events with bounded in-memory history (100 runs). Implements 4 core automated chaos scenarios: `OPPOSING_TRANSFERS` (concurrent opposing transfers via `CyclicBarrier(2)` validating deterministic `ORDER BY ledger_account_id ASC` deadlock-free locking and money conservation), `TIMEOUT_AFTER_COMMIT` (PSP timeout after commit validating `UNKNOWN != FAILED`, hold preservation, and status recovery settlement), `CORRUPTED_SNAPSHOT` (deliberate snapshot drift detection via Level 2 reconciliation and dynamic auto-repair from immutable journals under `FOR UPDATE` lock), and `WEBHOOK_RACE` (5 concurrent duplicate HMAC-SHA256 webhooks validating database-level deduplication and single economic effect). Zero production code changes, zero database migrations (V1–V17 frozen, V18 absent).
 - **Complete Testcontainers & End-to-End Suite (Phase 34)**: Unified integration, database, messaging, and multi-service end-to-end test suite in `backend/e2e-tests` running against real packaged fat JARs (`ledgerguard-api`, `psp-simulator`, `notification-worker`) in real JVM containers (`eclipse-temurin:21-jre`) on an isolated Testcontainers virtual bridge network with PostgreSQL 17.11 and Kafka 4.3.1. Validates startup health and readiness probes, customer authentication and wallet creation, external funding settlement and idempotency, payout hold reservation and settlement, internal wallet transfers and balance conservation, merchant payment authorizations and refunds, and Kafka asynchronous outbox notification delivery across 7 end-to-end flow suites (11 tests) executed by Maven Failsafe during `clean verify` (with adversarial provider timeout and ambiguous outcome recovery authoritatively verified in the Failure Lab). Zero production Java code changes outside the minimal PSP simulator response wire contract fix (`boolean replayed`), zero database migrations (V1—V17 frozen, V18 strictly absent).
+- **Production Multi-Stage Docker Images & Compose (Phase 35)**: Containerized production deployment topology featuring lightweight, multi-stage Dockerfiles for all four deployables (`backend/ledgerguard-api`, `backend/psp-simulator`, `backend/notification-worker`, and `frontend/ledgerguard-web`). Java microservices use `eclipse-temurin:21-jdk-jammy` builder stages with layer caching for Maven wrappers and dependency pom declarations, packaging to unprivileged `eclipse-temurin:21-jre-jammy` runtimes running as non-root user `ledgerguard` (`UID 1001:1001`) with read-only root filesystems and explicit `/tmp` tmpfs mounts. `ledgerguard-web` is served by a minimal unprivileged static Nginx runtime (`nginxinc/nginx-unprivileged:1.27-alpine`, UID 101) on port 8080 with dual IPv4/IPv6 listening and SPA fallback (`try_files $uri $uri/ /index.html;`). Edge capabilities (reverse proxying, SSL termination, edge security headers, static asset caching, gzip compression, and rate limiting) are explicitly deferred to Phase 36. Complete standalone production topology orchestrated by `docker-compose.prod.yml` on isolated bridge network `ledgerguard-prod-network` with zero hardcoded credentials, `.env.prod.example` secret template, and production Prometheus scrape target. Zero production Java code changes, zero POM changes, zero Flyway migrations (V1–V17 frozen, V18 strictly absent).
 - **Observability**: Micrometer metrics, Prometheus, Grafana dashboards, OpenTelemetry distributed tracing, and structured logging.
 
 ---
@@ -123,8 +124,8 @@ After each failure injection, the engine mathematically proves that:
 
 ## 7. Current Project Status
 
-- **Current State:** Phase 33 Completed — Failure Lab Frontend & Interactive Invariant Visualizer: Delivered the interactive operations console in `frontend/ledgerguard-web` and executable local Failure Lab backend in `backend/failure-lab` on loopback `127.0.0.1:8083`. Features fail-closed CLI enablement, bounded single-thread async coordinator (`SynchronousQueue`, max 1 active run, 30s timeout), real-time step streaming, bounded 100-run in-memory history, and 5 scenario-scoped invariant report cards. Workspace total 748 tests (675 API, 17 PSP, 22 Notification Worker, 34 Failure Lab) passing cleanly with 0 failures, 0 errors, 0 skipped. Zero production Java code changes, zero database migrations (V1–V17 frozen, V18 strictly absent).
-- **Next Step:** Phase 34 — Complete Testcontainers & End-to-End Suite.
+- **Current State:** Phase 35 Completed — Production Multi-Stage Docker Images & Compose: Created multi-stage Dockerfiles for 4 deployables (`ledgerguard-api`, `psp-simulator`, `notification-worker`, `ledgerguard-web`), production Nginx SPA configuration, `.dockerignore`, `.env.prod.example`, production Prometheus scrape configuration, and standalone production Compose stack (`docker-compose.prod.yml`). Validated all 8 services booting cleanly with zero root privileges and isolated per-service database credentials. Total workspace tests: 760 (675 API, 18 PSP, 22 Notification Worker, 34 Failure Lab, 11 E2E) passing with 0 failures, 0 errors, 0 skipped.
+- **Next Step:** Phase 36 — Nginx Production Reverse Proxy & SSL Configuration.
 - **Roadmap:** Detailed phase-by-phase progress is tracked in [docs/STATUS.md](docs/STATUS.md).
 
 ---
@@ -171,7 +172,26 @@ docker compose down -v
 | **Grafana 11.5.2** | `ledgerguard-grafana` | `3000` | Authenticated Dashboards | `admin` | Operations Visualizer |
 | **Failure Lab Backend** | *(ephemeral Testcontainers)* | `8083` (loopback only) | Ephemeral Testcontainers DB | Loopback isolation + explicit flag (Frontend: OPS-only route) | `failure-lab` |
 
-### 3. Run Money Integrity Failure Lab Operations Console
+### 3. Run Production Multi-Stage Compose Stack (Phase 35)
+```bash
+# 1. Create production environment file from example template
+# Windows:
+Copy-Item .env.prod.example .env.prod
+
+# Linux / macOS:
+cp .env.prod.example .env.prod
+
+# 2. Build and start all 8 production containers
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+
+# 3. Inspect running services and health status
+docker compose -f docker-compose.prod.yml ps
+
+# 4. Stop and remove production containers
+docker compose -f docker-compose.prod.yml down
+```
+
+### 4. Run Money Integrity Failure Lab Operations Console
 ```bash
 # 1. Start Failure Lab Local Backend (binds to 127.0.0.1:8083, boots ephemeral Testcontainers)
 # Requires explicit --ledgerguard.lab.enabled=true (fail-closed default is disabled)

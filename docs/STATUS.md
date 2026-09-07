@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Phase 34 Complete (Verified)
-- **Status:** Phase 34 Complete (Verified)
+- **Current Phase:** Phase 35 Complete (Verified)
+- **Status:** Phase 35 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -40,16 +40,18 @@
   - **Phase 32 — Money Integrity Failure Lab Backend** (Completed: 2026-09-06)
   - **Phase 33 — Failure Lab Frontend & Interactive Invariant Visualizer** (Completed: 2026-09-06)
   - **Phase 34 — Complete Testcontainers & End-to-End Suite** (Completed: 2026-09-07)
-- **Current Work:** Phase 34 completed. Implemented unified cross-service Testcontainers integration and End-to-End test suite:
-  - New dedicated reactor test module `backend/e2e-tests` registered in root `pom.xml`.
-  - Runs all 3 packaged microservices (`ledgerguard-api`, `psp-simulator`, `notification-worker`) in real JVM containers (`eclipse-temurin:21-jre`) on a shared private virtual bridge network alongside PostgreSQL 17.11 (`postgres:17.11-alpine`) and Apache Kafka 4.3.1 (`apache/kafka:4.3.1`).
-  - Full end-to-end multi-service flows verified across 7 flow test classes (11 tests): Platform Startup, Authentication & Wallet lifecycle, External Wallet Funding & Settlement, External Payout & Balance Hold consumption, Internal Transfers, Merchant Payments & Refunds with fee deductions, and Asynchronous Outbox-Kafka-Inbox messaging with notification delivery (with adversarial provider timeout and ambiguous outcome recovery authoritatively covered by the Failure Lab).
-  - Real contract compliance: Fixed real provider wire contract in `backend/psp-simulator` (`OperationResponse.java` and `ProviderOperationController.java` serialize `boolean replayed`), completely eliminating the need for Jackson runtime patching or Java agents. Provider controller diff strictly contains response mapping with `replayed`, with zero wildcard hacks or webhook suppression.
-  - Zero-Impact Invariant strictly preserved: Upstream production Java code (`backend/ledgerguard-api/src/main/**`, `backend/notification-worker/src/main/**`, `backend/failure-lab/src/main/**`) 0 lines modified, database migrations V1-V17 frozen, V18 strictly absent.
+  - **Phase 35 — Production Multi-Stage Docker Images & Compose** (Completed: 2026-09-07)
+- **Current Work:** Phase 35 completed. Implemented production multi-stage Docker images and standalone Compose stack:
+  - Multi-stage Dockerfiles for 4 deployables: `backend/ledgerguard-api`, `backend/psp-simulator`, `backend/notification-worker`, and `frontend/ledgerguard-web`.
+  - Non-root security: Java microservices run as `ledgerguard:ledgerguard` (UID 1001:1001) on `eclipse-temurin:21-jre-jammy` with read-only root filesystems and explicit `/tmp` tmpfs mounts; frontend runs on unprivileged Nginx (`nginxinc/nginx-unprivileged:1.27-alpine`, UID 101:101) on port 8080 with dual-stack IPv4/IPv6 support.
+  - Complete standalone production Compose file `docker-compose.prod.yml` coordinating 8 services (`postgres`, `kafka`, `ledgerguard-api`, `psp-simulator`, `notification-worker`, `ledgerguard-web`, `prometheus`, `grafana`) on isolated bridge network `ledgerguard-prod-network`.
+  - Zero hardcoded secrets: `.env.prod.example` template provided, `.dockerignore` files configured to prevent secrets or build cache leaks. Production Prometheus configuration in `infrastructure/prometheus/prometheus.prod.yml`.
+  - Live boot and healthcheck verification: all 8 containers healthy/running with zero root privileges and isolated per-service database credentials.
+  - Invariant strictly preserved: Upstream production Java code (`src/main/java/**`), Maven pom files (`pom.xml`), and database migrations (V1–V17 frozen, V18 absent) 0 lines modified.
   - Total workspace tests: 760 tests (675 API, 18 PSP, 22 Notification Worker, 34 Failure Lab, 11 E2E; 0 failures, 0 errors, 0 skipped).
-- **Next Phase:** Phase 35 — Production Docker Images & Multi-Stage Compose
+- **Next Phase:** Phase 36 — Nginx Production Reverse Proxy & SSL Configuration
 - **Last Verified:** 2026-09-07
-- **Git Branch:** test/phase-34-complete-e2e-suite
+- **Git Branch:** infra/phase-35-production-docker-compose
 
 ---
 
@@ -122,9 +124,9 @@
 | **Phase 30** | OpenTelemetry Tracing & Correlation IDs | **Completed** | 2026-09-05 |
 | **Phase 31** | Grafana Operations Dashboards | **Completed** | 2026-09-05 |
 | **Phase 32** | Money Integrity Failure Lab Backend | **Completed** | 2026-09-06 |
-| **Phase 33** | Failure Lab Frontend & Visualizer | Planned | — |
-| **Phase 34** | Complete Testcontainers & E2E Suite | Planned | — |
-| **Phase 35** | Production Docker Images & Compose | Planned | — |
+| **Phase 33** | Failure Lab Frontend & Visualizer | **Completed** | 2026-09-06 |
+| **Phase 34** | Complete Testcontainers & E2E Suite | **Completed** | 2026-09-07 |
+| **Phase 35** | Production Docker Images & Compose | **Completed** | 2026-09-07 |
 | **Phase 36** | Nginx Reverse Proxy & Edge Routing | Planned | — |
 | **Phase 37** | GitHub Actions CI Pipeline | Planned | — |
 | **Phase 38** | Financial Failure Scenarios in CI | Planned | — |
