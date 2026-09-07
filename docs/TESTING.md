@@ -668,3 +668,50 @@ Verified by `.\mvnw.cmd clean verify` (2026-09-06).
     - Stop the `FailureLabApplication` process.
     - Refresh the browser.
     - Confirm the UI displays the graceful offline alert banner with instructions on how to start the backend with `.\mvnw.cmd -pl backend/failure-lab spring-boot:run "-Dspring-boot.run.arguments=--ledgerguard.lab.enabled=true"`.
+
+---
+
+## 19. Phase 34 - Complete Testcontainers & End-to-End Suite
+
+Phase 34 unifies all integration, database, messaging, and multi-service flows in a Testcontainers E2E test suite running against real packaged fat JARs (`ledgerguard-api`, `psp-simulator`, `notification-worker`) inside real JVM containers (`eclipse-temurin:21-jre`) on a private virtual bridge network with PostgreSQL 17.11 and Kafka 4.3.1.
+
+### Test Class Registry
+
+All tests are located in `backend/e2e-tests/src/test/java/com/ledgerguard/e2e/flows/`:
+
+| Test Class | Method / Test Case | Purpose & Flow Verified | Invariants Checked |
+|---|---|---|---|
+| `PlatformStartupIT` | `testDatabaseConnectionAndMigrations` | Verifies PostgreSQL 17.11 container health and Flyway migrations V1–V17 applied cleanly across isolated logical databases. | Flyway migration state, zero missing tables |
+| | `testLedgerGuardApiActuatorHealth` | Validates `ledgerguard-api` web container readiness and `/actuator/health` status `UP`. | Health indicator contract |
+| | `testPspSimulatorReadiness` | Validates `psp-simulator` web container readiness via provider HTTP operations boundary. | Provider HTTP availability |
+| | `testNotificationWorkerStartupAndRunning` | Validates `notification-worker` asynchronous JVM startup and running process state. | Container running lifecycle |
+| `AuthenticationAndWalletIT` | `testCustomerRegistrationLoginAndWalletCreation` | Registers a customer, logs in to obtain JWT token, creates INR wallet, and validates account snapshot. | Auth RBAC, wallet initialization, initial snapshot balance = 0 |
+| | `testDuplicateRegistrationFails` | Verifies duplicate customer email registration returns HTTP 400 Bad Request. | Uniqueness constraints |
+| `ExternalWalletFundingIT` | `testExternalFundingSuccessAndIdempotency` | End-to-end funding request through API -> PSP Simulator -> HTTP webhook callback -> Outbox settlement. Submits duplicate idempotency key to verify replay immunity. | Single economic effect, balance credited, idempotency replay = same response |
+| `ExternalPayoutAndHoldIT` | `testExternalPayoutHoldReservationAndSettlement` | Tests external withdrawal: wallet creation, funding, payout initiation (creates `ACTIVE` hold), PSP dispatch, and async settlement (`CONSUMED` hold + double-entry journal). | Available balance invariant ($A \ge 0$), hold state transitions, single economic effect |
+| `InternalTransferIT` | `testInternalTransferBetweenWallets` | Executes internal transfer between two customer wallets under JWT authentication and asserts balance conservation. | Zero-sum transfer conservation ($\Delta A + \Delta B = 0$), double-entry journal balance ($\sum D = \sum C$) |
+| `MerchantPaymentAndRefundIT` | `testMerchantPaymentAndFullRefund` | Validates merchant checkout authorization and subsequent full refund through API -> Outbox -> Kafka. | Double-entry journal balance, available balance invariants, outbox event generation |
+| `MessagingNotificationIT` | `testOutboxToKafkaNotificationPipeline` | Asserts outbox event generation in PostgreSQL, publisher poller emission to Kafka, and notification worker consumption. | At-least-once message delivery, outbox status transitions (`SENT`), Kafka message propagation |
+
+> **Note on Ambiguous Outcome Recovery**: Adversarial transport timeouts and ambiguous provider outcomes (`TIMEOUT_AFTER_COMMIT`, `UNKNOWN` payout status, active hold preservation, and poller recovery) are authoritatively covered by the Failure Lab (`backend/failure-lab`). The Phase 34 E2E suite focuses strictly on non-adversarial cross-service packaged application workflows without synthetic wildcard intercepts or webhook suppression.
+
+### Container Topology & Network Isolation
+
+- **Virtual Bridge Network**: All 5 services (`postgres`, `kafka`, `psp-simulator`, `notification-worker`, `ledgerguard-api`) run inside an isolated Testcontainers network.
+- **Real Packaged Fat JARs**: Built with Spring Boot repackage plugin targeting `eclipse-temurin:21-jre`.
+- **Database Isolation**: Single PostgreSQL container hosting 3 isolated logical databases (`ledgerguard`, `psp_simulator`, `notification_worker`).
+- **Internal Kafka Listener**: Ephemeral broker configured with advertised internal listener on private network alias `kafka:19092`.
+- **Inter-Container HTTP Webhook**: Real HTTP callback from `psp-simulator` to `http://ledgerguard-api:8080/api/provider/webhooks`.
+- **Real Provider Contract**: Fixed wire contract (`boolean replayed`) on PSP Simulator; zero javaagents or Jackson runtime tampering.
+- **Deterministic JAR Resolution**: `JarResolver` validates existence, file size (> 1 MB), and `Main-Class` manifest attributes.
+- **Database Probe**: `E2EDatabaseProbe` executes read-only SQL queries to assert double-entry ledger balance, snapshot parity, hold states, and outbox event states.
+
+### Phase 34 Clean Verify Test Count
+
+- **LedgerGuard Parent**: Success
+- **LedgerGuard API**: 675 tests (0 failures, 0 errors, 0 skipped)
+- **PSP Simulator**: 18 tests (0 failures, 0 errors, 0 skipped)
+- **Notification Worker**: 22 tests (0 failures, 0 errors, 0 skipped)
+- **Failure Lab**: 34 tests (0 failures, 0 errors, 0 skipped)
+- **E2E Tests**: 11 tests (0 failures, 0 errors, 0 skipped)
+- **Workspace Total**: **760 tests** (0 failures, 0 errors, 0 skipped)

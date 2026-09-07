@@ -181,6 +181,7 @@ class PspSimulatorIntegrationTest extends AbstractPspSimulatorIntegrationTest {
                 .onStatus(status -> true, (req, resp) -> {})
                 .toEntity(OperationResponse.class);
         assertThat(response1.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response1.getBody().replayed()).isFalse();
 
         // Second call (replay) -> 200 OK
         ResponseEntity<OperationResponse> response2 = pspClient.post()
@@ -191,6 +192,7 @@ class PspSimulatorIntegrationTest extends AbstractPspSimulatorIntegrationTest {
                 .onStatus(status -> true, (req, resp) -> {})
                 .toEntity(OperationResponse.class);
         assertThat(response2.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response2.getBody().replayed()).isTrue();
         assertThat(response2.getBody().providerOperationId()).isEqualTo(response1.getBody().providerOperationId());
 
         assertThat(operationRepository.count()).isEqualTo(1);
@@ -656,6 +658,7 @@ class PspSimulatorIntegrationTest extends AbstractPspSimulatorIntegrationTest {
                 .onStatus(status -> true, (req, resp) -> {})
                 .toEntity(OperationResponse.class);
         assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(created.getBody().replayed()).isFalse();
         UUID opId = created.getBody().providerOperationId();
 
         // Lookup by ID
@@ -666,6 +669,7 @@ class PspSimulatorIntegrationTest extends AbstractPspSimulatorIntegrationTest {
                 .toEntity(OperationResponse.class);
         assertThat(byId.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(byId.getBody().providerOperationId()).isEqualTo(opId);
+        assertThat(byId.getBody().replayed()).isFalse();
 
         // Lookup by ClientOperationId
         ResponseEntity<OperationResponse> byClient = pspClient.get()
@@ -675,5 +679,71 @@ class PspSimulatorIntegrationTest extends AbstractPspSimulatorIntegrationTest {
                 .toEntity(OperationResponse.class);
         assertThat(byClient.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(byClient.getBody().providerOperationId()).isEqualTo(opId);
+        assertThat(byClient.getBody().replayed()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Wire contract verification: OperationResponse serializes boolean replayed accurately across create, replay, and status lookup")
+    void replayedFlagReflectsIdempotentReplayWireContract() {
+        UUID clientOpId = UUID.randomUUID();
+        CreateOperationRequest request = new CreateOperationRequest(
+                clientOpId,
+                "CREDIT",
+                "15000",
+                "INR",
+                webhookUrl()
+        );
+
+        // 1. Fresh create -> replayed = false, HTTP 201
+        ResponseEntity<OperationResponse> createResp = pspClient.post()
+                .uri("/api/provider/operations")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(request)
+                .retrieve()
+                .onStatus(status -> true, (req, resp) -> {})
+                .toEntity(OperationResponse.class);
+        assertThat(createResp.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(createResp.getBody()).isNotNull();
+        assertThat(createResp.getBody().providerOperationId()).isNotNull();
+        assertThat(createResp.getBody().clientOperationId()).isEqualTo(clientOpId);
+        assertThat(createResp.getBody().operationType()).isEqualTo("CREDIT");
+        assertThat(createResp.getBody().status()).isEqualTo("SUCCEEDED");
+        assertThat(createResp.getBody().amountMinor()).isEqualTo("15000");
+        assertThat(createResp.getBody().currency()).isEqualTo("INR");
+        assertThat(createResp.getBody().createdAt()).isNotNull();
+        assertThat(createResp.getBody().completedAt()).isNotNull();
+        assertThat(createResp.getBody().replayed()).isFalse();
+
+        // 2. Idempotent replay -> replayed = true, HTTP 200
+        ResponseEntity<OperationResponse> replayResp = pspClient.post()
+                .uri("/api/provider/operations")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(request)
+                .retrieve()
+                .onStatus(status -> true, (req, resp) -> {})
+                .toEntity(OperationResponse.class);
+        assertThat(replayResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(replayResp.getBody()).isNotNull();
+        assertThat(replayResp.getBody().replayed()).isTrue();
+
+        // 3. Status lookup by ID -> replayed = false, HTTP 200
+        ResponseEntity<OperationResponse> getByIdResp = pspClient.get()
+                .uri("/api/provider/operations/" + createResp.getBody().providerOperationId())
+                .retrieve()
+                .onStatus(status -> true, (req, resp) -> {})
+                .toEntity(OperationResponse.class);
+        assertThat(getByIdResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(getByIdResp.getBody()).isNotNull();
+        assertThat(getByIdResp.getBody().replayed()).isFalse();
+
+        // 4. Status lookup by ClientOperationId -> replayed = false, HTTP 200
+        ResponseEntity<OperationResponse> getByClientResp = pspClient.get()
+                .uri("/api/provider/operations/by-client/" + clientOpId)
+                .retrieve()
+                .onStatus(status -> true, (req, resp) -> {})
+                .toEntity(OperationResponse.class);
+        assertThat(getByClientResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(getByClientResp.getBody()).isNotNull();
+        assertThat(getByClientResp.getBody().replayed()).isFalse();
     }
 }
