@@ -1196,3 +1196,89 @@ The E2E suite verifies domain invariants through external HTTP REST calls and di
 - **Snapshot Parity**: Balance snapshot reconstructed from immutable journal history matches current snapshot state.
 - **Available Balance Bound**: Available balance $\ge 0$ across holds and settlements.
 - **Zero-Sum Transfer Conservation**: Sender and recipient balances conserve funds exactly without leakage or creation.
+
+---
+
+## 30. Production Multi-Stage Docker Images & Compose Topology (Phase 35)
+
+Phase 35 packages all LedgerGuard microservices and client web assets into lightweight, security-hardened, multi-stage Docker container images, orchestrating the full platform via an all-in-one local production Compose stack (`docker-compose.prod.yml`).
+
+```
++---------------------------------------------------------------------------------------------------+
+|                                 ledgerguard-prod-network (Bridge)                                 |
+|                                                                                                   |
+|  +--------------------------------+                  +--------------------------------+           |
+|  |     ledgerguard-web            |                  |      ledgerguard-api           |           |
+|  |   (Nginx Unprivileged :8080)   |                  |     (Temurin 21 JRE :8080)     |           |
+|  |   Non-root: nginx (UID 101)    |                  |  Non-root: ledgerguard (UID 1001) |           |
+|  +--------------------------------+                  +--------------------------------+           |
+|                                                              |                 |                  |
+|                                     +------------------------+                 |                  |
+|                                     v                                          v                  |
+|                      +-----------------------------+            +-----------------------------+   |
+|                      |         postgres            |            |           kafka             |   |
+|                      |    (PostgreSQL 17.11)       |            |     (Apache Kafka 4.3.1)    |   |
+|                      |  ledgerguard / psp_simulator|            |       KRaft Mode (:9092)    |   |
+|                      |    / notification_worker    |            +-----------------------------+   |
+|                      +-----------------------------+                           |                  |
+|                                     ^                                          v                  |
+|                                     |                           +-----------------------------+   |
+|                                     |                           |     notification-worker     |   |
+|                                     |                           |    (Temurin 21 JRE Non-web) |   |
+|                                     |                           | Non-root: ledgerguard (1001)|   |
+|                                     |                           +-----------------------------+   |
+|                                     |                                                             |
+|                      +-----------------------------+                                              |
+|                      |        psp-simulator        |                                              |
+|                      |    (Temurin 21 JRE :8081)   |                                              |
+|                      | Non-root: ledgerguard (1001)|                                              |
+|                      +-----------------------------+                                              |
+|                                                                                                   |
+|  +--------------------------------+                  +--------------------------------+           |
+|  |          prometheus            |                  |            grafana             |           |
+|  |    (Prometheus 3.2.1 :9090)    |                  |     (Grafana 11.5.2 :3000)     |           |
+|  |  Scrapes api:8080/actuator/... |                  |    Provisioned Dashboards      |           |
+|  +--------------------------------+                  +--------------------------------+           |
++---------------------------------------------------------------------------------------------------+
+```
+
+### 1. Multi-Stage Dockerfile Architecture
+
+All container images are built using multi-stage pipelines to separate compiler toolchains and development dependencies from final production runtimes:
+
+1. **Backend Microservices (`backend/*/Dockerfile`)**:
+   - **Build Stage**: Uses `eclipse-temurin:21-jdk-jammy`. Maximizes build caching by copying the root Maven wrapper (`mvnw`, `.mvn`) and all module POM files (`pom.xml`) before copying source code. Runs `mvn dependency:go-offline` to cache project dependencies in Docker layer caches.
+   - **Compilation**: Packages deployable fat JARs with `RUN ./mvnw clean package -DskipTests -pl <module> -am`. For `ledgerguard-api`, extracts the executable classifier artifact (`target/ledgerguard-api-*-exec.jar`).
+   - **Runtime Stage**: Uses minimal `eclipse-temurin:21-jre-jammy` base image. Copies only the packaged JAR file into `/app/app.jar`.
+   - **Execution**: Starts the application via `ENTRYPOINT ["java", "-jar", "/app/app.jar"]`.
+
+2. **Frontend Web Client (`frontend/ledgerguard-web/Dockerfile`)**:
+   - **Build Stage**: Uses `node:24-alpine`. Copies `package.json` and `package-lock.json`, installs dependencies with `npm ci`, copies source files, and executes `npm run build` to generate optimized production static assets in `/dist`.
+   - **Runtime Stage**: Uses `nginxinc/nginx-unprivileged:1.27-alpine`. Copies static HTML/JS/CSS assets to `/usr/share/nginx/html`.
+   - **Web Server Configuration (`nginx.conf`)**: Listens on unprivileged port 8080 with dual-stack IPv4/IPv6 support (`listen 8080; listen [::]:8080;`), serves static assets from `/usr/share/nginx/html`, and routes SPA client paths via `try_files $uri $uri/ /index.html;`. Edge reverse proxy capabilities, SSL termination, edge security headers, static asset cache policies, gzip compression, and rate limiting are explicitly deferred to Phase 36.
+
+### 2. Principle of Least Privilege & Container Hardening
+
+- **Non-Root Execution**:
+  - Java microservices create a dedicated system group and user `ledgerguard:ledgerguard` (`UID 1001:1001`) and run with `USER ledgerguard:ledgerguard`.
+  - Frontend runs under the pre-configured unprivileged `nginx` user (`UID 101:101`).
+- **Network Isolation & Port Minimization**: Services communicate over private bridge network `ledgerguard-prod-network`. PostgreSQL and Kafka do not expose host ports, keeping internal communication private.
+- **Stateful Volume Integrity**: Dedicated named Docker volumes ensure persistent state for PostgreSQL, Kafka, Prometheus, and Grafana across container restarts without volume permission corruption.
+
+### 3. Production Compose Topology & Environment Management
+
+The production stack (`docker-compose.prod.yml`) connects all 8 services across an isolated bridge network (`ledgerguard-prod-network`):
+
+- **Database Credentials**: Managed through environment variables (`POSTGRES_PASSWORD`, `LEDGERGUARD_DB_PASSWORD`, `PSP_SIMULATOR_DB_PASSWORD`, `NOTIFICATION_WORKER_DB_PASSWORD`).
+- **Database Initialization**: PostgreSQL container executes `01-init-databases.sh` on initial volume boot, creating three distinct databases (`ledgerguard`, `psp_simulator`, `notification_worker`) with separate user roles and revoking public connection permissions.
+- **Service Coordination**: Strong healthcheck dependencies (`depends_on: condition: service_healthy`) ensure PostgreSQL and Kafka achieve full readiness before microservices launch.
+- **Secret Hygiene**: Template configuration is published in `.env.prod.example` with empty secret placeholders. The `.gitignore` and `.dockerignore` files prevent local environment files or development artifacts from leaking into git repositories or container images.
+- **Observability**: Prometheus scrapes `ledgerguard-api:8080/actuator/prometheus` inside the container network, and Grafana connects directly to Prometheus at `http://prometheus:9090`.
+
+### 4. Zero Production Source & Schema Mutation
+
+Phase 35 maintains the strict zero-impact invariant:
+- 0 lines of production Java code modified in `src/main/java/**`.
+- 0 modifications to Maven POM files (`pom.xml`).
+- 0 Flyway migrations added (V1–V17 frozen, V18 absent).
+- 0 modifications to internal application configuration (`application.yml`).

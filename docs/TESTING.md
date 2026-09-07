@@ -715,3 +715,49 @@ All tests are located in `backend/e2e-tests/src/test/java/com/ledgerguard/e2e/fl
 - **Failure Lab**: 34 tests (0 failures, 0 errors, 0 skipped)
 - **E2E Tests**: 11 tests (0 failures, 0 errors, 0 skipped)
 - **Workspace Total**: **760 tests** (0 failures, 0 errors, 0 skipped)
+
+---
+
+## 20. Phase 35 — Production Docker Images & Compose Stack Verification
+
+Phase 35 establishes production multi-stage Docker build artifacts and orchestrates all microservices and frontend client assets into a single local production Compose environment.
+
+### 1. Multi-Stage Dockerfile Verification
+
+The multi-stage build pipelines were verified by compiling each deployable container image directly from source:
+
+| Component | Build Context & Dockerfile | Base Image / Builder | Runtime Image / User | Validation Result |
+|---|---|---|---|---|
+| `ledgerguard-api` | `backend/ledgerguard-api/Dockerfile` (Context: `.`) | `eclipse-temurin:21-jdk-jammy` | `eclipse-temurin:21-jre-jammy` (`ledgerguard:1001`) | Packages `-exec.jar`; successful compile & export |
+| `psp-simulator` | `backend/psp-simulator/Dockerfile` (Context: `.`) | `eclipse-temurin:21-jdk-jammy` | `eclipse-temurin:21-jre-jammy` (`ledgerguard:1001`) | Packages Spring Boot JAR; successful compile & export |
+| `notification-worker` | `backend/notification-worker/Dockerfile` (Context: `.`) | `eclipse-temurin:21-jdk-jammy` | `eclipse-temurin:21-jre-jammy` (`ledgerguard:1001`) | Packages worker JAR; successful compile & export |
+| `ledgerguard-web` | `frontend/ledgerguard-web/Dockerfile` (Context: `frontend/ledgerguard-web`) | `node:24-alpine` | `nginxinc/nginx-unprivileged:1.27-alpine` (`nginx:101`) | TypeScript & Vite compile; Nginx static bundle created |
+
+### 2. Standalone Production Compose Stack Verification
+
+The complete production topology (`docker-compose.prod.yml`) was launched and tested:
+
+```bash
+# 1. Compose configuration syntax validation
+docker compose -f docker-compose.prod.yml config
+
+# 2. Boot production stack with environment variable substitution
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+```
+
+#### Service Health & Readiness Validation:
+- **`postgres` (`postgres:17.11-alpine`)**: Container becomes healthy via `pg_isready`. Initialization script `01-init-databases.sh` automatically creates logical databases `ledgerguard`, `psp_simulator`, and `notification_worker` with enforced owner roles.
+- **`kafka` (`apache/kafka:4.3.1`)**: KRaft broker starts and passes socket readiness check on internal port `9092`.
+- **`ledgerguard-api`**: Successfully migrates PostgreSQL schema to Flyway V17, boots embedded Tomcat, and reports `UP` at `http://127.0.0.1:8080/actuator/health`. Confirmed running as unprivileged UID 1001.
+- **`psp-simulator`**: Starts HTTP service on port 8081 and reports healthy via internal socket check. Confirmed running as unprivileged UID 1001.
+- **`ledgerguard-web`**: Minimal unprivileged Nginx runtime (`UID 101`) serves production static SPA assets on port 8080 with dual IPv4/IPv6 listening and SPA fallback (`try_files $uri $uri/ /index.html;`). Healthcheck probe confirms `200 OK` on `/`. Edge reverse proxying, SSL, security headers, caching, gzip, and rate limits are deferred to Phase 36.
+- **`prometheus`**: Successfully resolves internal DNS `ledgerguard-api:8080` and scrapes `/actuator/prometheus` metrics.
+- **`grafana`**: Starts authenticated dashboard visualizer on port 3000, connecting to internal Prometheus datasource.
+
+### 3. Regression Test Invariants
+
+All upstream tests and checks continue to pass without regression:
+- `.\mvnw.cmd clean verify`: **760 workspace tests** (675 API, 18 PSP, 22 Notification Worker, 34 Failure Lab, 11 E2E) passing cleanly with 0 failures, 0 errors, 0 skipped.
+- Frontend linting & production build: `npm run lint` & `npm run build` exit with 0 errors.
+- Database migrations: V1–V17 frozen, V18 absent.
+- Production Java code: 0 lines modified in `src/main/java/**`.

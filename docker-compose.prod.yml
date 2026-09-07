@@ -1,0 +1,211 @@
+services:
+  postgres:
+    image: postgres:17.11-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ledgerguard}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      LEDGERGUARD_DB_USER: ${LEDGERGUARD_DB_USER:-ledgerguard_app}
+      LEDGERGUARD_DB_PASSWORD: ${LEDGERGUARD_DB_PASSWORD:?LEDGERGUARD_DB_PASSWORD must be set in .env}
+      PSP_DB_USER: ${PSP_DB_USER:-psp_simulator_app}
+      PSP_DB_PASSWORD: ${PSP_DB_PASSWORD:?PSP_DB_PASSWORD must be set in .env}
+      NOTIFICATION_DB_USER: ${NOTIFICATION_DB_USER:-notification_worker_app}
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?NOTIFICATION_DB_PASSWORD must be set in .env}
+    volumes:
+      - postgres-prod-data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-ledgerguard}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - ledgerguard-prod-network
+
+  kafka:
+    image: apache/kafka:4.3.1
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: 4L622nShTUiBenVKBpahFQ
+    volumes:
+      - kafka-prod-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - ledgerguard-prod-network
+
+  psp-simulator:
+    build:
+      context: .
+      dockerfile: backend/psp-simulator/Dockerfile
+    image: ledgerguard-psp-simulator:local
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      PSP_DB_NAME: psp_simulator
+      PSP_DB_USER: ${PSP_DB_USER:-psp_simulator_app}
+      PSP_DB_PASSWORD: ${PSP_DB_PASSWORD:?PSP_DB_PASSWORD must be set in .env}
+      PSP_WEBHOOK_SECRET: ${PSP_WEBHOOK_SECRET:?PSP_WEBHOOK_SECRET must be set in .env}
+    ports:
+      - "${PSP_PORT:-8081}:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8081' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - ledgerguard-prod-network
+
+  ledgerguard-api:
+    build:
+      context: .
+      dockerfile: backend/ledgerguard-api/Dockerfile
+    image: ledgerguard-api:local
+    restart: unless-stopped
+    environment:
+      LEDGERGUARD_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-ledgerguard}
+      LEDGERGUARD_DB_USER: ${LEDGERGUARD_DB_USER:-ledgerguard_app}
+      LEDGERGUARD_DB_PASSWORD: ${LEDGERGUARD_DB_PASSWORD:?LEDGERGUARD_DB_PASSWORD must be set in .env}
+      LEDGERGUARD_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      PSP_BASE_URL: http://psp-simulator:8081
+      PSP_WEBHOOK_URL: http://ledgerguard-api:8080/api/provider/webhooks
+      PSP_WEBHOOK_SECRET: ${PSP_WEBHOOK_SECRET:?PSP_WEBHOOK_SECRET must be set in .env}
+      LEDGERGUARD_JWT_SECRET: ${LEDGERGUARD_JWT_SECRET:?LEDGERGUARD_JWT_SECRET must be set in .env}
+      LEDGERGUARD_CORS_ALLOWED_ORIGINS: http://localhost:${LEDGERGUARD_WEB_PORT:-8082}
+      MANAGEMENT_TRACING_EXPORT_OTLP_ENABLED: "false"
+    ports:
+      - "${LEDGERGUARD_API_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      psp-simulator:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8080/actuator/health | grep UP || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - ledgerguard-prod-network
+
+  notification-worker:
+    build:
+      context: .
+      dockerfile: backend/notification-worker/Dockerfile
+    image: ledgerguard-notification-worker:local
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      NOTIFICATION_DB_NAME: notification_worker
+      NOTIFICATION_DB_USER: ${NOTIFICATION_DB_USER:-notification_worker_app}
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?NOTIFICATION_DB_PASSWORD must be set in .env}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      MANAGEMENT_TRACING_EXPORT_OTLP_ENABLED: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - ledgerguard-prod-network
+
+  ledgerguard-web:
+    build:
+      context: ./frontend/ledgerguard-web
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: http://localhost:${LEDGERGUARD_API_PORT:-8080}
+    image: ledgerguard-web:local
+    restart: unless-stopped
+    ports:
+      - "${LEDGERGUARD_WEB_PORT:-8082}:8080"
+    depends_on:
+      ledgerguard-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - ledgerguard-prod-network
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./infrastructure/prometheus/prometheus.prod.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-prod-data:/prometheus
+    depends_on:
+      ledgerguard-api:
+        condition: service_healthy
+    networks:
+      - ledgerguard-prod-network
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set in .env}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/dashboards/ledgerguard-financial-integrity.json
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./infrastructure/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./infrastructure/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./infrastructure/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana-prod-data:/var/lib/grafana
+    networks:
+      - ledgerguard-prod-network
+    depends_on:
+      - prometheus
+
+volumes:
+  postgres-prod-data:
+  kafka-prod-data:
+  prometheus-prod-data:
+  grafana-prod-data:
+
+networks:
+  ledgerguard-prod-network:
+    driver: bridge
