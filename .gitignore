@@ -33,6 +33,10 @@ dist-ssr/
 !.env.example
 !.env.prod.example
 
+# SSL certificates and private keys
+infrastructure/nginx/certs/*
+!infrastructure/nginx/certs/.gitkeep
+
 # Operating System files
 .DS_Store
 Thumbs.db

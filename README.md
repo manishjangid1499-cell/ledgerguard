@@ -172,22 +172,39 @@ docker compose down -v
 | **Grafana 11.5.2** | `ledgerguard-grafana` | `3000` | Authenticated Dashboards | `admin` | Operations Visualizer |
 | **Failure Lab Backend** | *(ephemeral Testcontainers)* | `8083` (loopback only) | Ephemeral Testcontainers DB | Loopback isolation + explicit flag (Frontend: OPS-only route) | `failure-lab` |
 
-### 3. Run Production Multi-Stage Compose Stack (Phase 35)
+### 3. Run Production Compose Stack with Nginx Edge Gateway (Phase 36)
+
+In production mode, **Nginx** operates as the authoritative edge reverse proxy and TLS termination gateway:
+- **Single Edge Origin**: Port `80` (HTTP) and Port `443` (HTTPS with TLSv1.2/TLSv1.3 termination).
+- **Edge Routing**: `/api/*` routes to `ledgerguard-api`, `/assets/*` receives aggressive 1-year immutable caching, and `/` serves `ledgerguard-web` SPA with `no-cache` revalidation.
+- **Port Minimization**: Direct host ports for `ledgerguard-api` and `ledgerguard-web` are removed from the public interface; containers communicate securely over `ledgerguard-prod-network`.
+- **Local TLS Certificate Prerequisite**: `server.crt` and `server.key` must be present in `infrastructure/nginx/certs/` before starting (ignored by Git, never committed).
+
 ```bash
-# 1. Create production environment file from example template
-# Windows:
-Copy-Item .env.prod.example .env.prod
+# 1. Generate local self-signed certificate for TLS termination (ignored by Git)
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout infrastructure/nginx/certs/server.key \
+  -out infrastructure/nginx/certs/server.crt \
+  -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
 
-# Linux / macOS:
-cp .env.prod.example .env.prod
+# 2. Create production environment file from template
+# Windows:     Copy-Item .env.prod.example .env
+# Linux/macOS: cp .env.prod.example .env
 
-# 2. Build and start all 8 production containers
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+# 3. Build and start all 9 production containers
+docker compose -f docker-compose.prod.yml up -d --build
 
-# 3. Inspect running services and health status
+# 4. Inspect running services and health status (all 9 healthy/up)
 docker compose -f docker-compose.prod.yml ps
 
-# 4. Stop and remove production containers
+# 5. Access the platform:
+# Web UI (HTTP):  http://localhost/
+# Web UI (HTTPS): https://localhost/
+# API Base:       https://localhost/api/
+# Prometheus:     http://localhost:9090/
+# Grafana:        http://localhost:3000/
+
+# 6. Stop and remove production containers
 docker compose -f docker-compose.prod.yml down
 ```
 

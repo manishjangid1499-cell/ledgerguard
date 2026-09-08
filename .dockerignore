@@ -9,6 +9,7 @@
 .env.*
 !.env.example
 !.env.prod.example
+infrastructure/nginx/certs
 
 # Build artifacts and dependencies
 **/target

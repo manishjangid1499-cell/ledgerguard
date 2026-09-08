@@ -761,3 +761,68 @@ All upstream tests and checks continue to pass without regression:
 - Frontend linting & production build: `npm run lint` & `npm run build` exit with 0 errors.
 - Database migrations: V1–V17 frozen, V18 absent.
 - Production Java code: 0 lines modified in `src/main/java/**`.
+
+---
+
+## 21. Phase 36 — Nginx Production Reverse Proxy & SSL Verification
+
+Phase 36 establishes an unprivileged Nginx edge reverse proxy gateway (`nginx-edge`) providing SSL termination, path-safe API routing, immutable static caching, gzip compression, rate limiting, and defensive security headers.
+
+### 1. Live Nginx Configuration Syntax Validation
+```bash
+docker compose -f docker-compose.prod.yml exec nginx-edge nginx -t
+# Output:
+# nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+# nginx: configuration file /etc/nginx/nginx.conf test is successful
+```
+
+### 2. HTTP & HTTPS Ingress Routing Proof
+- **Frontend Root (`/`)**:
+  - `curl.exe -i http://localhost/` -> HTTP 200 with SPA `index.html`.
+  - `curl.exe -k -i https://localhost/` -> HTTP 200 with SPA `index.html`.
+- **SPA Deep Linking (`/login`)**:
+  - `curl.exe -k -i https://localhost/login` -> HTTP 200 with SPA `index.html`.
+- **API Routing (`/api/auth/me`)**:
+  - `curl.exe -k -i https://localhost/api/auth/me` -> HTTP 401 Unauthorized ProblemDetail from Spring Security.
+- **API Fallthrough Prevention**:
+  - `curl.exe -k -i https://localhost/api/definitely-not-a-real-endpoint.json` -> HTTP 401 ProblemDetail from API; mathematically proves no `/api/**` request falls through to the SPA React document.
+
+### 3. Static Asset Caching & Gzip Proof
+- **Hashed Assets (`/assets/*`)**:
+  - `curl.exe -k -I https://localhost/assets/index-_GHRrh0s.js`
+  - Cache-Control: `public, max-age=31536000, immutable`.
+- **HTML Index (`/`)**:
+  - `Cache-Control: no-cache, no-store, must-revalidate`.
+- **Gzip Compression**:
+  - `curl.exe -k -H "Accept-Encoding: gzip" -I https://localhost/assets/index-_GHRrh0s.js`
+  - Response header: `Content-Encoding: gzip`.
+
+### 4. Security Headers & HSTS Proof
+- Edge responses emit:
+  - `X-Frame-Options: DENY`
+  - `X-Content-Type-Options: nosniff`
+  - `Referrer-Policy: strict-origin-when-cross-origin`
+  - `Permissions-Policy: geolocation=(), microphone=(), camera=()`
+- `Strict-Transport-Security`: Confirmed **ABSENT** on localhost/self-signed validation stack.
+
+### 5. Coarse Rate Limiting Runtime Proof
+- Executed bounded 25-request concurrent burst against `/api/auth/me`:
+  - 11 requests received HTTP 401 (allowed through to Spring Boot).
+  - 14 requests received HTTP 429 Too Many Requests (rejected directly by Nginx `limit_req zone=api_auth burst=10 nodelay;`).
+
+### 6. Public Surface Defense & Port Minimization Proof
+- **Actuator Blocking**:
+  - `curl.exe -k -i https://localhost/actuator` -> HTTP 404 from Nginx.
+  - `curl.exe -k -i https://localhost/actuator/health` -> HTTP 404 from Nginx.
+  - `curl.exe -k -i https://localhost/actuator/prometheus` -> HTTP 404 from Nginx.
+- **Port Minimization**:
+  - `docker compose -f docker-compose.prod.yml port ledgerguard-api 8080` -> empty / no host mapping.
+  - `docker compose -f docker-compose.prod.yml port ledgerguard-web 8080` -> empty / no host mapping.
+- **Internal Scrape Continuity**:
+  - Prometheus target `http://ledgerguard-api:8080/actuator/prometheus` reports state `UP`.
+
+### 7. Regression Invariants Preserved
+- `.\mvnw.cmd clean verify`: **760 workspace tests** (675 API, 18 PSP, 22 Notification Worker, 34 Failure Lab, 11 E2E) passing with 0 failures, 0 errors, 0 skipped.
+- Frontend linting & build: `npm run lint` & `npm run build` pass with 0 errors.
+- Database migrations: V1–V17 frozen, V18 absent.
+- Production Java code: 0 lines modified in `src/main/java/**`.
