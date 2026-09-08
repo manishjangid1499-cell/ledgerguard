@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Phase 35 Complete (Verified)
-- **Status:** Phase 35 Complete (Verified)
+- **Current Phase:** Phase 36 Complete (Verified)
+- **Status:** Phase 36 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -41,17 +41,18 @@
   - **Phase 33 — Failure Lab Frontend & Interactive Invariant Visualizer** (Completed: 2026-09-06)
   - **Phase 34 — Complete Testcontainers & End-to-End Suite** (Completed: 2026-09-07)
   - **Phase 35 — Production Multi-Stage Docker Images & Compose** (Completed: 2026-09-07)
-- **Current Work:** Phase 35 completed. Implemented production multi-stage Docker images and standalone Compose stack:
-  - Multi-stage Dockerfiles for 4 deployables: `backend/ledgerguard-api`, `backend/psp-simulator`, `backend/notification-worker`, and `frontend/ledgerguard-web`.
-  - Non-root security: Java microservices run as `ledgerguard:ledgerguard` (UID 1001:1001) on `eclipse-temurin:21-jre-jammy` with read-only root filesystems and explicit `/tmp` tmpfs mounts; frontend runs on unprivileged Nginx (`nginxinc/nginx-unprivileged:1.27-alpine`, UID 101:101) on port 8080 with dual-stack IPv4/IPv6 support.
-  - Complete standalone production Compose file `docker-compose.prod.yml` coordinating 8 services (`postgres`, `kafka`, `ledgerguard-api`, `psp-simulator`, `notification-worker`, `ledgerguard-web`, `prometheus`, `grafana`) on isolated bridge network `ledgerguard-prod-network`.
-  - Zero hardcoded secrets: `.env.prod.example` template provided, `.dockerignore` files configured to prevent secrets or build cache leaks. Production Prometheus configuration in `infrastructure/prometheus/prometheus.prod.yml`.
-  - Live boot and healthcheck verification: all 8 containers healthy/running with zero root privileges and isolated per-service database credentials.
-  - Invariant strictly preserved: Upstream production Java code (`src/main/java/**`), Maven pom files (`pom.xml`), and database migrations (V1–V17 frozen, V18 absent) 0 lines modified.
+  - **Phase 36 — Nginx Production Reverse Proxy & SSL Configuration** (Completed: 2026-09-08)
+- **Current Work:** Phase 36 completed. Implemented authoritative Nginx edge reverse proxy gateway and SSL configuration:
+  - Configured unprivileged Nginx edge gateway (`infrastructure/nginx/nginx.conf`) running as non-root UID 101 on `nginxinc/nginx-unprivileged:1.27-alpine` with dual HTTP (8080) and HTTPS (8443) listeners.
+  - Ingress routing with prefix matching (`^~`): `/api/auth/` and `/api/` reverse-proxied to `ledgerguard-api:8080`, `/assets/` cached 1y immutable, and `/` serving `ledgerguard-web:8080` SPA with `no-cache` revalidation. Guaranteed zero API fallthrough to SPA.
+  - Coarse per-IP rate limiting: general API (30r/s, burst=50 nodelay), auth API (10r/s, burst=10 nodelay) with HTTP 429 rejections, operating as external DDoS defense in front of Spring Bucket4j.
+  - Security headers injected on all locations; localhost HSTS intentionally omitted for self-signed testing; `/actuator` blocked from public edge access.
+  - Complete 9-service production Compose topology in `docker-compose.prod.yml`; direct host port publishing removed from `ledgerguard-api` and `ledgerguard-web`.
+  - Certificate hygiene: `.gitignore` and `.dockerignore` updated; zero keys or certs tracked in Git.
   - Total workspace tests: 760 tests (675 API, 18 PSP, 22 Notification Worker, 34 Failure Lab, 11 E2E; 0 failures, 0 errors, 0 skipped).
-- **Next Phase:** Phase 36 — Nginx Production Reverse Proxy & SSL Configuration
-- **Last Verified:** 2026-09-07
-- **Git Branch:** infra/phase-35-production-docker-compose
+- **Next Phase:** Phase 37 — GitHub Actions CI Pipeline
+- **Last Verified:** 2026-09-08
+- **Git Branch:** infra/phase-36-nginx-edge-ssl
 
 ---
 
@@ -127,7 +128,7 @@
 | **Phase 33** | Failure Lab Frontend & Visualizer | **Completed** | 2026-09-06 |
 | **Phase 34** | Complete Testcontainers & E2E Suite | **Completed** | 2026-09-07 |
 | **Phase 35** | Production Docker Images & Compose | **Completed** | 2026-09-07 |
-| **Phase 36** | Nginx Reverse Proxy & Edge Routing | Planned | — |
+| **Phase 36** | Nginx Reverse Proxy & Edge Routing | **Completed** | 2026-09-08 |
 | **Phase 37** | GitHub Actions CI Pipeline | Planned | — |
 | **Phase 38** | Financial Failure Scenarios in CI | Planned | — |
 | **Phase 39** | Concurrency Contention & Performance | Planned | — |

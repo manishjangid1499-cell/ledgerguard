@@ -245,3 +245,41 @@ Phase 35 establishes a defense-in-depth security model for containerized product
 - **Git & Build Context Protection**:
   - `.gitignore` prevents real `.env*` secret files from entering version control.
   - `.dockerignore` files prevent local environment secrets, development keystores, `.git` history, and build artifacts from leaking into container images during `docker build`.
+
+---
+
+## 13. Edge Reverse Proxy & SSL Security (Phase 36)
+
+Phase 36 establishes an external security perimeter using Nginx as an unprivileged edge reverse proxy gateway (`nginx-edge`):
+
+### 1. TLS Termination & Certificate Hygiene
+- **SSL Termination**: Terminates TLSv1.2 and TLSv1.3 protocols on port `8443` (mapped to host `443`), using secure cipher suites (`HIGH:!aNULL:!MD5`).
+- **External Key Mounting**: Certificates (`server.crt`) and private keys (`server.key`) are mounted read-only at runtime into `/etc/nginx/certs:ro` from the host path `./infrastructure/nginx/certs`.
+- **Zero Committed Private Keys**:
+  - `.gitignore` ignores `infrastructure/nginx/certs/*` while tracking `.gitkeep`.
+  - `.dockerignore` excludes `infrastructure/nginx/certs` from all container build contexts.
+  - Validated zero presence of `BEGIN PRIVATE KEY`, `BEGIN RSA PRIVATE KEY`, or `BEGIN EC PRIVATE KEY` in version control.
+
+### 2. Edge Defensive Headers
+All HTTP and HTTPS responses from the edge gateway emit defensive headers:
+- `X-Frame-Options: DENY` (mitigates clickjacking across all views).
+- `X-Content-Type-Options: nosniff` (prevents MIME-type confusion attacks).
+- `Referrer-Policy: strict-origin-when-cross-origin` (restricts referrer data to same-origin requests).
+- `Permissions-Policy: geolocation=(), microphone=(), camera=()` (disables unused browser device features).
+- `server_tokens off;` (suppresses Nginx version disclosures in HTTP Server headers).
+
+### 3. Localhost HSTS Policy
+- **Intentional Omission on Localhost**: `Strict-Transport-Security` (HSTS) is intentionally omitted for the local self-signed development and testing stack. Enforcing a multi-month or 1-year HSTS header on `localhost` risks persistent local browser lockout with self-signed certificates.
+- **Production Guidance**: For real public domain deployment with trusted CA certificates (e.g. Let's Encrypt / ACME), HSTS should be enabled with `add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;`.
+
+### 4. Layered Edge Rate Limiting & DoS Defense
+- **Nginx Edge Zones**: Coarse per-IP rate limiting using shared memory zones:
+  - General API (`/api/`): `30r/s`, `burst=50 nodelay`.
+  - Authentication API (`/api/auth/`): `10r/s`, `burst=10 nodelay`.
+  - Edge Rejection: Exceeded limits immediately return HTTP `429 Too Many Requests`.
+- **Spring Bucket4j Integration**: Edge rate limits serve as first-line volumetric DDoS defense. Spring Boot Bucket4j filters continue to enforce application-aware, tenant-specific, and authenticated-principal business quotas.
+
+### 5. Secure Cookie & Surface Minimization
+- **Cookie Security**: Refresh tokens continue to use `ResponseCookie` with `secure: true`, `HttpOnly: true`, and `SameSite: Strict`. HTTPS (`https://localhost`) is the authoritative authenticated browser path.
+- **Actuator Blocking**: `/actuator/**` paths are blocked at the public edge with HTTP 404, preventing unauthorized inspection of health, metrics, or env endpoints from the internet. Internal Prometheus scraping continues unhindered via the Docker network.
+- **Port Minimization**: Host port publishing is removed from `ledgerguard-api` and `ledgerguard-web`, isolating backend containers from direct external socket binding.

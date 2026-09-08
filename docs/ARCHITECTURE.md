@@ -1282,3 +1282,32 @@ Phase 35 maintains the strict zero-impact invariant:
 - 0 modifications to Maven POM files (`pom.xml`).
 - 0 Flyway migrations added (V1–V17 frozen, V18 absent).
 - 0 modifications to internal application configuration (`application.yml`).
+
+---
+
+## 22. Production Edge Ingress Gateway & SSL Configuration (Phase 36)
+
+### 1. Ingress Architecture & Port Minimization
+In Phase 36, an unprivileged Nginx edge reverse proxy (`nginx-edge`) is introduced as the single authoritative public web ingress gateway for the platform:
+- **Client Traffic**: `Browser -> nginx-edge:80 (HTTP) / nginx-edge:443 (HTTPS) -> internal containers`.
+- **Port Minimization**: Direct host port exposures (`ports:`) are removed from `ledgerguard-api` and `ledgerguard-web`. Application and web tier containers communicate exclusively across the internal `ledgerguard-prod-network` bridge.
+- **Operator Boundaries**: Prometheus (`9090`), Grafana (`3000`), and PSP Simulator (`8081`) remain on dedicated host ports for administrative monitoring and failure injection, while end-user and API traffic is funneled through `nginx-edge`.
+- **Direct Internal Callbacks**: The PSP Simulator delivers webhook notifications directly across the internal network (`http://ledgerguard-api:8080/api/provider/webhooks`), bypassing the public edge.
+
+### 2. Deterministic Prefix Routing (`^~`) & Fallthrough Prevention
+To eliminate the risk of static regex matching intercepting API calls (e.g. `/api/example.json`), Nginx utilizes exact and prefix-match modifiers:
+- `location ^~ /api/auth/`: Prioritized auth routing to `ledgerguard-api:8080` with dedicated rate limiting.
+- `location ^~ /api/`: General API reverse proxy to `ledgerguard-api:8080`. The `^~` modifier stops regex scanning immediately, guaranteeing that nonexistent API routes return backend HTTP 404 ProblemDetail responses, never React SPA HTML.
+- `location ^~ /assets/`: Static asset routing to `ledgerguard-web:8080` with 1-year immutable caching (`public, max-age=31536000, immutable`).
+- `location /`: SPA client fallback routing to `ledgerguard-web:8080` with `Cache-Control: no-cache, no-store, must-revalidate`.
+- `location ^~ /actuator`: Blocked at the edge (HTTP 404) to prevent external surface discovery, while internal Prometheus scraping continues unhindered.
+
+### 3. Layered Rate Limiting Defense
+Rate limiting is split deliberately between edge infrastructure and application domain logic:
+- **Edge Gateway (Nginx)**: Coarse per-IP volumetric abuse defense using shared memory zones (`api_general: 30r/s, burst=50 nodelay; api_auth: 10r/s, burst=10 nodelay`) returning HTTP `429 Too Many Requests`.
+- **Application Core (Spring Boot + Bucket4j)**: Granular, tenant-aware, and authenticated-principal business rate limiting preserving financial idempotency semantics.
+
+### 4. TLS Termination & Certificate Security
+- **SSL Termination**: Terminates TLSv1.2 and TLSv1.3 on port 8443 (mapped to host 443).
+- **Zero Committed Secrets**: Certificates and private keys are mounted read-only from `infrastructure/nginx/certs` at runtime and strictly excluded by `.gitignore` and `.dockerignore`.
+- **Localhost Policy**: `Strict-Transport-Security` (HSTS) is intentionally omitted for the local self-signed validation stack to prevent sticky browser state, while `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, and `Permissions-Policy` are enforced on all routes.
