@@ -826,3 +826,50 @@ docker compose -f docker-compose.prod.yml exec nginx-edge nginx -t
 - Frontend linting & build: `npm run lint` & `npm run build` pass with 0 errors.
 - Database migrations: V1–V17 frozen, V18 absent.
 - Production Java code: 0 lines modified in `src/main/java/**`.
+
+---
+
+## 11. Automated Continuous Integration Pipeline (Phase 37)
+
+Phase 37 automates continuous integration validation via GitHub Actions (`.github/workflows/ci.yml`), establishing regression verification across backend, frontend, and container image layers:
+
+### 1. Workflow Architecture & Triggers
+- **Triggers**: Automated execution on `push` to `main`, `pull_request` targeting `main`, and manual triggering via `workflow_dispatch`.
+- **Concurrency**: `concurrency.group = ${{ github.workflow }}-${{ github.ref }}` with `cancel-in-progress: true`, automatically canceling redundant superseded runs on the same branch or pull request.
+- **Least-Privilege Security**: Workflow root defaults to `permissions: contents: read`. All steps execute with `persist-credentials: false`. No repository secrets or production `.env` files are required.
+
+### 2. Backend Verification (`backend` job)
+- **Runner & Toolchain**: `ubuntu-latest` running OpenJDK 21 (Eclipse Temurin) configured via `actions/setup-java@v6` with native `cache: 'maven'`.
+- **Command**: `./mvnw -B -ntp clean verify`
+- **Execution Scope**:
+  - Compiles root reactor and all 5 modules: `ledgerguard-api`, `psp-simulator`, `notification-worker`, `backend/failure-lab`, `backend/e2e-tests`.
+  - Runs all 760 workspace tests:
+    - 675 API unit and integration tests (Flyway V1–V17 migrations, domain invariants, double-entry arithmetic, concurrent locking).
+    - 18 PSP Simulator tests.
+    - 22 Notification Worker inbox and event consumption tests.
+    - 34 Failure Lab chaos regression scenarios.
+    - 11 Multi-service End-to-End flow tests.
+  - Testcontainers operates natively against the pre-installed Docker daemon on the `ubuntu-latest` runner without manual service container boilerplate.
+
+### 3. Frontend Verification (`frontend` job)
+- **Runner & Toolchain**: `ubuntu-latest` running Node.js 24 configured via `actions/setup-node@v7` with `cache: 'npm'` keyed against `frontend/ledgerguard-web/package-lock.json`.
+- **Commands**:
+  - `npm ci`: Deterministic, clean dependency installation from package-lock.
+  - `npm run lint`: Existing ESLint verification (`eslint .`).
+  - `npm run build`: Production TypeScript compilation (`tsc -b`) and Vite production bundle generation.
+
+### 4. Docker Build Validation (`docker-images` job)
+- **Dependency**: Runs after both `backend` and `frontend` jobs succeed (`needs: [backend, frontend]`).
+- **Validation Scope**: Validates multi-stage Dockerfile assembly across all 4 deployables without publishing or pushing images:
+  - `docker build -t ledgerguard-api:ci -f backend/ledgerguard-api/Dockerfile .`
+  - `docker build -t psp-simulator:ci -f backend/psp-simulator/Dockerfile .`
+  - `docker build -t notification-worker:ci -f backend/notification-worker/Dockerfile .`
+  - `docker build -t ledgerguard-web:ci --build-arg VITE_API_BASE_URL=/ -f frontend/ledgerguard-web/Dockerfile frontend/ledgerguard-web`
+- **Zero Push**: No registry logins, credentials, or push steps. Image assembly is validated locally in the runner and discarded.
+
+### 5. Automated Dependency Maintenance
+- GitHub Dependabot (`.github/dependabot.yml`) configured for weekly updates explicitly monitoring the root parent POM and all five Maven module directories (`/`, `/backend/ledgerguard-api`, `/backend/psp-simulator`, `/backend/notification-worker`, `/backend/failure-lab`, `/backend/e2e-tests`), npm (`/frontend/ledgerguard-web`), GitHub Actions (`/`), and Docker base images across all four service directories.
+
+### 6. Verification Status & Runtime Gate
+- All commands (`./mvnw -B -ntp clean verify`, `npm ci`, `npm run lint`, `npm run build`, and the 4 `docker build` commands) are verified locally.
+- Live execution on the GitHub Actions pull request is the authoritative runtime proof required before merge.

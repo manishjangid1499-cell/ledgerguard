@@ -1,0 +1,56 @@
+version: 2
+updates:
+  # Root Parent POM and all backend module POMs
+  - package-ecosystem: "maven"
+    directories:
+      - "/"
+      - "/backend/ledgerguard-api"
+      - "/backend/psp-simulator"
+      - "/backend/notification-worker"
+      - "/backend/failure-lab"
+      - "/backend/e2e-tests"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+
+  # Frontend Web Client
+  - package-ecosystem: "npm"
+    directory: "/frontend/ledgerguard-web"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+
+  # GitHub Actions CI Workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+
+  # Docker Base Images - Backend API
+  - package-ecosystem: "docker"
+    directory: "/backend/ledgerguard-api"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+
+  # Docker Base Images - PSP Simulator
+  - package-ecosystem: "docker"
+    directory: "/backend/psp-simulator"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+
+  # Docker Base Images - Notification Worker
+  - package-ecosystem: "docker"
+    directory: "/backend/notification-worker"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+
+  # Docker Base Images - Frontend Web
+  - package-ecosystem: "docker"
+    directory: "/frontend/ledgerguard-web"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
