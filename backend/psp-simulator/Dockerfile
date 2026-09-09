@@ -1,5 +1,5 @@
 # Stage 1: Build stage
-FROM eclipse-temurin:21-jdk-jammy AS builder
+FROM eclipse-temurin:25-jdk-jammy AS builder
 WORKDIR /workspace
 
 COPY .mvn/ .mvn/
@@ -16,7 +16,7 @@ RUN sed -i 's/\r$//' mvnw && chmod +x mvnw && \
     ./mvnw -pl backend/psp-simulator -am package -DskipTests
 
 # Stage 2: Runtime stage
-FROM eclipse-temurin:21-jre-jammy AS runtime
+FROM eclipse-temurin:25-jre-jammy AS runtime
 WORKDIR /app
 
 RUN groupadd --system --gid 1001 ledgerguard && \
