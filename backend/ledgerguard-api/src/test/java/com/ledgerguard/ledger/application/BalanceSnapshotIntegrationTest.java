@@ -1,13 +1,16 @@
 package com.ledgerguard.ledger.application;
 
 import com.ledgerguard.AbstractIntegrationTest;
+import com.ledgerguard.ledger.domain.AccountStatus;
 import com.ledgerguard.ledger.domain.AccountType;
 import com.ledgerguard.ledger.domain.LedgerAccount;
 import com.ledgerguard.ledger.domain.LedgerBalanceSnapshot;
 import com.ledgerguard.ledger.domain.Wallet;
 import com.ledgerguard.ledger.infrastructure.JournalTransactionRepository;
+import com.ledgerguard.fixture.PlatformFeeTestHelper;
 import com.ledgerguard.ledger.infrastructure.LedgerAccountRepository;
 import com.ledgerguard.ledger.infrastructure.LedgerBalanceSnapshotRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -284,6 +287,11 @@ class BalanceSnapshotIntegrationTest extends AbstractIntegrationTest {
             WHERE je.ledger_account_id = ? AND jt.status = 'POSTED'
         """;
         return jdbcTemplate.queryForObject(sql, Long.class, type.name(), accountId);
+    }
+
+    @AfterEach
+    void cleanUpFeeAccounts() {
+        PlatformFeeTestHelper.ensureSingleActiveFeeAccount(ledgerAccountRepository);
     }
 
     private LedgerAccount createSystemAccount(AccountType type) {

@@ -10,7 +10,9 @@ import com.ledgerguard.ledger.domain.JournalTransaction;
 import com.ledgerguard.ledger.domain.LedgerAccount;
 import com.ledgerguard.ledger.infrastructure.JournalEntryRepository;
 import com.ledgerguard.ledger.infrastructure.JournalTransactionRepository;
+import com.ledgerguard.fixture.PlatformFeeTestHelper;
 import com.ledgerguard.ledger.infrastructure.LedgerAccountRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -245,6 +247,11 @@ class LedgerPostingServiceIntegrationTest extends AbstractIntegrationTest {
                 "id", "owner_user_id", "account_type", "currency", "status", "created_at", "updated_at"
         );
         assertThat(accountColumns).doesNotContain("balance", "available_balance", "current_balance");
+    }
+
+    @AfterEach
+    void cleanUpFeeAccounts() {
+        PlatformFeeTestHelper.ensureSingleActiveFeeAccount(ledgerAccountRepository);
     }
 
     private LedgerAccount createSystemAccount(AccountType type) {

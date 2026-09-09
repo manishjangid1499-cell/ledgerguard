@@ -29,9 +29,11 @@ import com.ledgerguard.payment.domain.PaymentValidationException;
 import com.ledgerguard.payment.domain.PlatformFeeAccountException;
 import com.ledgerguard.payment.infrastructure.PaymentRepository;
 import com.ledgerguard.transfer.domain.InsufficientFundsException;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import com.ledgerguard.fixture.PlatformFeeTestHelper;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Instant;
@@ -83,16 +85,13 @@ class PaymentServiceIntegrationTest extends AbstractIntegrationTest {
     private LedgerPostingService ledgerPostingService;
 
     @BeforeEach
-    void ensureSingleActiveFeeAccount() {
-        List<LedgerAccount> feeAccounts = ledgerAccountRepository.findAllByAccountType(AccountType.PLATFORM_FEES);
-        for (LedgerAccount fa : feeAccounts) {
-            if (fa.getStatus() == AccountStatus.ACTIVE) {
-                fa.close(Instant.now());
-                ledgerAccountRepository.saveAndFlush(fa);
-            }
-        }
-        LedgerAccount canonicalFee = LedgerAccount.createSystemAccount(AccountType.PLATFORM_FEES);
-        ledgerAccountRepository.saveAndFlush(canonicalFee);
+    void setUpFeeAccount() {
+        PlatformFeeTestHelper.ensureSingleActiveFeeAccount(ledgerAccountRepository);
+    }
+
+    @AfterEach
+    void cleanUpFeeAccounts() {
+        PlatformFeeTestHelper.ensureSingleActiveFeeAccount(ledgerAccountRepository);
     }
 
     @Test
@@ -383,18 +382,22 @@ class PaymentServiceIntegrationTest extends AbstractIntegrationTest {
             }
         }
 
-        fundWallet(customerWallet.getId(), 50000L);
+        try {
+            fundWallet(customerWallet.getId(), 50000L);
 
-        CreatePaymentCommand command = new CreatePaymentCommand(
-                customer.getId(),
-                "pay-missing-fee-acc-" + UUID.randomUUID(),
-                merchantWallet.getId(),
-                Money.ofMinor(10000L, "INR")
-        );
+            CreatePaymentCommand command = new CreatePaymentCommand(
+                    customer.getId(),
+                    "pay-missing-fee-acc-" + UUID.randomUUID(),
+                    merchantWallet.getId(),
+                    Money.ofMinor(10000L, "INR")
+            );
 
-        assertThatThrownBy(() -> paymentService.createPayment(command))
-                .isInstanceOf(PlatformFeeAccountException.class)
-                .hasMessageContaining("No active INR PLATFORM_FEES");
+            assertThatThrownBy(() -> paymentService.createPayment(command))
+                    .isInstanceOf(PlatformFeeAccountException.class)
+                    .hasMessageContaining("No active INR PLATFORM_FEES");
+        } finally {
+            PlatformFeeTestHelper.ensureSingleActiveFeeAccount(ledgerAccountRepository);
+        }
     }
 
     @Test
@@ -410,18 +413,22 @@ class PaymentServiceIntegrationTest extends AbstractIntegrationTest {
         LedgerAccount extraFee = LedgerAccount.createSystemAccount(AccountType.PLATFORM_FEES);
         ledgerAccountRepository.saveAndFlush(extraFee);
 
-        fundWallet(customerWallet.getId(), 50000L);
+        try {
+            fundWallet(customerWallet.getId(), 50000L);
 
-        CreatePaymentCommand command = new CreatePaymentCommand(
-                customer.getId(),
-                "pay-multi-fee-acc-" + UUID.randomUUID(),
-                merchantWallet.getId(),
-                Money.ofMinor(10000L, "INR")
-        );
+            CreatePaymentCommand command = new CreatePaymentCommand(
+                    customer.getId(),
+                    "pay-multi-fee-acc-" + UUID.randomUUID(),
+                    merchantWallet.getId(),
+                    Money.ofMinor(10000L, "INR")
+            );
 
-        assertThatThrownBy(() -> paymentService.createPayment(command))
-                .isInstanceOf(PlatformFeeAccountException.class)
-                .hasMessageContaining("Multiple active INR PLATFORM_FEES");
+            assertThatThrownBy(() -> paymentService.createPayment(command))
+                    .isInstanceOf(PlatformFeeAccountException.class)
+                    .hasMessageContaining("Multiple active INR PLATFORM_FEES");
+        } finally {
+            PlatformFeeTestHelper.ensureSingleActiveFeeAccount(ledgerAccountRepository);
+        }
     }
 
     @Test
@@ -726,13 +733,7 @@ class PaymentServiceIntegrationTest extends AbstractIntegrationTest {
     }
 
     private LedgerAccount getOrCreatePlatformFeeAccount() {
-        return ledgerAccountRepository.findAllByAccountType(AccountType.PLATFORM_FEES).stream()
-                .filter(a -> a.getStatus() == AccountStatus.ACTIVE && "INR".equals(a.getCurrency()) && a.getOwnerUserId() == null)
-                .findFirst()
-                .orElseGet(() -> {
-                    LedgerAccount feeAccount = LedgerAccount.createSystemAccount(AccountType.PLATFORM_FEES);
-                    return ledgerAccountRepository.saveAndFlush(feeAccount);
-                });
+        return PlatformFeeTestHelper.ensureSingleActiveFeeAccount(ledgerAccountRepository);
     }
 
     private void fundWallet(UUID walletAccountId, long amountMinor) {
