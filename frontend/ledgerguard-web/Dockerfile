@@ -12,7 +12,7 @@ COPY . .
 RUN npm run build
 
 # Stage 2: Runtime stage (Unprivileged Nginx)
-FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
+FROM nginxinc/nginx-unprivileged:1.31-alpine AS runtime
 
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
