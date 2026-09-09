@@ -873,3 +873,56 @@ Phase 37 automates continuous integration validation via GitHub Actions (`.githu
 ### 6. Verification Status & Runtime Gate
 - All commands (`./mvnw -B -ntp clean verify`, `npm ci`, `npm run lint`, `npm run build`, and the 4 `docker build` commands) are verified locally.
 - Live execution on the GitHub Actions pull request is the authoritative runtime proof required before merge.
+
+---
+
+## 22. Phase 38 — Financial Failure Scenarios in CI (Money Integrity Gate)
+
+Phase 38 integrates the authoritative Money Integrity Failure Lab into continuous integration, establishing an explicit automated gate and machine-readable invariant reporting verifying that:
+
+$$\text{\bf MONEY MUST NEVER BE CREATED, DESTROYED, DUPLICATED, OR SILENTLY LOST.}$$
+
+### 1. Dedicated Maven Profile (`financial-failure-ci`)
+Configured in `backend/failure-lab/pom.xml`, the `financial-failure-ci` profile selects only the five existing core failure tests:
+- `FailureLabSuiteRunnerTest`: Orchestrates all 4 real failure scenarios sequentially.
+- `OpposingTransfersScenarioTest`: Concurrent opposing transfers verifying deadlock freedom, money conservation ($\Delta(A) + \Delta(B) = 0$), and idempotency replay.
+- `TimeoutAfterCommitScenarioTest`: Ambiguous PSP transport timeout verifying hold preservation during $UNKNOWN$ and single settlement journal creation upon recovery.
+- `CorruptedSnapshotScenarioTest`: Controlled snapshot drift verifying detection by Level 2 reconciliation and auto-repair from immutable journals.
+- `WebhookRaceScenarioTest`: Concurrent duplicate webhook deliveries verifying HMAC verification, deduplication, and exactly 1 applied settlement.
+
+When the profile is inactive, normal `./mvnw clean verify` executes all 34 tests in `failure-lab` without alteration, strictly preserving the 760 workspace test baseline.
+
+### 2. CI Clean-Runner Execution Strategy
+Because independent GitHub Actions runners do not inherit compiled artifacts from concurrent jobs, the `financial-integrity` CI job executes a two-stage build:
+1. **Prepare API Dependency**:
+   ```bash
+   ./mvnw -B -ntp -pl backend/ledgerguard-api -am install -DskipTests
+   ```
+   Compiles and installs the `ledgerguard-api:0.1.0-SNAPSHOT` artifact required by `failure-lab` without re-running the 675 API tests.
+2. **Execute Isolated Failure Lab Gate**:
+   ```bash
+   ./mvnw -B -ntp -f backend/failure-lab/pom.xml clean test -Pfinancial-failure-ci
+   ```
+   Executes only the 5 selected failure test classes with the `financial.failure.ci=true` system property supplied by the `financial-failure-ci` Maven profile.
+
+### 3. Financial Invariant Report Generator & Reporting Semantics
+The test-only `FinancialInvariantReportGenerator` formats authoritative `ScenarioRunResult` objects into:
+- `target/financial-integrity-report.json`: Versioned JSON artifact documenting `verdictScope: "SCENARIO_RUNNER_INVARIANTS"`, `scenarioInvariantVerdict: "VERIFIED"`, exact 4-scenario validation, per-scenario duration, ledger debit/credit totals at audit, net delta ($= 0$), and individual invariant check results.
+- `target/financial-integrity-summary.md`: Human-readable Markdown report documenting the scenario invariant verdict and individual invariant checks.
+
+**Important Semantic Distinction**:
+- The ScenarioRunner JSON/Markdown report provides invariant audit evidence for the four scenario executions.
+- The `financial-integrity` GitHub Actions job is the authoritative complete Phase 38 gate because it additionally executes the four dedicated JUnit scenario tests (`OpposingTransfersScenarioTest`, `TimeoutAfterCommitScenarioTest`, `CorruptedSnapshotScenarioTest`, `WebhookRaceScenarioTest`), which enforce scenario-specific assertions beyond the suite runner.
+
+### 4. GitHub Actions Workflow Integration
+- **Job Name**: `financial-integrity` (runs concurrently on `ubuntu-latest`, no `needs: backend`).
+- **Step Summary**: Directly reports the authoritative Maven gate status (`${{ job.status }}`) alongside the scenario invariant summary.
+- **Artifact Upload**: Uses `actions/upload-artifact@v7` uploading `financial-integrity-report.json` and `financial-integrity-summary.md` with `if-no-files-found: error`.
+- **Gating**: `docker-images` updated to require `needs: [backend, frontend, financial-integrity]`, preventing container packaging if any financial invariant fails.
+
+### 5. Regression Invariants Preserved
+- Full reactor test baseline: **760 workspace tests** (675 API, 18 PSP, 22 Notification Worker, 34 Failure Lab, 11 E2E) with 0 failures, 0 errors, 0 skipped.
+- Frontend: `npm ci`, `npm run lint`, `npm run build` pass with 0 errors.
+- Database migrations: V1–V17 frozen, V18 absent.
+- Production Java code: 0 lines modified.
+- Local verified; live PR execution remains authoritative runtime gate.

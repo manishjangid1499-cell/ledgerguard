@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Phase 37 Complete (Verified)
-- **Status:** Phase 37 Complete (Verified)
+- **Current Phase:** Phase 38 Complete (Local Verified)
+- **Status:** Phase 38 Complete (Local Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -43,19 +43,20 @@
   - **Phase 35 — Production Multi-Stage Docker Images & Compose** (Completed: 2026-09-07)
   - **Phase 36 — Nginx Production Reverse Proxy & SSL Configuration** (Completed: 2026-09-08)
   - **Phase 37 — GitHub Actions CI Pipeline** (Completed: 2026-09-08)
-- **Current Work:** Phase 37 implemented and locally verified. Automated continuous integration pipeline and dependency management:
-  - Created GitHub Actions CI workflow (`.github/workflows/ci.yml`) using supported official action majors (`actions/checkout@v6`, `actions/setup-java@v6`, `actions/setup-node@v7`) on `ubuntu-latest` with concurrency cancellation (`cancel-in-progress: true`), `persist-credentials: false`, and least-privilege `contents: read` permissions.
-  - Concurrent `backend` job (OpenJDK 21 Temurin, Maven dependency caching, `./mvnw -B -ntp clean verify` covering all 760 tests with native Testcontainers PostgreSQL and Kafka support).
-  - Concurrent `frontend` job (Node.js 24, npm dependency caching with lockfile validation, `npm ci`, existing `npm run lint`, and production `npm run build`).
-  - Dependent `docker-images` validation job (`needs: [backend, frontend]`) verifying multi-stage container builds for all 4 application services (`ledgerguard-api`, `psp-simulator`, `notification-worker`, `ledgerguard-web`) with `--build-arg VITE_API_BASE_URL=/` matching Phase 36 same-origin routing, with zero image publishing.
-  - Implemented GitHub Dependabot configuration (`.github/dependabot.yml`) for automated weekly version-update PRs explicitly monitoring the root parent POM and all five Maven module directories (`/`, `/backend/ledgerguard-api`, `/backend/psp-simulator`, `/backend/notification-worker`, `/backend/failure-lab`, `/backend/e2e-tests`), npm (`/frontend/ledgerguard-web`), GitHub Actions (`/`), and Docker base images (`/backend/ledgerguard-api`, `/backend/psp-simulator`, `/backend/notification-worker`, `/frontend/ledgerguard-web`).
-  - Removed obsolete `.github/workflows/.gitkeep`.
-  - Zero modifications to production Java source, frontend source, POMs, package files, Dockerfiles, Compose files, Nginx configuration, or database migrations (V1–V17 frozen, V18 absent).
-  - Total workspace tests: 760 tests (675 API, 18 PSP, 22 Notification Worker, 34 Failure Lab, 11 E2E; 0 failures, 0 errors, 0 skipped).
+  - **Phase 38 — Financial Failure Scenarios in CI** (Completed: 2026-09-09)
+- **Current Work:** Phase 38 implemented and locally verified. Integrated Money Integrity Failure Lab into Continuous Integration:
+  - Configured dedicated Maven profile `financial-failure-ci` in `backend/failure-lab/pom.xml` executing the 5 high-value existing tests (`FailureLabSuiteRunnerTest`, `OpposingTransfersScenarioTest`, `TimeoutAfterCommitScenarioTest`, `CorruptedSnapshotScenarioTest`, `WebhookRaceScenarioTest`) with `financial.failure.ci=true` system property without altering root POM or normal baseline.
+  - Implemented test-only `FinancialInvariantReportGenerator` in `com.ledgerguard.lab.engine` serializing authoritative `ScenarioRunResult` instances into versioned `target/financial-integrity-report.json` and human-readable `target/financial-integrity-summary.md` with explicit `SCENARIO_RUNNER_INVARIANTS` verdict scope and exact 4-scenario validation, distinguishing scenario runner invariant evidence from the authoritative complete Maven job gate (which additionally executes the four dedicated scenario JUnit tests).
+  - Updated `FailureLabSuiteRunnerTest` to collect scenario execution results and invoke report generation prior to final assertion evaluation when `financial.failure.ci` is enabled.
+  - Added dedicated concurrent `financial-integrity` CI job in `.github/workflows/ci.yml` (Java 21 Temurin, Maven cache, API dependency preparation via `./mvnw -B -ntp -pl backend/ledgerguard-api -am install -DskipTests`, Failure Lab execution via `./mvnw -B -ntp -f backend/failure-lab/pom.xml clean test -Pfinancial-failure-ci`, GitHub Step Summary publication, and artifact upload via `actions/upload-artifact@v7` with `if-no-files-found: error`).
+  - Updated `docker-images` job to require `needs: [backend, frontend, financial-integrity]`.
+  - Normal full workspace regression preserved: 760 tests (675 API, 18 PSP, 22 Notification Worker, 34 Failure Lab, 11 E2E; 0 failures, 0 errors, 0 skipped).
+  - Frontend regression verified: `npm ci`, `npm run lint`, `npm run build` passing cleanly.
+  - Zero modifications to production Java source, frontend source, root POM, Dockerfiles, Compose files, Nginx configuration, or database migrations (V1–V17 frozen, V18 absent).
   - Locally verified; GitHub Actions PR run is the authoritative runtime gate before merge.
-- **Next Phase:** Phase 38 — Financial Failure Scenarios in CI
-- **Last Verified:** 2026-09-08
-- **Git Branch:** ci/phase-37-github-actions
+- **Next Phase:** Phase 39 — Concurrency Contention & Performance Analysis
+- **Last Verified:** 2026-09-09
+- **Git Branch:** ci/phase-38-financial-failure-scenarios
 
 ---
 
@@ -133,7 +134,7 @@
 | **Phase 35** | Production Docker Images & Compose | **Completed** | 2026-09-07 |
 | **Phase 36** | Nginx Reverse Proxy & Edge Routing | **Completed** | 2026-09-08 |
 | **Phase 37** | GitHub Actions CI Pipeline | **Completed** | 2026-09-08 |
-| **Phase 38** | Financial Failure Scenarios in CI | Planned | — |
+| **Phase 38** | Financial Failure Scenarios in CI | **Completed** | 2026-09-09 |
 | **Phase 39** | Concurrency Contention & Performance | Planned | — |
 | **Phase 40** | Backup, Restore & Operational Runbooks | Planned | — |
 | **Phase 41** | Final Portfolio Documentation & API Docs | Planned | — |

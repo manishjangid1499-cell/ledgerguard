@@ -71,11 +71,65 @@ jobs:
         working-directory: frontend/ledgerguard-web
         run: npm run build
 
+  financial-integrity:
+    name: Financial Integrity & Failure Scenarios
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Java 21 (Temurin)
+        uses: actions/setup-java@v6
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+
+      - name: Grant execute permission for Maven wrapper
+        run: chmod +x mvnw
+
+      - name: Prepare LedgerGuard API dependency
+        run: ./mvnw -B -ntp -pl backend/ledgerguard-api -am install -DskipTests
+
+      - name: Execute financial failure scenarios
+        run: ./mvnw -B -ntp -f backend/failure-lab/pom.xml clean test -Pfinancial-failure-ci
+
+      - name: Publish financial integrity summary to Step Summary
+        if: always()
+        run: |
+          echo "## Financial Integrity Maven Gate" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Gate Status:** \`${{ job.status }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The Maven job status is authoritative for the complete Phase 38 gate." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f backend/failure-lab/target/financial-integrity-summary.md ]; then
+            cat backend/failure-lab/target/financial-integrity-summary.md >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### LedgerGuard Financial Integrity CI" >> $GITHUB_STEP_SUMMARY
+            echo "Financial integrity summary report was not generated." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload financial integrity report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: financial-integrity-report
+          path: |
+            backend/failure-lab/target/financial-integrity-report.json
+            backend/failure-lab/target/financial-integrity-summary.md
+          retention-days: 14
+          if-no-files-found: error
+
   docker-images:
     name: Docker Image Build Validation
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [backend, frontend]
+    needs: [backend, frontend, financial-integrity]
 
     steps:
       - name: Check out repository
