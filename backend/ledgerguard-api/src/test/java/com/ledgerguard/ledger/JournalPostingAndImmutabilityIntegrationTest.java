@@ -1,6 +1,8 @@
 package com.ledgerguard.ledger;
 
 import com.ledgerguard.AbstractIntegrationTest;
+import com.ledgerguard.fixture.PlatformFeeTestHelper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -313,6 +315,11 @@ class JournalPostingAndImmutabilityIntegrationTest extends AbstractIntegrationTe
             // If append succeeded first, posting was rejected due to imbalance, leaving journal in DRAFT
             assertThat(finalStatus).isEqualTo("DRAFT");
         }
+    }
+
+    @AfterEach
+    void cleanUpFeeAccounts() {
+        PlatformFeeTestHelper.ensureSingleActiveFeeAccount(jdbcTemplate);
     }
 
     private UUID createSystemAccount(String type) {

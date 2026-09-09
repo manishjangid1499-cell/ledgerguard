@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Phase 36 Complete (Verified)
-- **Status:** Phase 36 Complete (Verified)
+- **Current Phase:** Phase 37 Complete (Verified)
+- **Status:** Phase 37 Complete (Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -42,17 +42,20 @@
   - **Phase 34 — Complete Testcontainers & End-to-End Suite** (Completed: 2026-09-07)
   - **Phase 35 — Production Multi-Stage Docker Images & Compose** (Completed: 2026-09-07)
   - **Phase 36 — Nginx Production Reverse Proxy & SSL Configuration** (Completed: 2026-09-08)
-- **Current Work:** Phase 36 completed. Implemented authoritative Nginx edge reverse proxy gateway and SSL configuration:
-  - Configured unprivileged Nginx edge gateway (`infrastructure/nginx/nginx.conf`) running as non-root UID 101 on `nginxinc/nginx-unprivileged:1.27-alpine` with dual HTTP (8080) and HTTPS (8443) listeners.
-  - Ingress routing with prefix matching (`^~`): `/api/auth/` and `/api/` reverse-proxied to `ledgerguard-api:8080`, `/assets/` cached 1y immutable, and `/` serving `ledgerguard-web:8080` SPA with `no-cache` revalidation. Guaranteed zero API fallthrough to SPA.
-  - Coarse per-IP rate limiting: general API (30r/s, burst=50 nodelay), auth API (10r/s, burst=10 nodelay) with HTTP 429 rejections, operating as external DDoS defense in front of Spring Bucket4j.
-  - Security headers injected on all locations; localhost HSTS intentionally omitted for self-signed testing; `/actuator` blocked from public edge access.
-  - Complete 9-service production Compose topology in `docker-compose.prod.yml`; direct host port publishing removed from `ledgerguard-api` and `ledgerguard-web`.
-  - Certificate hygiene: `.gitignore` and `.dockerignore` updated; zero keys or certs tracked in Git.
+  - **Phase 37 — GitHub Actions CI Pipeline** (Completed: 2026-09-08)
+- **Current Work:** Phase 37 implemented and locally verified. Automated continuous integration pipeline and dependency management:
+  - Created GitHub Actions CI workflow (`.github/workflows/ci.yml`) using supported official action majors (`actions/checkout@v6`, `actions/setup-java@v6`, `actions/setup-node@v7`) on `ubuntu-latest` with concurrency cancellation (`cancel-in-progress: true`), `persist-credentials: false`, and least-privilege `contents: read` permissions.
+  - Concurrent `backend` job (OpenJDK 21 Temurin, Maven dependency caching, `./mvnw -B -ntp clean verify` covering all 760 tests with native Testcontainers PostgreSQL and Kafka support).
+  - Concurrent `frontend` job (Node.js 24, npm dependency caching with lockfile validation, `npm ci`, existing `npm run lint`, and production `npm run build`).
+  - Dependent `docker-images` validation job (`needs: [backend, frontend]`) verifying multi-stage container builds for all 4 application services (`ledgerguard-api`, `psp-simulator`, `notification-worker`, `ledgerguard-web`) with `--build-arg VITE_API_BASE_URL=/` matching Phase 36 same-origin routing, with zero image publishing.
+  - Implemented GitHub Dependabot configuration (`.github/dependabot.yml`) for automated weekly version-update PRs explicitly monitoring the root parent POM and all five Maven module directories (`/`, `/backend/ledgerguard-api`, `/backend/psp-simulator`, `/backend/notification-worker`, `/backend/failure-lab`, `/backend/e2e-tests`), npm (`/frontend/ledgerguard-web`), GitHub Actions (`/`), and Docker base images (`/backend/ledgerguard-api`, `/backend/psp-simulator`, `/backend/notification-worker`, `/frontend/ledgerguard-web`).
+  - Removed obsolete `.github/workflows/.gitkeep`.
+  - Zero modifications to production Java source, frontend source, POMs, package files, Dockerfiles, Compose files, Nginx configuration, or database migrations (V1–V17 frozen, V18 absent).
   - Total workspace tests: 760 tests (675 API, 18 PSP, 22 Notification Worker, 34 Failure Lab, 11 E2E; 0 failures, 0 errors, 0 skipped).
-- **Next Phase:** Phase 37 — GitHub Actions CI Pipeline
+  - Locally verified; GitHub Actions PR run is the authoritative runtime gate before merge.
+- **Next Phase:** Phase 38 — Financial Failure Scenarios in CI
 - **Last Verified:** 2026-09-08
-- **Git Branch:** infra/phase-36-nginx-edge-ssl
+- **Git Branch:** ci/phase-37-github-actions
 
 ---
 
@@ -129,7 +132,7 @@
 | **Phase 34** | Complete Testcontainers & E2E Suite | **Completed** | 2026-09-07 |
 | **Phase 35** | Production Docker Images & Compose | **Completed** | 2026-09-07 |
 | **Phase 36** | Nginx Reverse Proxy & Edge Routing | **Completed** | 2026-09-08 |
-| **Phase 37** | GitHub Actions CI Pipeline | Planned | — |
+| **Phase 37** | GitHub Actions CI Pipeline | **Completed** | 2026-09-08 |
 | **Phase 38** | Financial Failure Scenarios in CI | Planned | — |
 | **Phase 39** | Concurrency Contention & Performance | Planned | — |
 | **Phase 40** | Backup, Restore & Operational Runbooks | Planned | — |

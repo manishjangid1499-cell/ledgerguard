@@ -14,6 +14,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -63,17 +64,25 @@ class JournalBalanceCheckerIntegrationTest extends AbstractIntegrationTest {
     @DisplayName("POSTED journal with zero entries detects MALFORMED_JOURNAL")
     void zeroEntryJournalDetectedAsMalformed() {
         UUID journalId = insertEmptyPostedJournalViaBypass();
+        try {
+            journalBalanceChecker.check(runId);
 
-        journalBalanceChecker.check(runId);
+            assertThat(itemRepository.findAll())
+                    .anyMatch(i -> i.getEntityId().equals(journalId)
+                            && i.getProblemType() == ReconciliationProblemType.MALFORMED_JOURNAL);
 
-        assertThat(itemRepository.findAll())
-                .anyMatch(i -> i.getEntityId().equals(journalId)
-                        && i.getProblemType() == ReconciliationProblemType.MALFORMED_JOURNAL);
-
-        // No repair — journal transaction row still exists with POSTED status
-        String status = jdbc.queryForObject(
-                "SELECT status FROM journal_transactions WHERE id = ?", String.class, journalId);
-        assertThat(status).isEqualTo("POSTED");
+            // No repair — journal transaction row still exists with POSTED status
+            String status = jdbc.queryForObject(
+                    "SELECT status FROM journal_transactions WHERE id = ?", String.class, journalId);
+            assertThat(status).isEqualTo("POSTED");
+        } finally {
+            jdbc.execute("ALTER TABLE journal_transactions DISABLE TRIGGER trg_journal_transactions_immutability");
+            try {
+                jdbc.update("DELETE FROM journal_transactions WHERE id = ?", journalId);
+            } finally {
+                jdbc.execute("ALTER TABLE journal_transactions ENABLE TRIGGER trg_journal_transactions_immutability");
+            }
+        }
     }
 
     @Test
@@ -98,34 +107,44 @@ class JournalBalanceCheckerIntegrationTest extends AbstractIntegrationTest {
                 "SELECT amount_minor FROM journal_entries WHERE journal_transaction_id = ? AND direction = 'CREDIT'",
                 Long.class, journalId);
 
-        // Test-only: disable immutability trigger, corrupt one entry, re-enable
-        jdbc.execute("ALTER TABLE journal_entries DISABLE TRIGGER trg_journal_entries_immutability");
         try {
-            jdbc.update("UPDATE journal_entries SET amount_minor = amount_minor + 99 " +
-                        "WHERE journal_transaction_id = ? AND direction = 'CREDIT'", journalId);
+            // Test-only: disable immutability trigger, corrupt one entry, re-enable
+            jdbc.execute("ALTER TABLE journal_entries DISABLE TRIGGER trg_journal_entries_immutability");
+            try {
+                jdbc.update("UPDATE journal_entries SET amount_minor = amount_minor + 99 " +
+                            "WHERE journal_transaction_id = ? AND direction = 'CREDIT'", journalId);
+            } finally {
+                jdbc.execute("ALTER TABLE journal_entries ENABLE TRIGGER trg_journal_entries_immutability");
+            }
+
+            // Prove trigger is ENABLED again using PostgreSQL catalog and forbidden mutation
+            String tgEnabled1 = jdbc.queryForObject(
+                    "SELECT tgenabled FROM pg_trigger WHERE tgname = 'trg_journal_entries_immutability'", String.class);
+            assertThat(tgEnabled1).isEqualTo("O");
+            assertThatThrownBy(() ->
+                    jdbc.update("UPDATE journal_entries SET amount_minor = amount_minor + 1 WHERE journal_transaction_id = ?", journalId)
+            ).isInstanceOf(Exception.class);
+
+            journalBalanceChecker.check(runId);
+
+            assertThat(itemRepository.findAll())
+                    .anyMatch(i -> i.getEntityId().equals(journalId)
+                            && i.getProblemType() == ReconciliationProblemType.UNBALANCED_JOURNAL);
+
+            // No repair — corrupted value still in place
+            Long creditAfter = jdbc.queryForObject(
+                    "SELECT amount_minor FROM journal_entries WHERE journal_transaction_id = ? AND direction = 'CREDIT'",
+                    Long.class, journalId);
+            assertThat(creditAfter).isEqualTo(creditBefore + 99);
         } finally {
-            jdbc.execute("ALTER TABLE journal_entries ENABLE TRIGGER trg_journal_entries_immutability");
+            jdbc.execute("ALTER TABLE journal_entries DISABLE TRIGGER trg_journal_entries_immutability");
+            try {
+                jdbc.update("UPDATE journal_entries SET amount_minor = ? WHERE journal_transaction_id = ? AND direction = 'CREDIT'",
+                        creditBefore, journalId);
+            } finally {
+                jdbc.execute("ALTER TABLE journal_entries ENABLE TRIGGER trg_journal_entries_immutability");
+            }
         }
-
-        // Prove trigger is ENABLED again using PostgreSQL catalog and forbidden mutation
-        String tgEnabled1 = jdbc.queryForObject(
-                "SELECT tgenabled FROM pg_trigger WHERE tgname = 'trg_journal_entries_immutability'", String.class);
-        assertThat(tgEnabled1).isEqualTo("O");
-        assertThatThrownBy(() ->
-                jdbc.update("UPDATE journal_entries SET amount_minor = amount_minor + 1 WHERE journal_transaction_id = ?", journalId)
-        ).isInstanceOf(Exception.class);
-
-        journalBalanceChecker.check(runId);
-
-        assertThat(itemRepository.findAll())
-                .anyMatch(i -> i.getEntityId().equals(journalId)
-                        && i.getProblemType() == ReconciliationProblemType.UNBALANCED_JOURNAL);
-
-        // No repair — corrupted value still in place
-        Long creditAfter = jdbc.queryForObject(
-                "SELECT amount_minor FROM journal_entries WHERE journal_transaction_id = ? AND direction = 'CREDIT'",
-                Long.class, journalId);
-        assertThat(creditAfter).isEqualTo(creditBefore + 99);
     }
 
     @Test
@@ -133,28 +152,45 @@ class JournalBalanceCheckerIntegrationTest extends AbstractIntegrationTest {
     void zeroEntryCorruptionDetectedNotRepaired() {
         UUID journalId = insertPostedJournal(5000L);
 
-        jdbc.execute("ALTER TABLE journal_entries DISABLE TRIGGER trg_journal_entries_immutability");
+        List<Map<String, Object>> originalEntries = jdbc.queryForList(
+                "SELECT id, ledger_account_id, direction, amount_minor FROM journal_entries WHERE journal_transaction_id = ?",
+                journalId);
+
         try {
-            jdbc.update("DELETE FROM journal_entries WHERE journal_transaction_id = ?", journalId);
+            jdbc.execute("ALTER TABLE journal_entries DISABLE TRIGGER trg_journal_entries_immutability");
+            try {
+                jdbc.update("DELETE FROM journal_entries WHERE journal_transaction_id = ?", journalId);
+            } finally {
+                jdbc.execute("ALTER TABLE journal_entries ENABLE TRIGGER trg_journal_entries_immutability");
+            }
+
+            // Prove trigger is ENABLED again using PostgreSQL catalog
+            String tgEnabled2 = jdbc.queryForObject(
+                    "SELECT tgenabled FROM pg_trigger WHERE tgname = 'trg_journal_entries_immutability'", String.class);
+            assertThat(tgEnabled2).isEqualTo("O");
+
+            journalBalanceChecker.check(runId);
+
+            assertThat(itemRepository.findAll())
+                    .anyMatch(i -> i.getEntityId().equals(journalId)
+                            && i.getProblemType() == ReconciliationProblemType.MALFORMED_JOURNAL);
+
+            // Journal transaction row still exists; only entries were deleted in test setup
+            String status = jdbc.queryForObject(
+                    "SELECT status FROM journal_transactions WHERE id = ?", String.class, journalId);
+            assertThat(status).isEqualTo("POSTED");
         } finally {
-            jdbc.execute("ALTER TABLE journal_entries ENABLE TRIGGER trg_journal_entries_immutability");
+            jdbc.execute("ALTER TABLE journal_entries DISABLE TRIGGER trg_journal_entries_immutability");
+            try {
+                for (Map<String, Object> entry : originalEntries) {
+                    jdbc.update(
+                            "INSERT INTO journal_entries (id, journal_transaction_id, ledger_account_id, direction, amount_minor) VALUES (?, ?, ?, ?, ?)",
+                            entry.get("id"), journalId, entry.get("ledger_account_id"), entry.get("direction"), entry.get("amount_minor"));
+                }
+            } finally {
+                jdbc.execute("ALTER TABLE journal_entries ENABLE TRIGGER trg_journal_entries_immutability");
+            }
         }
-
-        // Prove trigger is ENABLED again using PostgreSQL catalog
-        String tgEnabled2 = jdbc.queryForObject(
-                "SELECT tgenabled FROM pg_trigger WHERE tgname = 'trg_journal_entries_immutability'", String.class);
-        assertThat(tgEnabled2).isEqualTo("O");
-
-        journalBalanceChecker.check(runId);
-
-        assertThat(itemRepository.findAll())
-                .anyMatch(i -> i.getEntityId().equals(journalId)
-                        && i.getProblemType() == ReconciliationProblemType.MALFORMED_JOURNAL);
-
-        // Journal transaction row still exists; only entries were deleted in test setup
-        String status = jdbc.queryForObject(
-                "SELECT status FROM journal_transactions WHERE id = ?", String.class, journalId);
-        assertThat(status).isEqualTo("POSTED");
     }
 
     @Test
@@ -265,6 +301,9 @@ class JournalBalanceCheckerIntegrationTest extends AbstractIntegrationTest {
         } catch (Exception ignored) {}
         try {
             jdbc.execute("ALTER TABLE journal_transactions ENABLE TRIGGER trg_journal_transactions_balance_check");
+        } catch (Exception ignored) {}
+        try {
+            jdbc.execute("ALTER TABLE journal_transactions ENABLE TRIGGER trg_journal_transactions_immutability");
         } catch (Exception ignored) {}
     }
 }

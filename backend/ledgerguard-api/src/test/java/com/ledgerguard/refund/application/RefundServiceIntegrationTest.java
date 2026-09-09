@@ -27,7 +27,10 @@ import com.ledgerguard.payment.domain.PaymentDestinationNotFoundException;
 import com.ledgerguard.refund.domain.PaymentNotRefundableException;
 import com.ledgerguard.refund.domain.Refund;
 import com.ledgerguard.refund.domain.RefundLimitExceededException;
+import com.ledgerguard.fixture.PlatformFeeTestHelper;
 import com.ledgerguard.refund.infrastructure.RefundRepository;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -80,6 +83,16 @@ class RefundServiceIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @BeforeEach
+    void setUpFeeAccount() {
+        PlatformFeeTestHelper.ensureSingleActiveFeeAccount(ledgerAccountRepository);
+    }
+
+    @AfterEach
+    void cleanUpFeeAccounts() {
+        PlatformFeeTestHelper.ensureSingleActiveFeeAccount(ledgerAccountRepository);
+    }
 
     @Test
     @DisplayName("Executes full refund: exact reversal of customer gross, merchant net, and platform fee")
@@ -719,13 +732,7 @@ class RefundServiceIntegrationTest extends AbstractIntegrationTest {
     }
 
     private LedgerAccount getOrCreatePlatformFeeAccount() {
-        return ledgerAccountRepository.findAllByAccountType(AccountType.PLATFORM_FEES).stream()
-                .filter(a -> a.getStatus() == AccountStatus.ACTIVE && "INR".equals(a.getCurrency()) && a.getOwnerUserId() == null)
-                .findFirst()
-                .orElseGet(() -> {
-                    LedgerAccount feeAccount = LedgerAccount.createSystemAccount(AccountType.PLATFORM_FEES);
-                    return ledgerAccountRepository.saveAndFlush(feeAccount);
-                });
+        return PlatformFeeTestHelper.ensureSingleActiveFeeAccount(ledgerAccountRepository);
     }
 
     private void fundWallet(UUID walletAccountId, long amountMinor) {

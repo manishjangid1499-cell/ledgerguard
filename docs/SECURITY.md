@@ -283,3 +283,28 @@ All HTTP and HTTPS responses from the edge gateway emit defensive headers:
 - **Cookie Security**: Refresh tokens continue to use `ResponseCookie` with `secure: true`, `HttpOnly: true`, and `SameSite: Strict`. HTTPS (`https://localhost`) is the authoritative authenticated browser path.
 - **Actuator Blocking**: `/actuator/**` paths are blocked at the public edge with HTTP 404, preventing unauthorized inspection of health, metrics, or env endpoints from the internet. Internal Prometheus scraping continues unhindered via the Docker network.
 - **Port Minimization**: Host port publishing is removed from `ledgerguard-api` and `ledgerguard-web`, isolating backend containers from direct external socket binding.
+
+---
+
+## 14. Continuous Integration & Supply Chain Security (Phase 37)
+
+Phase 37 establishes a secure-by-default execution perimeter for continuous integration and automated dependency maintenance:
+
+### 1. Least-Privilege GitHub Token Permissions
+- **Default Read-Only**: The CI workflow (`.github/workflows/ci.yml`) explicitly enforces `permissions: contents: read` at the top level.
+- **Zero Elevated Permissions**: No job requests write access to repository contents, packages, issues, or pull requests.
+- **Zero Credential Persistence**: Every checkout action step explicitly configures `persist-credentials: false` to prevent post-execution access token reuse by untrusted build scripts.
+
+### 2. Fork PR Safety & Injection Defense
+- **Pull Request Triggering**: Workflows trigger via standard `pull_request` (and `push` on `main`).
+- **No `pull_request_target`**: The dangerous `pull_request_target` trigger is strictly avoided, preventing fork pull requests from gaining access to secrets or write tokens.
+- **Zero Repository Secrets in CI**: The CI pipeline requires no repository secrets, environment variables, or private registry credentials. Tests run against containerized or mocked local dependencies without network authentication.
+
+### 3. Build & Container Security Gates
+- **Frontend Code Quality Gate**: Frontend build executes the repository's existing ESLint suite during `npm run lint`, enforcing syntax and code standards prior to compilation. No new security plugins or static analysis scanners (e.g. CodeQL, Trivy, OWASP, Snyk) are added in Phase 37; dedicated security tooling remains strictly scheduled for Phase 42.
+- **Zero Container Image Publishing**: The `docker-images` job validates container assembly only. No image registries are logged into (`docker/login-action` absent) and no images are pushed (`docker push` absent).
+- **Fail-Closed Failure Model**: All CI jobs execute without `continue-on-error` or soft-fails. Any test failure, compilation error, or linter finding fails the entire pipeline.
+
+### 4. Supply Chain Maintenance via Dependabot
+- **Version-Update Pull Requests**: Automated weekly checks via `.github/dependabot.yml` without committing private registry secrets or access tokens. This manages routine version updates; GitHub Dependabot vulnerability alerts and automated security updates remain independent repository-level settings.
+- **Ecosystem Isolation**: Scans Maven explicitly across the root parent POM and all five module directories (`/`, `/backend/ledgerguard-api`, `/backend/psp-simulator`, `/backend/notification-worker`, `/backend/failure-lab`, `/backend/e2e-tests`), npm (`/frontend/ledgerguard-web`), GitHub Actions (`/`), and Docker base images across all four service directories independently with bounded PR limits (10 per ecosystem) to avoid denial of review.

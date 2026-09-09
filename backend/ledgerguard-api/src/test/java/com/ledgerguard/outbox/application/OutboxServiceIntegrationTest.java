@@ -29,6 +29,8 @@ import com.ledgerguard.transfer.application.CreateTransferCommand;
 import com.ledgerguard.transfer.application.TransferResult;
 import com.ledgerguard.transfer.application.TransferService;
 import com.ledgerguard.transfer.domain.InsufficientFundsException;
+import com.ledgerguard.fixture.PlatformFeeTestHelper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -82,16 +84,13 @@ class OutboxServiceIntegrationTest extends AbstractIntegrationTest {
     private ObjectMapper objectMapper;
 
     @BeforeEach
-    void ensureSingleActiveFeeAccount() {
-        List<LedgerAccount> feeAccounts = ledgerAccountRepository.findAllByAccountType(AccountType.PLATFORM_FEES);
-        for (LedgerAccount fa : feeAccounts) {
-            if (fa.getStatus() == AccountStatus.ACTIVE) {
-                fa.close(Instant.now());
-                ledgerAccountRepository.saveAndFlush(fa);
-            }
-        }
-        LedgerAccount canonicalFee = LedgerAccount.createSystemAccount(AccountType.PLATFORM_FEES);
-        ledgerAccountRepository.saveAndFlush(canonicalFee);
+    void setUpFeeAccount() {
+        PlatformFeeTestHelper.ensureSingleActiveFeeAccount(ledgerAccountRepository);
+    }
+
+    @AfterEach
+    void cleanUpFeeAccounts() {
+        PlatformFeeTestHelper.ensureSingleActiveFeeAccount(ledgerAccountRepository);
     }
 
     @Test

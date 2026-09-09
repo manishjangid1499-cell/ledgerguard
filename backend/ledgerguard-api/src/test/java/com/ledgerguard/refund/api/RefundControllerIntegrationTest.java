@@ -17,6 +17,8 @@ import com.ledgerguard.payment.application.CreatePaymentCommand;
 import com.ledgerguard.payment.application.PaymentResult;
 import com.ledgerguard.payment.application.PaymentService;
 import com.ledgerguard.shared.security.JwtTokenService;
+import com.ledgerguard.fixture.PlatformFeeTestHelper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -66,6 +68,13 @@ class RefundControllerIntegrationTest extends AbstractIntegrationTest {
                 .webAppContextSetup(context)
                 .apply(springSecurity())
                 .build();
+
+        PlatformFeeTestHelper.ensureSingleActiveFeeAccount(ledgerAccountRepository);
+    }
+
+    @AfterEach
+    void cleanUpFeeAccounts() {
+        PlatformFeeTestHelper.ensureSingleActiveFeeAccount(ledgerAccountRepository);
     }
 
     @Test
@@ -351,13 +360,7 @@ class RefundControllerIntegrationTest extends AbstractIntegrationTest {
     }
 
     private LedgerAccount getOrCreatePlatformFeeAccount() {
-        return ledgerAccountRepository.findAllByAccountType(AccountType.PLATFORM_FEES).stream()
-                .filter(a -> a.getStatus() == AccountStatus.ACTIVE && "INR".equals(a.getCurrency()) && a.getOwnerUserId() == null)
-                .findFirst()
-                .orElseGet(() -> {
-                    LedgerAccount feeAccount = LedgerAccount.createSystemAccount(AccountType.PLATFORM_FEES);
-                    return ledgerAccountRepository.saveAndFlush(feeAccount);
-                });
+        return PlatformFeeTestHelper.ensureSingleActiveFeeAccount(ledgerAccountRepository);
     }
 
     private void fundWallet(UUID walletAccountId, long amountMinor) {

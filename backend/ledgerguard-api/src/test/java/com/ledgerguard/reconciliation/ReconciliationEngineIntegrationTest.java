@@ -72,85 +72,110 @@ class ReconciliationEngineIntegrationTest extends AbstractIntegrationTest {
     @Test
     @DisplayName("Three-level integrated run: seeds 1 unbalanced journal, 1 corrupted snapshot, 1 provider mismatch -> detects all 3, no repair")
     void threeLevelIntegratedRunDetectsDiscrepanciesWithoutRepair() {
-        // 1. Seed Level 1 discrepancy (unbalanced journal via test-only trigger disable)
+        // Safe setup before try:
+        // Create balanced journal and capture original credit amount
         UUID journalId = postJournal(pspClearingAccountId, customerAccountId, 10000L);
-        jdbc.execute("ALTER TABLE journal_entries DISABLE TRIGGER trg_journal_entries_immutability");
-        try {
-            jdbc.update("UPDATE journal_entries SET amount_minor = amount_minor + 50 WHERE journal_transaction_id = ? AND direction = 'CREDIT'", journalId);
-        } finally {
-            jdbc.execute("ALTER TABLE journal_entries ENABLE TRIGGER trg_journal_entries_immutability");
-        }
+        Long creditBefore = jdbc.queryForObject(
+                "SELECT amount_minor FROM journal_entries WHERE journal_transaction_id = ? AND direction = 'CREDIT'",
+                Long.class, journalId);
 
-        // 2. Seed Level 2 discrepancy (corrupted snapshot for another account)
+        // Create customer2 and capture original snapshot balance
         UUID user2 = insertUser();
         UUID customer2 = insertAccount(user2, "CUSTOMER");
         postJournal(pspClearingAccountId, customer2, 4000L);
-        jdbc.update("UPDATE ledger_balance_snapshots SET balance_minor = balance_minor + 12345 WHERE ledger_account_id = ?", customer2);
+        Long snapshotBefore = jdbc.queryForObject(
+                "SELECT balance_minor FROM ledger_balance_snapshots WHERE ledger_account_id = ?",
+                Long.class, customer2);
 
-        // 3. Seed Level 3 discrepancy (SUCCEEDED funding but provider returns FAILED)
-        UUID fundingId = UUID.randomUUID();
-        UUID providerOpId = UUID.randomUUID();
-        insertFunding(fundingId, "SUCCEEDED", providerOpId, 7000L);
-        when(mockPspClient.getOperationByClientOperationId(fundingId)).thenReturn(
-                Optional.of(new PspOperationResponse(providerOpId, fundingId, "CREDIT", "7000", "INR", "FAILED", null, null, false))
-        );
+        try {
+            // 1. Seed Level 1 discrepancy (unbalanced journal via test-only trigger disable)
+            jdbc.execute("ALTER TABLE journal_entries DISABLE TRIGGER trg_journal_entries_immutability");
+            try {
+                jdbc.update("UPDATE journal_entries SET amount_minor = amount_minor + 50 WHERE journal_transaction_id = ? AND direction = 'CREDIT'", journalId);
+            } finally {
+                jdbc.execute("ALTER TABLE journal_entries ENABLE TRIGGER trg_journal_entries_immutability");
+            }
 
-        // Record financial table state before reconciliation run (row counts AND row-level data)
-        java.util.List<java.util.Map<String, Object>> jtBefore = jdbc.queryForList("SELECT * FROM journal_transactions ORDER BY id");
-        java.util.List<java.util.Map<String, Object>> jeBefore = jdbc.queryForList("SELECT * FROM journal_entries ORDER BY id");
-        java.util.List<java.util.Map<String, Object>> lbsBefore = jdbc.queryForList("SELECT * FROM ledger_balance_snapshots ORDER BY ledger_account_id");
-        java.util.List<java.util.Map<String, Object>> foBefore = jdbc.queryForList("SELECT * FROM funding_operations ORDER BY id");
-        java.util.List<java.util.Map<String, Object>> pBefore = jdbc.queryForList("SELECT * FROM payouts ORDER BY id");
-        java.util.List<java.util.Map<String, Object>> bhBefore = jdbc.queryForList("SELECT * FROM balance_holds ORDER BY id");
-        java.util.List<java.util.Map<String, Object>> peBefore = jdbc.queryForList("SELECT * FROM provider_events ORDER BY event_id");
-        java.util.List<java.util.Map<String, Object>> oeBefore = jdbc.queryForList("SELECT * FROM outbox_events ORDER BY id");
-        java.util.List<java.util.Map<String, Object>> irBefore = jdbc.queryForList("SELECT * FROM idempotency_records ORDER BY id");
+            // 2. Seed Level 2 discrepancy (corrupted snapshot for another account)
+            jdbc.update("UPDATE ledger_balance_snapshots SET balance_minor = balance_minor + 12345 WHERE ledger_account_id = ?", customer2);
 
-        // Execute reconciliation engine
-        UUID runId = reconciliationEngine.run(ReconciliationTrigger.ON_DEMAND);
+            // 3. Seed Level 3 discrepancy (SUCCEEDED funding but provider returns FAILED)
+            UUID fundingId = UUID.randomUUID();
+            UUID providerOpId = UUID.randomUUID();
+            insertFunding(fundingId, "SUCCEEDED", providerOpId, 7000L);
+            when(mockPspClient.getOperationByClientOperationId(fundingId)).thenReturn(
+                    Optional.of(new PspOperationResponse(providerOpId, fundingId, "CREDIT", "7000", "INR", "FAILED", null, null, false))
+            );
 
-        // Verify Run Status & Counters
-        ReconciliationRun run = runRepository.findById(runId).orElseThrow();
-        assertThat(run.getStatus()).isEqualTo(ReconciliationRunStatus.COMPLETED);
-        assertThat(run.getDiscrepancyCount()).isGreaterThanOrEqualTo(3);
+            // Record financial table state before reconciliation run (row counts AND row-level data)
+            java.util.List<java.util.Map<String, Object>> jtBefore = jdbc.queryForList("SELECT * FROM journal_transactions ORDER BY id");
+            java.util.List<java.util.Map<String, Object>> jeBefore = jdbc.queryForList("SELECT * FROM journal_entries ORDER BY id");
+            java.util.List<java.util.Map<String, Object>> lbsBefore = jdbc.queryForList("SELECT * FROM ledger_balance_snapshots ORDER BY ledger_account_id");
+            java.util.List<java.util.Map<String, Object>> foBefore = jdbc.queryForList("SELECT * FROM funding_operations ORDER BY id");
+            java.util.List<java.util.Map<String, Object>> pBefore = jdbc.queryForList("SELECT * FROM payouts ORDER BY id");
+            java.util.List<java.util.Map<String, Object>> bhBefore = jdbc.queryForList("SELECT * FROM balance_holds ORDER BY id");
+            java.util.List<java.util.Map<String, Object>> peBefore = jdbc.queryForList("SELECT * FROM provider_events ORDER BY event_id");
+            java.util.List<java.util.Map<String, Object>> oeBefore = jdbc.queryForList("SELECT * FROM outbox_events ORDER BY id");
+            java.util.List<java.util.Map<String, Object>> irBefore = jdbc.queryForList("SELECT * FROM idempotency_records ORDER BY id");
 
-        // Verify items created across all 3 levels
-        assertThat(itemRepository.findAll()).anyMatch(i ->
-                i.getReconciliationRunId().equals(runId)
-                        && i.getLevel() == ReconciliationLevel.JOURNAL_BALANCE
-                        && i.getProblemType() == ReconciliationProblemType.UNBALANCED_JOURNAL
-                        && i.getEntityId().equals(journalId));
+            // Execute reconciliation engine
+            UUID runId = reconciliationEngine.run(ReconciliationTrigger.ON_DEMAND);
 
-        assertThat(itemRepository.findAll()).anyMatch(i ->
-                i.getReconciliationRunId().equals(runId)
-                        && i.getLevel() == ReconciliationLevel.SNAPSHOT_CONSISTENCY
-                        && i.getProblemType() == ReconciliationProblemType.SNAPSHOT_MISMATCH
-                        && i.getEntityId().equals(customer2));
+            // Verify Run Status & Counters
+            ReconciliationRun run = runRepository.findById(runId).orElseThrow();
+            assertThat(run.getStatus()).isEqualTo(ReconciliationRunStatus.COMPLETED);
+            assertThat(run.getDiscrepancyCount()).isGreaterThanOrEqualTo(3);
 
-        assertThat(itemRepository.findAll()).anyMatch(i ->
-                i.getReconciliationRunId().equals(runId)
-                        && i.getLevel() == ReconciliationLevel.PROVIDER_SETTLEMENT
-                        && i.getProblemType() == ReconciliationProblemType.PROVIDER_STATUS_MISMATCH
-                        && i.getEntityId().equals(fundingId));
+            // Verify items created across all 3 levels
+            assertThat(itemRepository.findAll()).anyMatch(i ->
+                    i.getReconciliationRunId().equals(runId)
+                            && i.getLevel() == ReconciliationLevel.JOURNAL_BALANCE
+                            && i.getProblemType() == ReconciliationProblemType.UNBALANCED_JOURNAL
+                            && i.getEntityId().equals(journalId));
 
-        // Assert NO REPAIR — all 9 business/operational tables strictly unchanged in count and content
-        assertThat(jdbc.queryForList("SELECT * FROM journal_transactions ORDER BY id")).isEqualTo(jtBefore);
-        assertThat(jdbc.queryForList("SELECT * FROM journal_entries ORDER BY id")).isEqualTo(jeBefore);
-        assertThat(jdbc.queryForList("SELECT * FROM ledger_balance_snapshots ORDER BY ledger_account_id")).isEqualTo(lbsBefore);
-        assertThat(jdbc.queryForList("SELECT * FROM funding_operations ORDER BY id")).isEqualTo(foBefore);
-        assertThat(jdbc.queryForList("SELECT * FROM payouts ORDER BY id")).isEqualTo(pBefore);
-        assertThat(jdbc.queryForList("SELECT * FROM balance_holds ORDER BY id")).isEqualTo(bhBefore);
-        assertThat(jdbc.queryForList("SELECT * FROM provider_events ORDER BY event_id")).isEqualTo(peBefore);
-        assertThat(jdbc.queryForList("SELECT * FROM outbox_events ORDER BY id")).isEqualTo(oeBefore);
-        assertThat(jdbc.queryForList("SELECT * FROM idempotency_records ORDER BY id")).isEqualTo(irBefore);
+            assertThat(itemRepository.findAll()).anyMatch(i ->
+                    i.getReconciliationRunId().equals(runId)
+                            && i.getLevel() == ReconciliationLevel.SNAPSHOT_CONSISTENCY
+                            && i.getProblemType() == ReconciliationProblemType.SNAPSHOT_MISMATCH
+                            && i.getEntityId().equals(customer2));
 
-        // Snapshot is still corrupted (unrepaired)
-        Long snapshotVal = jdbc.queryForObject("SELECT balance_minor FROM ledger_balance_snapshots WHERE ledger_account_id = ?", Long.class, customer2);
-        assertThat(snapshotVal).isEqualTo(4000L + 12345L);
+            assertThat(itemRepository.findAll()).anyMatch(i ->
+                    i.getReconciliationRunId().equals(runId)
+                            && i.getLevel() == ReconciliationLevel.PROVIDER_SETTLEMENT
+                            && i.getProblemType() == ReconciliationProblemType.PROVIDER_STATUS_MISMATCH
+                            && i.getEntityId().equals(fundingId));
 
-        // Funding operation is still SUCCEEDED (no status downgrade)
-        String fundingStatus = jdbc.queryForObject("SELECT status FROM funding_operations WHERE id = ?", String.class, fundingId);
-        assertThat(fundingStatus).isEqualTo("SUCCEEDED");
+            // Assert NO REPAIR — all 9 business/operational tables strictly unchanged in count and content
+            assertThat(jdbc.queryForList("SELECT * FROM journal_transactions ORDER BY id")).isEqualTo(jtBefore);
+            assertThat(jdbc.queryForList("SELECT * FROM journal_entries ORDER BY id")).isEqualTo(jeBefore);
+            assertThat(jdbc.queryForList("SELECT * FROM ledger_balance_snapshots ORDER BY ledger_account_id")).isEqualTo(lbsBefore);
+            assertThat(jdbc.queryForList("SELECT * FROM funding_operations ORDER BY id")).isEqualTo(foBefore);
+            assertThat(jdbc.queryForList("SELECT * FROM payouts ORDER BY id")).isEqualTo(pBefore);
+            assertThat(jdbc.queryForList("SELECT * FROM balance_holds ORDER BY id")).isEqualTo(bhBefore);
+            assertThat(jdbc.queryForList("SELECT * FROM provider_events ORDER BY event_id")).isEqualTo(peBefore);
+            assertThat(jdbc.queryForList("SELECT * FROM outbox_events ORDER BY id")).isEqualTo(oeBefore);
+            assertThat(jdbc.queryForList("SELECT * FROM idempotency_records ORDER BY id")).isEqualTo(irBefore);
+
+            // Snapshot is still corrupted (unrepaired)
+            Long snapshotVal = jdbc.queryForObject("SELECT balance_minor FROM ledger_balance_snapshots WHERE ledger_account_id = ?", Long.class, customer2);
+            assertThat(snapshotVal).isEqualTo(4000L + 12345L);
+
+            // Funding operation is still SUCCEEDED (no status downgrade)
+            String fundingStatus = jdbc.queryForObject("SELECT status FROM funding_operations WHERE id = ?", String.class, fundingId);
+            assertThat(fundingStatus).isEqualTo("SUCCEEDED");
+        } finally {
+            // Restore mutated journal entry so subsequent tests don't see an unbalanced journal
+            jdbc.execute("ALTER TABLE journal_entries DISABLE TRIGGER trg_journal_entries_immutability");
+            try {
+                jdbc.update("UPDATE journal_entries SET amount_minor = ? WHERE journal_transaction_id = ? AND direction = 'CREDIT'",
+                        creditBefore, journalId);
+            } finally {
+                jdbc.execute("ALTER TABLE journal_entries ENABLE TRIGGER trg_journal_entries_immutability");
+            }
+            // Restore snapshot balance to exact original value
+            jdbc.update("UPDATE ledger_balance_snapshots SET balance_minor = ? WHERE ledger_account_id = ?", snapshotBefore, customer2);
+            safeEnableTrigger();
+        }
     }
 
     @Test
@@ -258,6 +283,9 @@ class ReconciliationEngineIntegrationTest extends AbstractIntegrationTest {
         } catch (Exception ignored) {}
         try {
             jdbc.execute("ALTER TABLE journal_transactions ENABLE TRIGGER trg_journal_transactions_balance_check");
+        } catch (Exception ignored) {}
+        try {
+            jdbc.execute("ALTER TABLE journal_transactions ENABLE TRIGGER trg_journal_transactions_immutability");
         } catch (Exception ignored) {}
     }
 }
