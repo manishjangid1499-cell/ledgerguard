@@ -95,4 +95,30 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>financial-failure-ci</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <includes>
+                                <include>**/FailureLabSuiteRunnerTest.java</include>
+                                <include>**/OpposingTransfersScenarioTest.java</include>
+                                <include>**/TimeoutAfterCommitScenarioTest.java</include>
+                                <include>**/CorruptedSnapshotScenarioTest.java</include>
+                                <include>**/WebhookRaceScenarioTest.java</include>
+                            </includes>
+                            <systemPropertyVariables>
+                                <financial.failure.ci>true</financial.failure.ci>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

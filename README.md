@@ -249,7 +249,8 @@ npm run build
 The repository includes an automated GitHub Actions pipeline (`.github/workflows/ci.yml`) triggering on pushes to `main`, pull requests to `main`, and manual dispatch:
 - **Backend Job**: `./mvnw -B -ntp clean verify` with OpenJDK 21 Temurin and Maven dependency caching (runs full reactor with Testcontainers).
 - **Frontend Job**: `npm ci`, `npm run lint`, `npm run build` with Node.js 24 and npm dependency caching.
-- **Docker Validation**: Multi-stage image build validation for all 4 application images (`ledgerguard-api`, `psp-simulator`, `notification-worker`, `ledgerguard-web`).
+- **Financial Integrity Job**: `./mvnw -B -ntp -f backend/failure-lab/pom.xml clean test -Pfinancial-failure-ci` executing core Failure Lab chaos scenarios, asserting that money is never created, destroyed, duplicated, or lost, publishing a step summary and archiving versioned JSON/Markdown invariant reports.
+- **Docker Validation**: Multi-stage image build validation for all 4 application images (`ledgerguard-api`, `psp-simulator`, `notification-worker`, `ledgerguard-web`) gated on backend, frontend, and financial-integrity jobs.
 - **Dependabot**: Automated weekly dependency version updates across Maven, npm, GitHub Actions, and Docker base images via `.github/dependabot.yml`.
 
 ---
