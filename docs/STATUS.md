@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Phase 38 Complete (Local Verified)
-- **Status:** Phase 38 Complete (Local Verified)
+- **Current Phase:** Phase 39 Complete (Local Verified)
+- **Status:** Phase 39 Complete (Local Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -44,19 +44,21 @@
   - **Phase 36 — Nginx Production Reverse Proxy & SSL Configuration** (Completed: 2026-09-08)
   - **Phase 37 — GitHub Actions CI Pipeline** (Completed: 2026-09-08)
   - **Phase 38 — Financial Failure Scenarios in CI** (Completed: 2026-09-09)
-- **Current Work:** Phase 38 implemented and locally verified. Integrated Money Integrity Failure Lab into Continuous Integration:
-  - Configured dedicated Maven profile `financial-failure-ci` in `backend/failure-lab/pom.xml` executing the 5 high-value existing tests (`FailureLabSuiteRunnerTest`, `OpposingTransfersScenarioTest`, `TimeoutAfterCommitScenarioTest`, `CorruptedSnapshotScenarioTest`, `WebhookRaceScenarioTest`) with `financial.failure.ci=true` system property without altering root POM or normal baseline.
-  - Implemented test-only `FinancialInvariantReportGenerator` in `com.ledgerguard.lab.engine` serializing authoritative `ScenarioRunResult` instances into versioned `target/financial-integrity-report.json` and human-readable `target/financial-integrity-summary.md` with explicit `SCENARIO_RUNNER_INVARIANTS` verdict scope and exact 4-scenario validation, distinguishing scenario runner invariant evidence from the authoritative complete Maven job gate (which additionally executes the four dedicated scenario JUnit tests).
-  - Updated `FailureLabSuiteRunnerTest` to collect scenario execution results and invoke report generation prior to final assertion evaluation when `financial.failure.ci` is enabled.
-  - Added dedicated concurrent `financial-integrity` CI job in `.github/workflows/ci.yml` (Java 21 Temurin, Maven cache, API dependency preparation via `./mvnw -B -ntp -pl backend/ledgerguard-api -am install -DskipTests`, Failure Lab execution via `./mvnw -B -ntp -f backend/failure-lab/pom.xml clean test -Pfinancial-failure-ci`, GitHub Step Summary publication, and artifact upload via `actions/upload-artifact@v7` with `if-no-files-found: error`).
-  - Updated `docker-images` job to require `needs: [backend, frontend, financial-integrity]`.
-  - Normal full workspace regression preserved: 760 tests (675 API, 18 PSP, 22 Notification Worker, 34 Failure Lab, 11 E2E; 0 failures, 0 errors, 0 skipped).
-  - Frontend regression verified: `npm ci`, `npm run lint`, `npm run build` passing cleanly.
-  - Zero modifications to production Java source, frontend source, root POM, Dockerfiles, Compose files, Nginx configuration, or database migrations (V1–V17 frozen, V18 absent).
-  - Locally verified; GitHub Actions PR run is the authoritative runtime gate before merge.
-- **Next Phase:** Phase 39 — Concurrency Contention & Performance Analysis
-- **Last Verified:** 2026-09-09
-- **Git Branch:** ci/phase-38-financial-failure-scenarios
+  - **Phase 39 — Concurrency Contention & Performance Analysis** (Completed: 2026-09-10)
+- **Current Work:** Phase 39 implemented and locally verified. Concurrency contention, lock pressure, and connection pool behavior evaluated:
+  - Added dedicated `performance-benchmark` Maven profile in `backend/failure-lab/pom.xml` executing `ConcurrencyBenchmark` with real PostgreSQL 17 Testcontainer (`postgres:17.11-alpine`) and non-invasive JDBC observer polling `pg_stat_activity` and `pg_stat_database`.
+  - Implemented three canonical workloads: `LOW_CONTENTION` (disjoint account pairs), `HOT_ACCOUNT` (single shared destination account), and `OPPOSING_TRANSFERS` (symmetrical bidirectional transfers $A \rightarrow B$ and $B \rightarrow A$).
+  - Evaluated candidate HikariCP maximum pool sizes: 5, 10, 15, and 20.
+  - Executed controlled apples-to-apples `pool-comparison` benchmark across all 4 pool configurations under identical pre-measurement warmup and workload histories.
+  - Completed 8,100 successful measured transfer operations across the official suite (3,300 measured operations in the Pool-10 baseline scaling experiment and 4,800 measured operations in the controlled Hikari pool-comparison experiment), excluding unmeasured warmups.
+  - Automated post-execution validation with `FinancialInvariantOracle` directly verifying double-entry zero-sum balance, snapshot integrity, and money conservation (100% passed across all 8,100 measured operations).
+  - 0 deadlocks observed in the tested benchmark matrix (validating deterministic account ordering under tested conditions).
+  - Final Hikari decision: Retain production `maximum-pool-size: 10` based on the 4,800 measured operations in the controlled pool-comparison experiment. Production `application.yml` remains unchanged.
+  - Documented benchmark methodology, environment, empirical scaling baseline, fair comparison matrix, and pool sizing rationale in `docs/BENCHMARKS.md`.
+  - Normal regression suite remains 760 tests (675 API, 18 PSP, 22 Notification Worker, 34 Failure Lab, 11 E2E; 0 failures, 0 errors, 0 skipped).
+- **Next Phase:** Phase 40 — Backup, Restore & Operational Runbooks
+- **Last Verified:** 2026-09-10
+- **Git Branch:** perf/phase-39-concurrency-contention-performance
 
 ---
 
@@ -135,7 +137,7 @@
 | **Phase 36** | Nginx Reverse Proxy & Edge Routing | **Completed** | 2026-09-08 |
 | **Phase 37** | GitHub Actions CI Pipeline | **Completed** | 2026-09-08 |
 | **Phase 38** | Financial Failure Scenarios in CI | **Completed** | 2026-09-09 |
-| **Phase 39** | Concurrency Contention & Performance | Planned | — |
+| **Phase 39** | Concurrency Contention & Performance | **Completed (Local Verified)** | 2026-09-10 |
 | **Phase 40** | Backup, Restore & Operational Runbooks | Planned | — |
 | **Phase 41** | Final Portfolio Documentation & API Docs | Planned | — |
 | **Phase 42** | Dead-Code & Security Cleanup | Planned | — |
