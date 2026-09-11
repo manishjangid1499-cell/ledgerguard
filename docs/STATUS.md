@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Phase 39 Complete (Local Verified)
-- **Status:** Phase 39 Complete (Local Verified)
+- **Current Phase:** Phase 40 Complete (Local Verified)
+- **Status:** Phase 40 Complete (Local Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -45,20 +45,18 @@
   - **Phase 37 — GitHub Actions CI Pipeline** (Completed: 2026-09-08)
   - **Phase 38 — Financial Failure Scenarios in CI** (Completed: 2026-09-09)
   - **Phase 39 — Concurrency Contention & Performance Analysis** (Completed: 2026-09-10)
-- **Current Work:** Phase 39 implemented and locally verified. Concurrency contention, lock pressure, and connection pool behavior evaluated:
-  - Added dedicated `performance-benchmark` Maven profile in `backend/failure-lab/pom.xml` executing `ConcurrencyBenchmark` with real PostgreSQL 17 Testcontainer (`postgres:17.11-alpine`) and non-invasive JDBC observer polling `pg_stat_activity` and `pg_stat_database`.
-  - Implemented three canonical workloads: `LOW_CONTENTION` (disjoint account pairs), `HOT_ACCOUNT` (single shared destination account), and `OPPOSING_TRANSFERS` (symmetrical bidirectional transfers $A \rightarrow B$ and $B \rightarrow A$).
-  - Evaluated candidate HikariCP maximum pool sizes: 5, 10, 15, and 20.
-  - Executed controlled apples-to-apples `pool-comparison` benchmark across all 4 pool configurations under identical pre-measurement warmup and workload histories.
-  - Completed 8,100 successful measured transfer operations across the official suite (3,300 measured operations in the Pool-10 baseline scaling experiment and 4,800 measured operations in the controlled Hikari pool-comparison experiment), excluding unmeasured warmups.
-  - Automated post-execution validation with `FinancialInvariantOracle` directly verifying double-entry zero-sum balance, snapshot integrity, and money conservation (100% passed across all 8,100 measured operations).
-  - 0 deadlocks observed in the tested benchmark matrix (validating deterministic account ordering under tested conditions).
-  - Final Hikari decision: Retain production `maximum-pool-size: 10` based on the 4,800 measured operations in the controlled pool-comparison experiment. Production `application.yml` remains unchanged.
-  - Documented benchmark methodology, environment, empirical scaling baseline, fair comparison matrix, and pool sizing rationale in `docs/BENCHMARKS.md`.
-  - Normal regression suite remains 760 tests (675 API, 18 PSP, 22 Notification Worker, 34 Failure Lab, 11 E2E; 0 failures, 0 errors, 0 skipped).
-- **Next Phase:** Phase 40 — Backup, Restore & Operational Runbooks
-- **Last Verified:** 2026-09-10
-- **Git Branch:** perf/phase-39-concurrency-contention-performance
+  - **Phase 40 — Backup, Restore & Operational Runbooks** (Completed: 2026-09-11)
+- **Current Work:** Phase 40 implemented and locally verified. Operational runbooks, logical backup/restore automation, and financial invariant validation established:
+  - Authored `docs/RUNBOOKS.md` documenting end-to-end disaster recovery procedures, logical backup workflows, cluster globals extraction and security, point-in-time recovery boundaries, Kafka lag remediation and consumer scaling rules, outbox 17-step recovery pipeline with database cutover, PSP health verification, and incident response checklists.
+  - Implemented `scripts/backup-db.sh` using containerized `pg_dump -Fc --no-owner --no-privileges`, automated SHA-256 sidecar checksum generation, and pre-success table-of-contents validation (`pg_restore --list`).
+  - Implemented `scripts/restore-db.sh` with safe non-destructive defaults, injection-safe target database creation owned by `ledgerguard_app`, direct application-role restore, and post-restore ownership verification.
+  - Built integrated Mode A financial invariant verification suite inside `restore-db.sh` verifying all 20 schema tables, Flyway history (V1..V17 success, max 17, no V18), POSTED journal structure, global zero-sum balance, balance snapshot parity with account-type normal balances (CUSTOMER, MERCHANT, PLATFORM_FEES credit-normal; PSP_CLEARING, PLATFORM_RESERVE debit-normal), 21 authoritative triggers enabled, and outbox status/trace integrity.
+  - Executed simulated disaster recovery drill: validated fresh target restoration (`ledgerguard_phase40_restore_sim`), verified native object ownership (`ledgerguard_app`), and achieved 100% pass across all Mode A invariant checks.
+  - Verified validator failure sensitivity: injected snapshot corruption in isolated target database and verified `--validate-only` fails immediately with non-zero exit code.
+  - Authoritative regression baseline maintained: 760 Maven tests across 5 modules (675 API, 18 PSP, 22 Notification Worker, 34 Failure Lab, 11 E2E; 0 failures, 0 errors, 0 skipped), frontend lint and build passing cleanly, Docker Compose configs verified.
+- **Next Phase:** Phase 41 — Final Portfolio Documentation & API Docs
+- **Last Verified:** 2026-09-11
+- **Git Branch:** ops/phase-40-backup-restore-runbooks
 
 ---
 
@@ -138,7 +136,7 @@
 | **Phase 37** | GitHub Actions CI Pipeline | **Completed** | 2026-09-08 |
 | **Phase 38** | Financial Failure Scenarios in CI | **Completed** | 2026-09-09 |
 | **Phase 39** | Concurrency Contention & Performance | **Completed (Local Verified)** | 2026-09-10 |
-| **Phase 40** | Backup, Restore & Operational Runbooks | Planned | — |
+| **Phase 40** | Backup, Restore & Operational Runbooks | **Completed (Local Verified)** | 2026-09-11 |
 | **Phase 41** | Final Portfolio Documentation & API Docs | Planned | — |
 | **Phase 42** | Dead-Code & Security Cleanup | Planned | — |
 | **Phase 43** | Release Verification | Planned | — |
