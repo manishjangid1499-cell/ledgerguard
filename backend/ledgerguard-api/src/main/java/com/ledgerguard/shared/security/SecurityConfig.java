@@ -181,6 +181,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/provider/webhooks").permitAll()
                         // Public actuator health/info/prometheus endpoints
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info", "/actuator/prometheus").permitAll()
+                        // Public OpenAPI and Swagger UI documentation endpoints (Phase 41)
+                        .requestMatchers("/v3/api-docs", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+
                         // Transfers endpoints
                         .requestMatchers(HttpMethod.POST, "/api/transfers").hasAnyRole("CUSTOMER", "MERCHANT")
                         .requestMatchers(HttpMethod.GET, "/api/transfers").hasAnyRole("CUSTOMER", "MERCHANT")

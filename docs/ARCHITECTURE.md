@@ -20,101 +20,193 @@
 
 ---
 
-## 2. System Architecture Diagram
+## 2. Core Architectural Diagrams
+
+### 2.1 End-to-End System Topology
 
 ```mermaid
 flowchart TD
-    subgraph Client_Layer["Client & Ingress Layer"]
-        Browser["React Web Frontend\n(TypeScript / Vite / Material UI)"]
-        Nginx["Nginx Reverse Proxy\n(HTTPS, Routing, Static Assets)"]
-    end
+    subgraph Production_Runtime["Production / Deployable Runtime Topology"]
+        subgraph Client_Ingress["Client & Ingress Boundary"]
+            Browser["React SPA (ledgerguard-web)\n(TypeScript / Vite / Material UI)"]
+            Nginx["Nginx Reverse Proxy & Gateway (nginx-edge)\n(TLSv1.2/1.3, Rate Limiting, Static Cache)"]
+        end
 
-    subgraph Application_Core["LedgerGuard Modular Monolith (ledgerguard-api)"]
-        API_GW["REST API Controllers\n(Spring MVC / Validation / Security)"]
+        subgraph Core_Monolith["Core Modular Monolith (ledgerguard-api:8080)"]
+            API_GW["REST Controllers & Security\n(Spring MVC / JWT / RBAC / RateLimitFilter)"]
+            Modules["Core Modules\nIdentity | Wallets & Holds | Transfers\nPayments & Refunds | Funding & Payouts\nTransactional Outbox | Reconciliation"]
+        end
 
-        subgraph Financial_Modules["Domain Modules"]
-            IdentityMod["Identity & Access\n(JWT / RBAC)"]
-            IdempotencyMod["Idempotency Engine\n(Request Fingerprints)"]
-            AccountMod["Account & Balance Management\n(Snapshots & Holds)"]
-            LedgerMod["Double-Entry Ledger Engine\n(Balanced Journal Posting)"]
-            TransferMod["Transfer & Payment Service\n(Deterministic Locking)"]
-            OutboxMod["Transactional Outbox\n(Skip Locked Poller)"]
-            ReconMod["Reconciliation Engine\n(Internal & External)"]
+        subgraph Datastore_Spine["Persistence & Asynchronous Spine"]
+            Postgres[("Authoritative PostgreSQL 17\n- ledgerguard (Owner: ledgerguard_app)\n- psp_simulator (Owner: psp_simulator_app)\n- notification_worker (Owner: notification_worker_app)")]
+            Kafka{{"Apache Kafka 4.3.1 (KRaft)\n(Topic: ledgerguard.domain-events.v1)"}}
+        end
+
+        subgraph Async_Workers["Dedicated Background Services"]
+            NotifWorker["Notification Worker (notification-worker)\n(Idempotent Consumer Inbox)"]
+            PspSim["PSP Simulator (psp-simulator:8081)\n(External Banking Simulator / HMAC Webhooks)"]
+        end
+
+        subgraph Observability_Stack["Telemetry & Observability"]
+            Prometheus["Prometheus 3.2.1\n(Scrapes /actuator/prometheus @ 15s)"]
+            Grafana["Grafana 11.5.2\n(Dashboards: Financial Integrity & API Ops)"]
         end
     end
 
-    subgraph Persistence_Layer["Authoritative Storage"]
-        PG_DB[("PostgreSQL\n(Financial Ledger, Snapshots,\nIdempotency, Outbox)")]
+    subgraph Testing_Harness["Testing & Verification Harness (Non-Production)"]
+        FailureLab["Money Integrity Failure Lab (failure-lab:8083)\n(Chaos Scenarios & Financial Invariant Oracle)\n[Ephemeral Testcontainers PostgreSQL]"]
     end
 
-    subgraph Messaging_Layer["Asynchronous Event Spine"]
-        KafkaBrokers["Apache Kafka\n(Domain Topics:\nTransfers, Payments, Refunds)"]
+    Browser -->|HTTPS :443| Nginx
+    Nginx -->|HTTP Reverse Proxy /api/*| API_GW
+    Nginx -->|Static Assets /| Browser
+    API_GW --> Modules
+    Modules -->|ACID DB Transactions| Postgres
+    Modules -->|Skip Locked Outbox Publisher| Kafka
+    Modules -->|Outbound REST (Resilience4j)| PspSim
+    PspSim -->|HMAC-SHA256 Webhook /api/provider/webhooks| API_GW
+    Kafka -->|Async Events| NotifWorker
+    NotifWorker -->|Inbox Deduplication| Postgres
+    Prometheus -->|Scrape| API_GW
+    Grafana -->|Query Datasource| Prometheus
+    FailureLab -.->|Independent Adversarial Verification| Postgres
+```
+
+### 2.2 Financial Atomic Posting Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as Client (Customer / Merchant)
+    participant API as Financial Service (Transfer / Payment)
+    participant Idemp as Idempotency Table
+    participant Lock as Account Row Locks
+    participant Ledger as Journal & Entries Table
+    participant TrgBal as Trigger: trg_fn_enforce_journal_transaction_balance
+    participant TrgSnap as Trigger: trg_fn_update_balance_snapshots_on_posting
+    participant Outbox as Outbox Events Table
+    participant DB as PostgreSQL Transaction Boundary
+    participant Kafka as Apache Kafka
+    participant Worker as Notification Worker
+
+    Client->>API: Financial Request (Payload + Idempotency-Key)
+    activate API
+    API->>Idemp: Check fingerprint / acquire atomic lock
+    alt Idempotency conflict / in-progress
+        API-->>Client: 409 Conflict / cached idempotent replay
     end
 
-    subgraph Worker_Layer["Async Consumers & External World"]
-        NotifWorker["Notification Worker\n(Inbox Deduplication / DLT)"]
-        PSP_Sim["PSP Simulator\n(External Provider & Separate DB)"]
+    rect rgb(240, 245, 255)
+        note over Lock,DB: Single ACID Database Transaction Boundary (@Transactional)
+        API->>Lock: Deterministic Row Locks (SELECT ... FOR UPDATE ORDER BY ledger_account_id ASC)
+        note over Lock: Serializes concurrent access to affected rows;<br/>prevents lost updates and concurrent overspending;<br/>deterministic lock ordering reduces deadlock risk.
+        API->>Ledger: INSERT journal_transactions (status: DRAFT)
+        API->>Ledger: INSERT journal_entries (DEBITS and CREDITS)
+        note over Ledger: Immutable journal is authoritative source of truth.<br/>Enforces sum(DEBITS) == sum(CREDITS).
+        API->>Ledger: UPDATE journal_transactions SET status = 'POSTED'
+        activate TrgBal
+        TrgBal-->>Ledger: Enforce >=2 legs, 1 debit, 1 credit, zero-sum balance
+        deactivate TrgBal
+        activate TrgSnap
+        TrgSnap-->>Ledger: Synchronously update derived balance snapshot table under normal-balance rules
+        deactivate TrgSnap
+        API->>Outbox: INSERT outbox_events (status: PENDING, with W3C traceparent)
+        API->>DB: COMMIT TRANSACTION
     end
 
-    subgraph Observability_Layer["Observability & Reliability"]
-        Prometheus["Prometheus / Micrometer"]
-        Grafana["Grafana Dashboards"]
-        OTel["OpenTelemetry Tracing / Jaeger"]
+    API-->>Client: HTTP success / idempotent replay response after commit
+    deactivate API
+
+    rect rgb(255, 250, 240)
+        note over Outbox,Worker: Asynchronous Event Dispatch (Post-Commit Background Poller)
+        Outbox->>Kafka: Poller scans outbox (FOR UPDATE SKIP LOCKED) & publishes to Kafka topic
+        Kafka->>Worker: Consume domain event with idempotent inbox deduplication
     end
+```
 
-    Browser -->|HTTPS / REST| Nginx
-    Nginx -->|Proxy Pass| API_GW
+### 2.3 External PSP State Machine & Ambiguous Outcome Recovery (`UNKNOWN != FAILED`)
 
-    API_GW --> IdentityMod
-    API_GW --> IdempotencyMod
-    IdempotencyMod --> TransferMod
-    TransferMod --> AccountMod
-    TransferMod --> LedgerMod
-    TransferMod --> OutboxMod
+```mermaid
+stateDiagram-v2
+    [*] --> CREATED: Initialize Operation Record
 
-    IdentityMod --- PG_DB
-    IdempotencyMod --- PG_DB
-    AccountMod --- PG_DB
-    LedgerMod --- PG_DB
-    OutboxMod --- PG_DB
+    state Operation_Semantics {
+        [*] --> Note_Semantics
+        note right of Note_Semantics
+            Payout: Pre-reserves balance hold (ACTIVE) from available balance.
+            Funding: Inbound top-up; no wallet reservation; credited only upon SUCCEEDED.
+        end note
+    }
 
-    OutboxMod -->|Publish Committed Events| KafkaBrokers
-    KafkaBrokers -->|Consume with Inbox| NotifWorker
+    CREATED --> PROCESSING: Atomic Submission Claim (Pessimistic Lock)
+    CREATED --> FAILED: Pre-submission Local Validation Rejection (Payout Hold Released)
 
-    TransferMod -->|External Deposit / Payout| PSP_Sim
-    PSP_Sim -->|Webhooks / Callbacks| API_GW
+    state PROCESSING {
+        [*] --> Dispatched
+        Dispatched --> Definite_Success: Provider HTTP 200 (SUCCESS)
+        Dispatched --> Definite_Failure: Provider HTTP 4xx / Terminal Rejection
+        Dispatched --> Ambiguous_Outcome: Network Timeout / 5xx / Connection Drop
+    }
 
-    API_GW -.-> OTel
-    PG_DB -.-> Prometheus
-    API_GW -.-> Prometheus
-    KafkaBrokers -.-> Prometheus
-    Prometheus --> Grafana
+    Definite_Success --> SUCCEEDED: Authoritative Settlement (Payout: Hold Consumed; Funding: Wallet Credited)
+    Definite_Failure --> FAILED: Authoritative Failure (Payout: Hold Released; Funding: No Credit)
+
+    Ambiguous_Outcome --> UNKNOWN: Ambiguity Dominance Rule
+    note right of UNKNOWN
+        UNKNOWN != FAILED
+        Payout balance hold remains ACTIVE.
+        Funding wallet is NOT credited prematurely.
+        Funds are strictly protected pending resolution.
+    end note
+
+    UNKNOWN --> SUCCEEDED: Background Poller receives Provider Success
+    UNKNOWN --> FAILED: Background Poller receives Provider Terminal Failure
+    UNKNOWN --> RECONCILIATION_REQUIRED: Polling attempts exhausted (configured threshold reached)
+
+    state RECONCILIATION_REQUIRED {
+        [*] --> Flagged_For_Investigation
+        Flagged_For_Investigation --> Level3_Detection: Level 3 Recon Scan (Detection Only)
+        Level3_Detection --> Case_Opened: Logs discrepancy item & triggers ops case (No balance mutation)
+        Case_Opened --> Ops_Audit: Operator audits bank records & notes resolution in case
+    }
+
+    RECONCILIATION_REQUIRED --> SUCCEEDED: Late Webhook Confirms Success (Settles Journal & Consumes Hold)
+    RECONCILIATION_REQUIRED --> FAILED: Late Webhook Confirms Failure (Releases Hold)
+
+    SUCCEEDED --> [*]
+    FAILED --> [*]
 ```
 
 ---
 
-## 3. Main Deployables
+## 3. Main Deployables & Component Classification
 
-1. **`ledgerguard-api`**:
-   - Primary Spring Boot modular monolith.
-   - Contains all financial boundaries: Ledger, Accounts, Transfers, Payments, Refunds, Holds, Outbox, Reconciliation, Identity, and Audit.
-   - Authoritative for PostgreSQL transactions.
+1. **`ledgerguard-api` (Core Monolith)**:
+   - Primary Spring Boot modular monolith running on Java 21.
+   - Encapsulates all transactional financial domains: Ledger, Accounts, Transfers, Payments, Refunds, Holds, Outbox, Reconciliation, Identity, and Audit.
+   - Authoritative for PostgreSQL database transactions. Exposes 22 REST endpoints documented in [docs/API.md](API.md) and [docs/openapi.json](openapi.json).
 
-2. **`psp-simulator`**:
-   - Independent Spring Boot service with its own dedicated PostgreSQL instance.
-   - Simulates external banking behavior: variable network latency, pre-processing failures, post-commit dropouts, duplicate webhooks, out-of-order callbacks, and manual capture states.
+2. **`nginx-edge` (Ingress Gateway)**:
+   - Production reverse proxy running unprivileged Nginx (`nginxinc/nginx-unprivileged:1.27-alpine`).
+   - Terminates TLSv1.2/TLSv1.3, applies coarse IP rate limiting, injects security headers, caches static assets, and blocks public access to management actuators.
 
-3. **`notification-worker`**:
-   - Standalone background consumer application listening to Kafka topics.
-   - Implements consumer-side inbox pattern for idempotency, exponential backoff retries, and dead-letter topic (DLT) routing.
+3. **`psp-simulator` (External Banking Simulator)**:
+   - Independent Spring Boot service backed by its own isolated PostgreSQL database (`psp_simulator`).
+   - Models external provider ambiguity: variable network latency, simulated 500 dropouts, signed HMAC callbacks, and late webhooks.
 
-4. **`ledgerguard-web`**:
-   - Single-Page Application (SPA) built with React 18, TypeScript, Vite, TanStack Query, and Material UI.
-   - Features customer portals (wallet balance, transfers, payment checkout, ledger drilldown) and operational consoles (system health, outbox monitoring, reconciliation viewer, Failure Lab runner).
+4. **`notification-worker` (Asynchronous Consumer)**:
+   - Standalone background consumer application processing Kafka domain events.
+   - Implements consumer-side inbox pattern for idempotency, exponential backoff retries, and dead-letter queue routing.
 
-5. **`failure-lab`**:
-   - Standalone resilience test framework and execution harness.
-   - Injects orchestrated chaos (concurrent race conditions, network cuts, worker kills, corrupted balance snapshot injections) and validates financial invariants.
+5. **`ledgerguard-web` (Web Frontend)**:
+   - Single-Page Application (SPA) built with React 19, TypeScript, Vite, TanStack Query, and Material UI.
+   - Provides Customer/Merchant self-service portals and operational review/reconciliation consoles.
+
+6. **`failure-lab` (Testing & Verification Harness — Non-Production)**:
+   - Standalone resilience test framework and chaos execution engine (`backend/failure-lab`).
+   - Injects orchestrated chaos (concurrent race conditions, network cuts, worker kills, corrupted balance snapshots) against ephemeral Testcontainers databases.
+   - Excluded from production Compose deployments (`docker-compose.prod.yml`).
+
 
 ---
 
@@ -231,7 +323,7 @@ To maintain focus on correctness and avoid resume-driven architecture, the follo
 1. **Balance Equation**: $\text{Available Balance} = \text{Posted Balance} - \text{Active Holds}$.
 2. **Double-Entry Balance**: For every transaction $T$, $\sum_{e \in T} \text{Debit}(e) = \sum_{e \in T} \text{Credit}(e)$.
 3. **Immutability**: Once written, rows in `journal_transactions`, `journal_entries`, and completed `funding_operations` cannot be updated or deleted.
-4. **Deterministic Lock Ordering**: When locking multiple accounts, acquire locks in ascending lexicographical or numerical order of account IDs to prevent circular-wait deadlocks between opposing transfers.
+4. **Deterministic Lock Ordering**: When locking multiple accounts, acquire locks in ascending lexicographical or numerical order of account IDs to reduce circular-wait deadlock risk between opposing transfers.
 5. **No Floating Point**: All monetary values are represented as `Money(Currency, long minorUnits)` on backend, and decimal strings / `BigInt` on frontend.
 
 ---
@@ -1065,7 +1157,7 @@ The oracle executes direct, independent SQL queries against PostgreSQL to verify
 1. **Scenario 1: Opposing Concurrent Transfers (`OPPOSING_TRANSFERS`)**:
    - Simulates high-concurrency opposing transfers between Account A and Account B.
    - Synchronizes competing threads using `CyclicBarrier(2)` so that A $\to$ B and B $\to$ A transfers hit the database concurrently.
-   - Validates that deterministic account locking (`ORDER BY ledger_account_id ASC`) completely eliminates circular-wait deadlocks.
+   - Validates that deterministic account locking (`ORDER BY ledger_account_id ASC`) reduces deadlock risk, observing 0 deadlocks under concurrent execution.
    - Confirms money conservation ($\Delta A + \Delta B = 0$) and balanced journal entries.
 2. **Scenario 2: PSP Timeout After Commit (`TIMEOUT_AFTER_COMMIT`)**:
    - Simulates an external PSP network drop after the provider successfully commits a payout transaction (`TIMEOUT_AFTER_SUCCESS`).

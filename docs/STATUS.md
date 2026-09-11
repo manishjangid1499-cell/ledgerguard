@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Phase 40 Complete (Local Verified)
-- **Status:** Phase 40 Complete (Local Verified)
+- **Current Phase:** Phase 41 Complete (Local Verified)
+- **Status:** Phase 41 Complete (Local Verified)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -46,17 +46,20 @@
   - **Phase 38 — Financial Failure Scenarios in CI** (Completed: 2026-09-09)
   - **Phase 39 — Concurrency Contention & Performance Analysis** (Completed: 2026-09-10)
   - **Phase 40 — Backup, Restore & Operational Runbooks** (Completed: 2026-09-11)
-- **Current Work:** Phase 40 implemented and locally verified. Operational runbooks, logical backup/restore automation, and financial invariant validation established:
-  - Authored `docs/RUNBOOKS.md` documenting end-to-end disaster recovery procedures, logical backup workflows, cluster globals extraction and security, point-in-time recovery boundaries, Kafka lag remediation and consumer scaling rules, outbox 17-step recovery pipeline with database cutover, PSP health verification, and incident response checklists.
-  - Implemented `scripts/backup-db.sh` using containerized `pg_dump -Fc --no-owner --no-privileges`, automated SHA-256 sidecar checksum generation, and pre-success table-of-contents validation (`pg_restore --list`).
-  - Implemented `scripts/restore-db.sh` with safe non-destructive defaults, injection-safe target database creation owned by `ledgerguard_app`, direct application-role restore, and post-restore ownership verification.
-  - Built integrated Mode A financial invariant verification suite inside `restore-db.sh` verifying all 20 schema tables, Flyway history (V1..V17 success, max 17, no V18), POSTED journal structure, global zero-sum balance, balance snapshot parity with account-type normal balances (CUSTOMER, MERCHANT, PLATFORM_FEES credit-normal; PSP_CLEARING, PLATFORM_RESERVE debit-normal), 21 authoritative triggers enabled, and outbox status/trace integrity.
-  - Executed simulated disaster recovery drill: validated fresh target restoration (`ledgerguard_phase40_restore_sim`), verified native object ownership (`ledgerguard_app`), and achieved 100% pass across all Mode A invariant checks.
-  - Verified validator failure sensitivity: injected snapshot corruption in isolated target database and verified `--validate-only` fails immediately with non-zero exit code.
-  - Authoritative regression baseline maintained: 760 Maven tests across 5 modules (675 API, 18 PSP, 22 Notification Worker, 34 Failure Lab, 11 E2E; 0 failures, 0 errors, 0 skipped), frontend lint and build passing cleanly, Docker Compose configs verified.
-- **Next Phase:** Phase 41 — Final Portfolio Documentation & API Docs
-- **Last Verified:** 2026-09-11
-- **Git Branch:** ops/phase-40-backup-restore-runbooks
+  - **Phase 41 — Final Project Documentation, Architecture Diagrams & API Docs** (Completed: 2026-09-12)
+- **Current Work:** Phase 41 implemented and locally verified. Final project documentation, architecture diagrams, and runtime OpenAPI/Swagger integration established:
+  - Integrated Springdoc OpenAPI 3.1 (`springdoc-openapi-starter-webmvc-ui:3.1.1`) into `backend/ledgerguard-api`, configuring OpenAPI metadata and security schemes in `OpenApiConfig.java` and permitting documentation endpoints in `SecurityConfig.java`.
+  - Verified live runtime Swagger UI (`/swagger-ui/index.html`) and live OpenAPI 3.1 JSON (`/v3/api-docs`) returning HTTP 200.
+  - Exported authoritative 22-operation runtime specification to `docs/openapi.json` with exact security schemes (Bearer JWT, refresh cookie, PSP webhook HMAC headers) and role authorization mappings.
+  - Updated `docs/API.md` documenting Swagger UI, live OpenAPI endpoints, repository JSON export, and role authentication matrix.
+  - Authored embedded GitHub-compatible Mermaid diagrams in `docs/ARCHITECTURE.md` and `README.md` covering End-to-End System Topology (clearly isolating the Failure Lab testing harness), Financial Atomic Posting Flow, and External PSP State Machine (`UNKNOWN != FAILED`).
+  - Rewrote root `README.md` into comprehensive portfolio landing page highlighting core mathematical invariants, modular architecture, resilience patterns, Failure Lab, concurrency benchmarks, DR procedures, and startup guides.
+  - Executed complete documentation links check across all 22 tracked Markdown files (`git ls-files '*.md'`) confirming 0 broken local links.
+  - Maintained authoritative regression baseline: 760 Maven tests across 5 modules (675 API, 18 PSP, 22 Notification Worker, 34 Failure Lab, 11 E2E; 0 failures, 0 errors, 0 skipped), frontend lint and build passing cleanly, Docker Compose configs verified.
+- **Next Phase:** Phase 42 — Dead-Code, Dependency & Security Cleanup
+- **Last Verified:** 2026-09-12
+- **Git Branch:** docs/phase-41-final-portfolio-documentation-api-docs
+
 
 ---
 
