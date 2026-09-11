@@ -11,6 +11,26 @@
 - **Error Content Type**: `application/problem+json` (RFC 9457 Problem Details)
 - **Authentication**: `Authorization: Bearer <access_token>` header for stateless requests; `ledgerguard_refresh_token` HttpOnly cookie for session rotation.
 - **Idempotency**: All mutating financial endpoints accept an `Idempotency-Key: <UUID>` header (Phase 9+)
+- **Authoritative Endpoint Count**: Exactly 22 REST operations across 9 `@RestController` components.
+
+### 1.1 OpenAPI & Swagger UI Specification (Phase 41)
+
+- **Interactive Swagger UI (Runtime)**: [http://localhost:8080/swagger-ui/index.html](http://localhost:8080/swagger-ui/index.html)
+- **Live OpenAPI 3.1 JSON (Runtime)**: [http://localhost:8080/v3/api-docs](http://localhost:8080/v3/api-docs)
+- **Authoritative Repository Export**: [`docs/openapi.json`](openapi.json)
+
+### 1.2 Authentication & Authorization Matrix
+
+| Auth Type | Mechanism | Target Endpoints | Roles / Permissions |
+| :--- | :--- | :--- | :--- |
+| **Public** | None | `POST /api/auth/register`<br>`POST /api/auth/login` | Unauthenticated. Registration allowed for `CUSTOMER` and `MERCHANT` (`OPS` forbidden). |
+| **Refresh Cookie** | `HttpOnly` Cookie (`ledgerguard_refresh_token`) | `POST /api/auth/refresh`<br>`POST /api/auth/logout` | Client holding active, single-use refresh token cookie. |
+| **Bearer JWT** | `Authorization: Bearer <token>` | `GET /api/auth/me` | Any valid authenticated principal. |
+| **Customer / Merchant** | Bearer JWT (`ROLE_CUSTOMER`, `ROLE_MERCHANT`) | `GET /api/wallets/me`<br>`POST /api/transfers`<br>`GET /api/transfers`<br>`GET /api/transfers/{id}`<br>`POST /api/payouts` | Customers and Merchants. `OPS` forbidden. |
+| **Customer Only** | Bearer JWT (`ROLE_CUSTOMER`) | `POST /api/payments`<br>`POST /api/funding` | Customer wallets only. Merchants and `OPS` forbidden. |
+| **Merchant Only** | Bearer JWT (`ROLE_MERCHANT`) | `POST /api/payments/{id}/refund` | Merchant account associated with original payment. |
+| **Operations (OPS)** | Bearer JWT (`ROLE_OPS`) | All `/api/reconciliation/**` routes (8 endpoints) | Back-office Operations operators. Customers and Merchants forbidden. |
+| **PSP Provider Callback** | HMAC-SHA256 Signatures | `POST /api/provider/webhooks` | Verified via `X-PSP-Webhook-Signature` and `X-PSP-Webhook-Timestamp` headers. |
 
 ---
 

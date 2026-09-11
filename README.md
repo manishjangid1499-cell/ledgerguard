@@ -6,262 +6,475 @@
 
 ## 1. Project Overview
 
-**LedgerGuard** is a high-reliability financial core and payment ledger platform designed to solve the hardest problems in financial backend engineering: concurrency contention, double-spending, distributed failure ambiguity, idempotent request processing, immutable auditing, and multi-level ledger reconciliation.
+**LedgerGuard** is a high-reliability financial core and payment ledger platform designed to solve the most difficult challenges in financial backend engineering: concurrency contention, double-spending, distributed failure ambiguity, idempotent request processing, immutable auditing, and multi-level ledger reconciliation.
 
-Rather than treating balances as simple mutable counters or wrapping third-party payment gateway APIs, LedgerGuard implements an authoritative **immutable double-entry accounting engine** backed by PostgreSQL ACID transactions, coupled with an asynchronous transactional outbox for post-commit event propagation via Apache Kafka.
+Rather than treating balances as simple mutable numbers in a database row or wrapping third-party payment gateway APIs, LedgerGuard implements an authoritative **immutable double-entry accounting engine** backed by PostgreSQL ACID transactions, coupled with an asynchronous transactional outbox for post-commit event propagation via Apache Kafka.
+
+Every monetary operation is recorded in integer minor units (paise in **INR** currency) with balanced debits and credits, preserving mathematical invariants across concurrent transfers, merchant checkouts, pro-rata fee refunds, temporary balance holds, external payment gateway top-ups, and automated disaster recovery drills.
 
 ---
 
-## 2. Central Financial Invariant
+## 2. Why This Project Exists
+
+In modern fintech systems, standard web architectures frequently suffer from subtle, catastrophic failure modes:
+1. **Concurrency Race Conditions**: Two simultaneous withdrawal requests reading the same balance snapshot simultaneously, resulting in double-spending and unauthorized overdrafts.
+2. **Dual-Write Vulnerabilities**: Committing a database record and then attempting to publish a Kafka message over the network; if the broker drops the connection or the worker crashes, the database and message bus permanently diverge.
+3. **The Distributed Ambiguity Fallacy (`UNKNOWN != FAILED`)**: Treating a third-party banking timeout or HTTP 500 as a failure and immediately refunding the customer, only for the payment to settle upstream seconds later, resulting in duplicate fund disbursements.
+4. **Mutable Balance Drift**: Updating balance rows directly with `UPDATE accounts SET balance = balance + ?`, leaving no auditable forensic trail when numbers fail to tally at end-of-day reconciliation.
+
+LedgerGuard solves each of these foundational problems through strict transactional and architectural patterns that use established financial-system correctness principles.
+
+---
+
+## 3. Core Correctness Guarantees
 
 The fundamental principle governing every transaction in LedgerGuard:
 
 $$\text{\bf MONEY MUST NEVER BE CREATED, DESTROYED, DUPLICATED, OR SILENTLY LOST.}$$
 
-For every posted journal transaction across all accounts:
-
-$$\sum \text{DEBITS} = \sum \text{CREDITS}$$
+1. **Balanced Double-Entry Rule**: For every posted journal transaction across all accounts:
+   $$\sum \text{DEBITS} = \sum \text{CREDITS}$$
+   Enforced at the database engine level via PostgreSQL trigger `trg_journal_transactions_balance_check`.
+2. **Permanent Ledger Immutability**: Posted journal transactions and journal entries cannot be updated or deleted under any circumstance (enforced by triggers `trg_journal_transactions_immutability` and `trg_journal_entries_immutability`). Adjustments are made strictly through new compensating journal entries.
+3. **Deterministic Lock Ordering**: All multi-account financial operations acquire row-level write locks (`SELECT ... FOR UPDATE`) in stable primary key order (`ORDER BY ledger_account_id ASC`). This serializes competing access to affected financial rows, prevents lost-update and concurrent-overspend races on protected rows, and reduces circular-wait deadlock risk (Phase 39 controlled contention tests observed 0 deadlocks).
+4. **Authoritative Request Idempotency**: Financial write endpoints (`POST /api/transfers`, `POST /api/payments`, `POST /api/payments/{paymentId}/refund`, `POST /api/funding`, `POST /api/payouts`) use a required `Idempotency-Key` header with cryptographic SHA-256 request fingerprinting and database-backed replay/conflict handling to ensure at-most-once financial execution.
+5. **Transactional Outbox Event Persistence**: LedgerGuard avoids the direct DB-then-Kafka dual-write pattern. Domain events (`outbox_events`) are committed atomically within the local PostgreSQL financial database transaction, while Kafka publication executes asynchronously post-commit. Temporary broker or consumer outages may leave outbox rows delayed in `PENDING` status, but they never fabricate financial success or require financial rollback.
+6. **Ambiguity Dominance (`UNKNOWN != FAILED`)**: External payment timeouts and generic 500 errors transition to state `UNKNOWN` rather than `FAILED`. Inbound funding (top-ups) never credits customer wallets prematurely. Outbound payouts preserve the outgoing balance reservation (`balance_holds.status = 'ACTIVE'`) across `UNKNOWN` and `RECONCILIATION_REQUIRED`, consuming the hold on authoritative success or releasing it on authoritative failure.
 
 ---
 
-## 3. Architecture Summary
+## 4. Architectural Diagrams
 
-LedgerGuard structures its financial core as a **Modular Monolith** (`ledgerguard-api`) to execute multi-account money movement within a single local PostgreSQL ACID transaction boundary. It avoids distributed transactions for core money paths while isolating external network boundaries (payment providers, notification consumers) into dedicated services.
+### 4.1 End-to-End System Topology
+
+```mermaid
+flowchart TD
+    subgraph Production_Runtime["Production / Deployable Runtime Topology"]
+        subgraph Client_Ingress["Client & Ingress Boundary"]
+            Browser["React SPA (ledgerguard-web)\n(TypeScript / Vite / Material UI)"]
+            Nginx["Nginx Reverse Proxy & Gateway (nginx-edge)\n(TLSv1.2/1.3, Rate Limiting, Static Cache)"]
+        end
+
+        subgraph Core_Monolith["Core Modular Monolith (ledgerguard-api:8080)"]
+            API_GW["REST Controllers & Security\n(Spring MVC / JWT / RBAC / RateLimitFilter)"]
+            Modules["Core Modules\nIdentity | Wallets & Holds | Transfers\nPayments & Refunds | Funding & Payouts\nTransactional Outbox | Reconciliation"]
+        end
+
+        subgraph Datastore_Spine["Persistence & Asynchronous Spine"]
+            Postgres[("Authoritative PostgreSQL 17\n- ledgerguard (Owner: ledgerguard_app)\n- psp_simulator (Owner: psp_simulator_app)\n- notification_worker (Owner: notification_worker_app)")]
+            Kafka{{"Apache Kafka 4.3.1 (KRaft)\n(Topic: ledgerguard.domain-events.v1)"}}
+        end
+
+        subgraph Async_Workers["Dedicated Background Services"]
+            NotifWorker["Notification Worker (notification-worker)\n(Idempotent Consumer Inbox)"]
+            PspSim["PSP Simulator (psp-simulator:8081)\n(External Banking Simulator / HMAC Webhooks)"]
+        end
+
+        subgraph Observability_Stack["Telemetry & Observability"]
+            Prometheus["Prometheus 3.2.1\n(Scrapes /actuator/prometheus @ 15s)"]
+            Grafana["Grafana 11.5.2\n(Dashboards: Financial Integrity & API Ops)"]
+        end
+    end
+
+    subgraph Testing_Harness["Testing & Verification Harness (Non-Production)"]
+        FailureLab["Money Integrity Failure Lab (failure-lab:8083)\n(Chaos Scenarios & Financial Invariant Oracle)\n[Ephemeral Testcontainers PostgreSQL]"]
+    end
+
+    Browser -->|HTTPS :443| Nginx
+    Nginx -->|HTTP Reverse Proxy /api/*| API_GW
+    Nginx -->|Static Assets /| Browser
+    API_GW --> Modules
+    Modules -->|ACID DB Transactions| Postgres
+    Modules -->|Skip Locked Outbox Publisher| Kafka
+    Modules -->|Outbound REST (Resilience4j)| PspSim
+    PspSim -->|HMAC-SHA256 Webhook /api/provider/webhooks| API_GW
+    Kafka -->|Async Events| NotifWorker
+    NotifWorker -->|Inbox Deduplication| Postgres
+    Prometheus -->|Scrape| API_GW
+    Grafana -->|Query Datasource| Prometheus
+    FailureLab -.->|Independent Adversarial Verification| Postgres
+```
+
+### 4.2 Financial Atomic Posting Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as Client (Customer / Merchant)
+    participant API as Financial Service (Transfer / Payment)
+    participant Idemp as Idempotency Table
+    participant Lock as Account Row Locks
+    participant Ledger as Journal & Entries Table
+    participant TrgBal as Trigger: trg_fn_enforce_journal_transaction_balance
+    participant TrgSnap as Trigger: trg_fn_update_balance_snapshots_on_posting
+    participant Outbox as Outbox Events Table
+    participant DB as PostgreSQL Transaction Boundary
+    participant Kafka as Apache Kafka
+    participant Worker as Notification Worker
+
+    Client->>API: Financial Request (Payload + Idempotency-Key)
+    activate API
+    API->>Idemp: Check fingerprint / acquire atomic lock
+    alt Idempotency conflict / in-progress
+        API-->>Client: 409 Conflict / cached idempotent replay
+    end
+
+    rect rgb(240, 245, 255)
+        note over Lock,DB: Single ACID Database Transaction Boundary (@Transactional)
+        API->>Lock: Deterministic Row Locks (SELECT ... FOR UPDATE ORDER BY ledger_account_id ASC)
+        note over Lock: Serializes concurrent access to affected rows;<br/>prevents lost updates and concurrent overspending;<br/>deterministic lock ordering reduces deadlock risk.
+        API->>Ledger: INSERT journal_transactions (status: DRAFT)
+        API->>Ledger: INSERT journal_entries (DEBITS and CREDITS)
+        note over Ledger: Immutable journal is authoritative source of truth.<br/>Enforces sum(DEBITS) == sum(CREDITS).
+        API->>Ledger: UPDATE journal_transactions SET status = 'POSTED'
+        activate TrgBal
+        TrgBal-->>Ledger: Enforce >=2 legs, 1 debit, 1 credit, zero-sum balance
+        deactivate TrgBal
+        activate TrgSnap
+        TrgSnap-->>Ledger: Synchronously update derived balance snapshot table under normal-balance rules
+        deactivate TrgSnap
+        API->>Outbox: INSERT outbox_events (status: PENDING, with W3C traceparent)
+        API->>DB: COMMIT TRANSACTION
+    end
+
+    API-->>Client: HTTP success / idempotent replay response after commit
+    deactivate API
+
+    rect rgb(255, 250, 240)
+        note over Outbox,Worker: Asynchronous Event Dispatch (Post-Commit Background Poller)
+        Outbox->>Kafka: Poller scans outbox (FOR UPDATE SKIP LOCKED) & publishes to Kafka topic
+        Kafka->>Worker: Consume domain event with idempotent inbox deduplication
+    end
+```
+
+### 4.3 External PSP State Machine & Ambiguous Outcome Recovery (`UNKNOWN != FAILED`)
+
+```mermaid
+stateDiagram-v2
+    [*] --> CREATED: Initialize Operation Record
+
+    state Operation_Semantics {
+        [*] --> Note_Semantics
+        note right of Note_Semantics
+            Payout: Pre-reserves balance hold (ACTIVE) from available balance.
+            Funding: Inbound top-up; no wallet reservation; credited only upon SUCCEEDED.
+        end note
+    }
+
+    CREATED --> PROCESSING: Atomic Submission Claim (Pessimistic Lock)
+    CREATED --> FAILED: Pre-submission Local Validation Rejection (Payout Hold Released)
+
+    state PROCESSING {
+        [*] --> Dispatched
+        Dispatched --> Definite_Success: Provider HTTP 200 (SUCCESS)
+        Dispatched --> Definite_Failure: Provider HTTP 4xx / Terminal Rejection
+        Dispatched --> Ambiguous_Outcome: Network Timeout / 5xx / Connection Drop
+    }
+
+    Definite_Success --> SUCCEEDED: Authoritative Settlement (Payout: Hold Consumed; Funding: Wallet Credited)
+    Definite_Failure --> FAILED: Authoritative Failure (Payout: Hold Released; Funding: No Credit)
+
+    Ambiguous_Outcome --> UNKNOWN: Ambiguity Dominance Rule
+    note right of UNKNOWN
+        UNKNOWN != FAILED
+        Payout balance hold remains ACTIVE.
+        Funding wallet is NOT credited prematurely.
+        Funds are strictly protected pending resolution.
+    end note
+
+    UNKNOWN --> SUCCEEDED: Background Poller receives Provider Success
+    UNKNOWN --> FAILED: Background Poller receives Provider Terminal Failure
+    UNKNOWN --> RECONCILIATION_REQUIRED: Polling attempts exhausted (configured threshold reached)
+
+    state RECONCILIATION_REQUIRED {
+        [*] --> Flagged_For_Investigation
+        Flagged_For_Investigation --> Level3_Detection: Level 3 Recon Scan (Detection Only)
+        Level3_Detection --> Case_Opened: Logs discrepancy item & triggers ops case (No balance mutation)
+        Case_Opened --> Ops_Audit: Operator audits bank records & notes resolution in case
+    }
+
+    RECONCILIATION_REQUIRED --> SUCCEEDED: Late Webhook Confirms Success (Settles Journal & Consumes Hold)
+    RECONCILIATION_REQUIRED --> FAILED: Late Webhook Confirms Failure (Releases Hold)
+
+    SUCCEEDED --> [*]
+    FAILED --> [*]
+```
+
+---
+
+## 5. Authoritative Financial Model
+
+### 5.1 Account Types & Normal Balances
+All balances are calculated and stored in **INR** minor units (paise) as signed 64-bit integers (`BIGINT`), eliminating IEEE 754 floating-point rounding inaccuracies:
+
+| Account Type | Normal Balance | Balance Calculation Formula | Ownership |
+| :--- | :--- | :--- | :--- |
+| **`CUSTOMER`** | **Credit-Normal** | $\text{balance} = \sum \text{Credits} - \sum \text{Debits}$ | Owned by authenticated User (`owner_user_id`) |
+| **`MERCHANT`** | **Credit-Normal** | $\text{balance} = \sum \text{Credits} - \sum \text{Debits}$ | Owned by authenticated User (`owner_user_id`) |
+| **`PLATFORM_FEES`** | **Credit-Normal** | $\text{balance} = \sum \text{Credits} - \sum \text{Debits}$ | System account (Platform fee revenue) |
+| **`PSP_CLEARING`** | **Debit-Normal** | $\text{balance} = \sum \text{Debits} - \sum \text{Credits}$ | System account (External bank receivables) |
+| **`PLATFORM_RESERVE`** | **Debit-Normal** | $\text{balance} = \sum \text{Debits} - \sum \text{Credits}$ | System account (Liquidity buffer) |
+
+### 5.2 Balance Snapshots & Holds
+- **Derived Snapshots**: The `ledger_balance_snapshots` table is maintained as an atomic projection updated exclusively by database trigger `trg_journal_transactions_update_snapshots` upon journal posting. Snapshots are fully reconstructible from append-only journal entries.
+- **Balance Holds (`balance_holds`)**: Temporary fund reservations that separate spendable capacity from historical ledger balances without mutating journal history:
+  $$\text{availableBalance} = \text{postedBalance} - \sum(\text{ACTIVE holds})$$
+  Overdraft prevention asserts $\text{availableBalance} \ge \text{requestedAmount}$ before granting financial operations.
+
+---
+
+## 6. Major Platform Capabilities
+
+- **Internal Peer-to-Peer Transfers**: Synchronous money movement between customer/merchant wallets with atomic debit/credit journal creation, deterministic row locking, and idempotency deduplication.
+- **Merchant Payments**: Commercial checkout transactions (`CUSTOMER` to `MERCHANT`) deducting a 100 bps integer platform fee (`PLATFORM_FEES`) in a balanced 3-leg atomic journal.
+- **Pro-Rata Payment Refunds**: Synchronous full and partial refunds with telescoping pro-rata fee reversal (`original-payment-pro-rata:v1`), cumulative refund cap enforcement, parent payment serialization (`FOR UPDATE`), and original fee account resolution.
+- **External Wallet Funding**: Inbound wallet top-ups via PSP simulator with decoupled non-transactional HTTP calls and confirmed-success double-entry settlement.
+- **External Payouts**: Outbound withdrawals using pre-network balance hold reservations, definite-failure hold releases, and in-flight hold expiration protection.
+- **Three-Level Reconciliation Engine**:
+  - **Level 1 (Double-Entry Balance)**: Audits all posted journal transactions to detect unbalanced postings or malformed legs.
+  - **Level 2 (Snapshot Parity)**: Single-statement MVCC scan comparing cached snapshots against cumulative journal entries.
+  - **Level 3 (Provider Settlement)**: Reconciles internal funding/payout outcomes against external PSP settlement truth without database transaction locks.
+- **Automated Discrepancy Recovery & Manual Review**: Automated snapshot re-derivation under pessimistic lock for `SNAPSHOT_MISMATCH`, and an isolated manual review queue (`reconciliation_cases`) with mandatory audit notes.
+
+---
+
+## 7. Distributed Systems & Reliability Patterns
+
+- **Transactional Outbox (`SKIP LOCKED`)**: LedgerGuard avoids the direct DB-then-Kafka dual-write pattern by committing domain events (`outbox_events`) atomically within the local PostgreSQL financial transaction. Background workers poll pending events using `SELECT ... FOR UPDATE SKIP LOCKED` for concurrent non-blocking outbox claiming and asynchronous post-commit publishing to Apache Kafka.
+- **Consumer Inbox Deduplication**: Asynchronous consumers (`notification-worker`) deduplicate incoming messages in a database-backed inbox, ensuring idempotent execution despite Kafka at-least-once transport delivery.
+- **Resilient Provider Client**: Programmatic Resilience4j integration (`CircuitBreaker` $\to$ `Bulkhead` $\to$ `Retry` with exponential jitter $\to$ `RestClient`) ensuring graceful degradation during external banking outages.
+- **Durable Status Recovery Poller**: Background polling worker that scans unresolved external operations with exponential backoff and queries authoritative provider status. Confirmed provider success or failure settles the operation automatically; unresolved or ambiguous outcomes progress to `RECONCILIATION_REQUIRED`. Level 3 reconciliation detects external discrepancies, allowing operators to investigate via operational review cases (`reconciliation_cases`) with mandatory audit notes, strictly prohibiting silent balance mutation or historical ledger rewrites.
+
+---
+
+## 8. Security Architecture
+
+- **Stateless Authentication**: Short-lived HS256 JWT access tokens (15-minute TTL) verified via Nimbus JOSE/JWT.
+- **Atomic Refresh Token Rotation**: High-entropy opaque refresh tokens stored as SHA-256 hashes in PostgreSQL, delivered via `HttpOnly`, `SameSite=Strict`, `Secure` cookies with 7-day TTL and pessimistic row locking to prevent token reuse races.
+- **Role-Based Access Control (RBAC)**: Strict segregation between `ROLE_CUSTOMER`, `ROLE_MERCHANT`, and `ROLE_OPS` enforced via Spring Security `@PreAuthorize`.
+- **Token-Bucket Rate Limiting**: Bucket4j and Caffeine caching enforce admission quotas after security authorization:
+  - Public Auth: 10 req/min per IP
+  - Financial Writes: 20 req/min per authenticated user
+  - Operations (OPS): 30 req/min per operator
+  - General Authenticated: 50 req/min per user
+- **Immutable Audit Trail**: Privileged actions (reconciliation claim, snapshot repair, manual resolution) append to `audit_events` with database triggers prohibiting `UPDATE`, `DELETE`, and `TRUNCATE`.
+- **Hardened Security Headers**: Content Security Policy (`default-src 'none'`), HSTS (1 year), and control-character input sanitization (rejecting NUL, CR, LF, and DEL in sensitive payloads).
+
+---
+
+## 9. Observability & Telemetry
+
+- **Prometheus Metric Exposition**: Decoupled-scrape architecture exposing metrics at `/actuator/prometheus`. In-memory atomics sample financial integrity gauges (`unbalanced_journal_count`, `reconciliation_discrepancies`, `outbox_lag_seconds`) every 15s with zero database overhead during scrapes.
+- **Pre-Provisioned Grafana Dashboards**:
+  - `LedgerGuard Financial Integrity`: Live tracking of posted journal balances, discrepancy queues, outbox publication lag, and idempotency conflicts.
+  - `LedgerGuard API Operations`: HTTP throughput by status, latency percentiles, JVM heap/threads, and HikariCP connection pool metrics.
+- **Distributed Tracing & W3C Trace Context**: Micrometer Tracing with OpenTelemetry bridge propagates correlation IDs and W3C `traceparent` headers across HTTP ingress, database outbox rows, and Kafka message headers.
+
+---
+
+## 10. Testing & Money Integrity Failure Lab
+
+### 10.1 Authoritative Test Suite Baseline
+The platform maintains an exhaustive test suite running on Java 21 across 5 Maven modules:
 
 ```
-+-------------------------------------------------------------+
-|                      React Frontend (Vite)                  |
-+-------------------------------------------------------------+
-                              | (HTTPS / REST)
-                              v
-+-------------------------------------------------------------+
-|                     Nginx Reverse Proxy                     |
-+-------------------------------------------------------------+
-                              |
-                              v
-+-------------------------------------------------------------+
-|                 LedgerGuard API (Modular Monolith)          |
-|  [Identity] [Ledger] [Account] [Transfer] [Payment] [Outbox]|
-+-------------------------------------------------------------+
-         |                                  |
-         | (ACID Transactions)              | (Transactional Outbox)
-         v                                  v
-+-------------------+              +-------------------+
-|    PostgreSQL     |              |   Apache Kafka    |
-| (Authoritative DB)|              +-------------------+
-+-------------------+                        |
-                                             v
-+--------------------+             +--------------------+
-|   PSP Simulator    |<--(REST)---|Notification Worker |
-| (Separate DB/State)|             | (Inbox Deduplicated|
-+--------------------+             +--------------------+
+ledgerguard-api:      675 tests (Unit, Service, Controller, Database Trigger Integration)
+psp-simulator:         18 tests (External Provider Simulation, Webhook Signatures)
+notification-worker:   22 tests (Idempotent Inbox Consumer, Kafka Listeners)
+failure-lab:           34 tests (Chaos Scenarios, Adversarial Injection, SQL Oracle)
+e2e-tests:             11 tests (Multi-Service Testcontainers End-to-End Flows)
+-----------------------------------------------------------------------------------------
+WORKSPACE TOTAL:      760 passing tests (0 failures, 0 errors, 0 skipped)
 ```
 
-### Main Deployables (Target Architecture)
-1. **`ledgerguard-api`**: Core modular monolith managing identity & authentication, ledger accounts, double-entry journal transactions, transfers, payments, holds, outbox events, and reconciliation.
-2. **`psp-simulator`**: Independent banking/payment service simulator with isolated database, modeling realistic network ambiguity (timeouts, delayed webhooks, duplicate callbacks, transient 500s).
-3. **`notification-worker`**: Asynchronous event consumer with inbox deduplication and dead-letter handling.
-4. **`ledgerguard-web`**: TypeScript/React frontend providing customer banking portals and administrative operations/reconciliation consoles.
-5. **`failure-lab`**: Automated chaos-testing and invariant verification suite.
+### 10.2 Money Integrity Failure Lab
+A standalone automated chaos testing engine (`backend/failure-lab`) that deliberately injects hostile operating conditions:
+1. **`OPPOSING_TRANSFERS`**: Concurrent opposing transfers between identical accounts using thread barriers, verifying deterministic lock ordering and zero lost funds.
+2. **`TIMEOUT_AFTER_COMMIT`**: External gateway drops connection after transaction commit, validating that the transaction transitions to `UNKNOWN`, holds remain `ACTIVE`, and status recovery settles the outcome.
+3. **`CORRUPTED_SNAPSHOT`**: Deliberate out-of-band balance snapshot drift injection, validating detection by Level 2 reconciliation and auto-repair from immutable journals.
+4. **`WEBHOOK_RACE`**: 5 concurrent duplicate HMAC-SHA256 signed webhooks, validating database deduplication and single economic effect.
+
+An independent SQL oracle (`FinancialInvariantOracle`) runs after each scenario to verify that total currency is strictly conserved:
+
+$$\sum \text{Final Balances} = \sum \text{Opening Balances} + \sum \text{External Inflows} - \sum \text{External Outflows}$$
 
 ---
 
-## 4. Killer Feature: Money Integrity Failure Lab
+## 11. Concurrency Benchmark Results
 
-The **Money Integrity Failure Lab** is an automated resilience and verification engine that deliberately subjects the system to adverse operating conditions:
-- Concurrent opposing transfers (deadlock risk)
-- Double-spending attempts under extreme concurrency
-- Network response drop after database commit
-- Duplicate and out-of-order PSP webhooks
-- Kafka broker outages and consumer crashes
-- Intentionally corrupted balance snapshot injections
-
-After each failure injection, the engine mathematically proves that:
-- Unbalanced journal transactions $= 0$
-- Duplicate economic effects $= 0$
-- Invalid negative available balances $= 0$
-- Unexpected balance snapshot mismatches $= 0$
-- Total system currency matches $\sum \text{Opening Balances} + \sum \text{External Inflows} - \sum \text{External Outflows}$.
+In Phase 39, LedgerGuard's transaction throughput and database connection pool contention were empirically benchmarked directly through the service and database tiers (`TransferService.createTransfer()` over HikariCP and PostgreSQL 17):
+- **Workload Scenarios**: Evaluated three canonical workloads—`LOW_CONTENTION` (disjoint accounts), `HOT_ACCOUNT` (single shared destination), and `OPPOSING_TRANSFERS` (cyclic opposing transfers).
+- **Controlled Operation Count**: Completed **8,100 successful measured transfer operations** across concurrency levels scaling from 1 to 50 threads (warmup excluded).
+- **HikariCP Pool Sizing Matrix**: Benchmarked candidate pool sizes **5, 10, 15, and 20** in isolated Testcontainers environments. Under hot-account contention, expanding pool sizes beyond 10 allowed up to `poolSize - 1` lock waiters inside PostgreSQL and elevated p95 tail latency by ~33% without throughput gain.
+- **Production Pool Decision**: Retained **`maximum-pool-size = 10`** as the production default.
+- **Locking Resilience & Financial Invariants**: Observed **0 deadlocks**, 0 transaction errors, and 0 connection timeouts across all repetitions. The `FinancialInvariantOracle` asserted 100% debit/credit balance, snapshot reconstruction parity, and total money conservation after every run.
+- Detailed methodology, metrics, and latency percentiles are documented in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 ---
 
-## 5. Major Engineering Areas
+## 12. Disaster Recovery & Operational Runbooks
 
-- **Identity & Authentication**: Embedded Spring Security architecture, BCrypt password hashing, short-lived HS256 JWT access tokens, high-entropy opaque refresh tokens with SHA-256 hash persistence, dedicated `HttpOnly` / `SameSite=Strict` cookie strategy, and pessimistic row locking for atomic token rotation.
-- **Immutable Double-Entry Accounting**: Balanced debit/credit entries; posted transactions are permanent and corrected only through compensating entries.
-- **Merchant Payments & Refunds Domain**: Customer-to-merchant commercial transactions (`CREATED -> PROCESSING -> SUCCEEDED / FAILED`), 100 bps integer floor division platform fee policy, and synchronous full and partial payment refunds (`original-payment-pro-rata:v1` telescoping pro-rata fee reversal) backed by immutable compensating double-entry journals (`CREDIT customer refundAmount`, `DEBIT merchant merchantDebitAmount`, `DEBIT platform_fees feeDebitAmount`), cumulative refund cap enforcement, parent payment row serialization (`FOR UPDATE`), and original fee account resolution.
-- **Balance Holds & Available-Balance Model**: Temporary fund reservations (`balance_holds`) separating immutable posted ledger history from spendable capacity without altering double-entry journals or snapshots, database triggers enforcing immutability and capacity under snapshot row locks `FOR UPDATE`, available balance decomposition (`availableBalance = postedBalance - sum(ACTIVE holds)`), spending paths validation, and multi-instance safe background expiration (`HoldExpirationScheduler`).
-- **Concurrency Control**: Deterministic account lock ordering (lower identifier first) to prevent opposing-transfer circular-wait deadlocks, serialize refund attempts on parent payment rows, serialize hold reservations on snapshot rows, and prevent double-spending under concurrent workloads.
-- **Authoritative Idempotency**: Atomic database-backed request deduplication keys with cryptographic payload fingerprinting.
-- **Transactional Outbox & Inbox**: Multi-worker transactional outbox persistence (`outbox_events`) ensuring atomic financial outcome event durability within the same PostgreSQL transaction, with multi-worker `SKIP LOCKED` publisher to Kafka in Phase 17 and idempotent consumer inbox processing in Phase 18.
-- **External Funding & Payouts Domain**: Integration with external PSP simulator for wallet top-ups (Phase 20) and outbound payouts/withdrawals (Phase 21) using pre-network balance hold reservation, decoupled non-transactional HTTP client calls, confirmed-success hold consumption and double-entry settlement (`DEBIT source wallet, CREDIT PSP_CLEARING`), definite-failure hold release, and in-flight hold expiration protection.
-- **Ambiguous External Outcomes & Status Recovery (Phase 23)**: Formal six-state external lifecycle (`CREATED → PROCESSING → UNKNOWN → RECONCILIATION_REQUIRED → SUCCEEDED/FAILED`) enforced by Flyway V13 PostgreSQL triggers. Atomic submission claim (at-most-one provider POST via pessimistic row lock). RFC-9457 ProblemDetail `type` URI classification: `urn:ledgerguard:psp:error:temporary-failure` → definite `FAILED` (hold released); generic 500/timeout → `UNKNOWN` (hold `ACTIVE`). Durable background status poller (Step 0 exhaustion finalizer + `SKIP LOCKED` claim + non-transactional GET + settlement). Payout hold protection extended to `UNKNOWN` and `RECONCILIATION_REQUIRED`. Late webhook recovery (`RECONCILIATION_REQUIRED → SUCCEEDED/FAILED`). **`UNKNOWN != FAILED`: ambiguous outcomes must never be silently treated as financial failures.**
-- **Three-Level Reconciliation (Phase 24)**: Automated three-level, detection-only reconciliation engine backed by Flyway V14 migration triggers and two-phase locking serialization. Level 1 (`JournalBalanceChecker`) verifies double-entry invariants via unbounded `NUMERIC` aggregation and `LEFT JOIN` (detecting unbalanced and zero-entry malformed journals); Level 2 (`SnapshotConsistencyChecker`) verifies derived balance snapshot consistency against immutable `POSTED` journal history in a single MVCC statement (excluding `DRAFT` entries via subquery); Level 3 (`ProviderSettlementChecker`) compares internal funding and payout states against external provider truth with network calls strictly outside DB transactions and lock-isolated classification. **Detection-only invariant: zero mutation of financial or business tables.**
-- **Reconciliation Recovery & Manual Review (Phase 25)**: Flyway V15 migration introducing `reconciliation_cases` table with null-safe claim immutability (`IS DISTINCT FROM`), `ON DELETE RESTRICT` actor preservation, and automated case creation triggers on item detection. Automated balance snapshot repair exclusively restricted to `problem_type = SNAPSHOT_MISMATCH` via dynamic reconstruction from `POSTED` journals under pessimistic row lock (`FOR UPDATE`), with 64-bit integer bounds check, missing snapshot protection, and `ALREADY_CONSISTENT` resolution. Human-in-the-loop manual review workflow with mandatory investigation notes ($\le 1000$ chars), strictly separated from financial tables (proven zero mutations to journals, entries, snapshots, holds, funding, or payouts).
-- **Resilient Provider Client (Phase 26)**: Programmatic core Resilience4j 2.4.0 integration (`resilience4j-circuitbreaker`, `resilience4j-retry`, `resilience4j-bulkhead`) decorating outbound PSP requests without Spring Boot starters or AOP. Pipeline: CircuitBreaker (`psp-remote`) $\to$ Bulkhead (`psp-create` / `psp-status`, 20 permits each) $\to$ Aggregate Logical Outcome $\to$ Exponential Jittered Retry (max 3 attempts) $\to$ Raw `RestClient`. Central financial invariants enforced: safe idempotent POST replay; earlier transport timeouts resolve to `SUCCEEDED` upon authoritative replay (`TIMEOUT_AFTER_SUCCESS`); ambiguity dominance across multi-attempt history marks `UNKNOWN` with `ACTIVE` balance hold; pre-network rejections (circuit open or bulkhead full) fail fast with 0 raw HTTP dispatches, marking `FAILED` and releasing holds; polling retries do not inflate durable database counters; Level 3 reconciliation classifies provider unavailability as `UNRESOLVED` / `PROVIDER_UNAVAILABLE` without schema changes.
-- **Rate Limiting & Bounded Backpressure (Phase 27)**: Token-bucket admission control powered by Bucket4j 8.19.0 (`bucket4j_jdk17-core`) backed by bounded Caffeine cache (`maxEntries=10000`, `idleTtl=1h`). RateLimitFilter sits after Spring Security `AuthorizationFilter` ensuring 401 and 403 strictly precede rate limit evaluation. Keyed by IP for public authentication endpoints (`PUBLIC_AUTH:ip:<ip>`: 10/min) and by policy and JWT user UUID for authenticated requests (`FINANCIAL_WRITE:user:<uuid>`: 20/min, `OPS:user:<uuid>`: 30/min, `AUTHENTICATED_GENERAL:user:<uuid>`: 50/min). Bounded request execution via Tomcat worker threads (`max=50`, `min-spare=10`, `max-queue-capacity=50`, `accept-count=50`, `max-connections=1000`) and Hikari connection pool (`maximum-pool-size=10`). Bounded Kafka consumer backpressure on `notification-worker` (`concurrency=3`, `max.poll.records=10`). HTTP 429 returns RFC 9457 ProblemDetail with `RATE_LIMIT_EXCEEDED` and `Retry-After` header. Zero financial mutation on 429: pure admission control with safe idempotent replay after refill.
-- **Audit Trail & Security Hardening (Phase 28)**: Database-enforced immutable audit trail (`audit_events` via Flyway V16) protecting privileged administrative actions with database triggers prohibiting `UPDATE`, `DELETE`, and `TRUNCATE`. Strongly typed `AuditService` operating under `Propagation.MANDATORY` atomicity for case claims, manual resolutions, and snapshot repairs (repaired and already consistent), recording zero rows on idempotent replay and rolling back atomically if the business transaction conflicts. Raw control character input hardening (rejecting NUL, CR, LF, TAB, C0 controls, and DEL before trimming or whitespace normalization). Security response headers hardened with explicit Content Security Policy (`default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`), explicit HSTS (`max-age=31536000; includeSubDomains`), preserved `nosniff`/`DENY`, and CORS allowlist with exposed `Retry-After`. Account freeze/unfreeze endpoints deferred per human approval (Option A); codebase audit verified zero PII or credential leaks in logs.
-- **Business & Financial Integrity Metrics (Phase 29)**: Standardized Prometheus metric exposition via Micrometer (`io.micrometer:micrometer-registry-prometheus`) exposed at `/actuator/prometheus`. Implements a decoupled-scrape architecture where Prometheus scrapes read directly from in-memory atomics with zero database queries. Financial integrity gauges (`unbalanced_journal_count`, `reconciliation_discrepancies`, `outbox_lag_seconds`) are sampled asynchronously by `IntegrityMetricsSampler` every 15s using a single atomic SQL statement in `IntegrityMetricsSnapshotReader` and published atomically via `AtomicReference<IntegritySnapshot>`. Application-level idempotency counter `duplicate_idempotency_keys_total` records duplicate encounter events partitioned by bounded reason tags (`replay`, `fingerprint_conflict`, `in_progress`). Endpoint is permitted without JWT, exempted from rate limiting, and excluded from CORS. Zero financial or business mutation; migrations V1-V16 frozen, V17 strictly absent.
-- **Distributed Tracing & Correlation IDs (Phase 30)**: In-process OpenTelemetry distributed tracing using Micrometer Tracing with OpenTelemetry bridge (`micrometer-tracing-bridge-otel`) and OTLP exporter (`io.opentelemetry:opentelemetry-exporter-otlp`). Configured with standard Spring Boot 4.1.1 properties: `management.opentelemetry.tracing.export.otlp.endpoint` (respecting `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`), and `management.tracing.export.otlp.enabled: false` by default for reliable headless test and standalone operation. Ingress `CorrelationIdFilter` validates and sanitizes inbound `X-Correlation-Id` headers (bounded ASCII token `^[a-zA-Z0-9_-]{1,64}$` or UUID fallback), sets SLF4J MDC `correlationId` (with outer context preservation and guaranteed `finally` cleanup), and echoes the header on responses and CORS exposed headers. Structured log formatting includes `[appName,traceId,spanId,correlationId]` with zero manual writing of traceId or spanId to MDC. Flyway migration V17 adds immutable `traceparent`, `tracestate`, and `correlation_id` columns to `outbox_events` protected by database triggers. `OutboxService` captures active W3C trace context into outbox records safely. `OutboxPublisherService` restores the trace parent context via `W3CTraceContextPropagator.getInstance().extract()`, sets MDC `correlationId`, deduplicates Kafka record headers to ensure exactly 0 duplicates, and propagates trace context to Kafka topics. `notification-worker` consumes Kafka events with enabled observation and MDC continuation. Database operations executed as part of an observed HTTP request or observed Kafka listener invocation execute while that enclosing trace context is active. Phase 30 does not add individual JDBC query spans, @Transactional spans, or JDBC proxy dependencies; Flyway startup migrations and background tasks do not inherit request traces; and zero SQL parameters, financial values, or query bodies are captured. Actuator web exposure is locked to `health,info,prometheus`, with `/actuator/metrics` unexposed (returns 404). Zero overhead or mutation on financial transactions, and zero metric label cardinality inflation.
-- **Grafana Operations & Financial Integrity Dashboards (Phase 31)**: Containerized local Prometheus (`prom/prometheus:v3.2.1`) and Grafana (`grafana/grafana:11.5.2`) observability stack provisioned via Docker Compose. Prometheus scrapes `ledgerguard-api` on `/actuator/prometheus` at a 15s interval via `host.docker.internal:8080`. Grafana provisions the `ledgerguard-prometheus` datasource and two dashboards into the `LedgerGuard` folder: `LedgerGuard Financial Integrity` (monitoring unbalanced/malformed posted journals, active reconciliation discrepancies, oldest pending outbox lag, and idempotency conflicts) and `LedgerGuard API Operations` (monitoring HTTP throughput by status, 5xx/429 error rates, aggregate average HTTP latency, JVM heap/metaspace, process/system CPU, HikariCP connection pool, and JVM thread states). Grafana anonymous access is strictly disabled, requiring local authentication. Prometheus HTTP lifecycle control is disabled. Prometheus and Grafana are decoupled local observability tools outside the financial transaction path; any telemetry outage cannot alter ledger state. Zero production Java code changes, zero database migrations (V1-V17 frozen, V18 absent).
-- **Money Integrity Failure Lab Backend (Phase 32)**: Programmatic chaos execution engine and mathematical financial verification suite in `backend/failure-lab`. Features a decoupled standalone architecture (Model C) communicating via direct JDBC and Testcontainers, fail-closed database environment protection (`EnvironmentGuard`), an independent SQL oracle (`FinancialInvariantOracle`) asserting double-entry balance, snapshot reconstruction parity, available balance invariants, money conservation, and single economic effect, process-level concurrency locking (`ConcurrencyGuard` `Semaphore(1)`), 30s timeout guards, and structured timeline events with bounded in-memory history (100 runs). Implements 4 core automated chaos scenarios: `OPPOSING_TRANSFERS` (concurrent opposing transfers via `CyclicBarrier(2)` validating deterministic `ORDER BY ledger_account_id ASC` deadlock-free locking and money conservation), `TIMEOUT_AFTER_COMMIT` (PSP timeout after commit validating `UNKNOWN != FAILED`, hold preservation, and status recovery settlement), `CORRUPTED_SNAPSHOT` (deliberate snapshot drift detection via Level 2 reconciliation and dynamic auto-repair from immutable journals under `FOR UPDATE` lock), and `WEBHOOK_RACE` (5 concurrent duplicate HMAC-SHA256 webhooks validating database-level deduplication and single economic effect). Zero production code changes, zero database migrations (V1–V17 frozen, V18 absent).
-- **Complete Testcontainers & End-to-End Suite (Phase 34)**: Unified integration, database, messaging, and multi-service end-to-end test suite in `backend/e2e-tests` running against real packaged fat JARs (`ledgerguard-api`, `psp-simulator`, `notification-worker`) in real JVM containers (`eclipse-temurin:21-jre`) on an isolated Testcontainers virtual bridge network with PostgreSQL 17.11 and Kafka 4.3.1. Validates startup health and readiness probes, customer authentication and wallet creation, external funding settlement and idempotency, payout hold reservation and settlement, internal wallet transfers and balance conservation, merchant payment authorizations and refunds, and Kafka asynchronous outbox notification delivery across 7 end-to-end flow suites (11 tests) executed by Maven Failsafe during `clean verify` (with adversarial provider timeout and ambiguous outcome recovery authoritatively verified in the Failure Lab). Zero production Java code changes outside the minimal PSP simulator response wire contract fix (`boolean replayed`), zero database migrations (V1—V17 frozen, V18 strictly absent).
-- **Production Multi-Stage Docker Images & Compose (Phase 35)**: Containerized production deployment topology featuring lightweight, multi-stage Dockerfiles for all four deployables (`backend/ledgerguard-api`, `backend/psp-simulator`, `backend/notification-worker`, and `frontend/ledgerguard-web`). Java microservices use `eclipse-temurin:21-jdk-jammy` builder stages with layer caching for Maven wrappers and dependency pom declarations, packaging to unprivileged `eclipse-temurin:21-jre-jammy` runtimes running as non-root user `ledgerguard` (`UID 1001:1001`) with read-only root filesystems and explicit `/tmp` tmpfs mounts. `ledgerguard-web` is served by a minimal unprivileged static Nginx runtime (`nginxinc/nginx-unprivileged:1.27-alpine`, UID 101) on port 8080 with dual IPv4/IPv6 listening and SPA fallback (`try_files $uri $uri/ /index.html;`). Edge capabilities (reverse proxying, SSL termination, edge security headers, static asset caching, gzip compression, and rate limiting) are explicitly deferred to Phase 36. Complete standalone production topology orchestrated by `docker-compose.prod.yml` on isolated bridge network `ledgerguard-prod-network` with zero hardcoded credentials, `.env.prod.example` secret template, and production Prometheus scrape target. Zero production Java code changes, zero POM changes, zero Flyway migrations (V1–V17 frozen, V18 strictly absent).
-- **Edge Reverse Proxy & SSL Configuration (Phase 36)**: Unprivileged Nginx edge reverse proxy gateway (`infrastructure/nginx/nginx.conf`) running as non-root UID 101 on `nginxinc/nginx-unprivileged:1.27-alpine` with dual HTTP (8080) and HTTPS (8443) listeners terminating TLSv1.2/TLSv1.3 with secure cipher suites. Ingress routing with prefix matching (`^~`): `/api/auth/` and `/api/` reverse-proxied to `ledgerguard-api:8080`, `/assets/` cached 1y immutable, and `/` serving `ledgerguard-web:8080` SPA with `no-cache` revalidation (guaranteeing zero API fallthrough to SPA). Layered edge defense with coarse per-IP rate limiting (general API: 30r/s burst=50 nodelay; auth API: 10r/s burst=10 nodelay), public actuator endpoint blocking, and edge security headers (`X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`). Complete 9-service production Compose topology in `docker-compose.prod.yml` with host port minimization and zero committed TLS private keys.
-- **Automated CI Pipeline & Dependabot (Phase 37)**: Automated GitHub Actions continuous integration workflow (`.github/workflows/ci.yml`) using official action majors (`actions/checkout@v6`, `actions/setup-java@v6`, `actions/setup-node@v7`) and Dependabot version maintenance (`.github/dependabot.yml`). Parallel `backend` job (Java 21 Temurin, Maven caching, full 5-module reactor compilation, unit tests, integration tests, and Testcontainers execution) and `frontend` job (Node.js 24, npm caching, `npm ci`, existing `npm run lint`, and production `npm run build`). Dependent `docker-images` job validating multi-stage Docker builds across 4 application containers (`ledgerguard-api`, `psp-simulator`, `notification-worker`, `ledgerguard-web`) with `--build-arg VITE_API_BASE_URL=/` and zero image pushing. Least-privilege security model with top-level `contents: read` permissions, zero secrets required, `persist-credentials: false`, and fork PR safety. Weekly automated Dependabot version update configuration across Maven, npm, GitHub Actions, and Docker base images.
-- **Observability**: Micrometer metrics, Prometheus, Grafana dashboards, OpenTelemetry distributed tracing, and structured logging.
+Comprehensive disaster recovery procedures and automation scripts are established in Phase 40:
+- **Logical Backup Automation (`scripts/backup-db.sh`)**: Generates compressed PostgreSQL custom-format archives (`pg_dump -Fc --no-owner --no-privileges`) with automated SHA-256 sidecar checksums and pre-success table-of-contents validation.
+- **Verified Database Cutover (`scripts/restore-db.sh`)**: Restores into isolated recovery targets, verifies role ownership (`ledgerguard_app`), and runs an automated Mode A financial invariant verification suite before traffic cutover.
+- **Mode A Invariant Verification**: Validates 20 schema tables, Flyway history (V1..V17 frozen), zero-sum double-entry balance, snapshot parity against normal balance rules, trigger enablement, and outbox trace integrity.
+- Detailed operational runbooks, Kafka lag remediation, and incident response checklists are documented in [docs/RUNBOOKS.md](docs/RUNBOOKS.md).
 
 ---
 
-## 6. Technology Direction
+## 13. API & Swagger Documentation
 
-- **Backend:** Java 21, Spring Boot 4.x, Spring Data JPA / Hibernate, Spring Security, Flyway, Maven.
-- **Authoritative Store:** PostgreSQL (`ddl-auto=validate`).
-- **Asynchronous Messaging:** Apache Kafka.
-- **Frontend:** React 19, TypeScript, Vite 8, Material UI 9, TanStack Query, React Hook Form.
-- **Testing:** JUnit 5, Testcontainers (PostgreSQL, Kafka), Mockito, ArchUnit.
-- **Infrastructure:** Docker, Docker Compose, Nginx, Prometheus, Grafana, OpenTelemetry.
+LedgerGuard exposes **22 authoritative REST endpoints** across 9 controllers, documented with OpenAPI 3.1:
+
+- **Interactive Swagger UI (Runtime)**: [http://localhost:8080/swagger-ui/index.html](http://localhost:8080/swagger-ui/index.html)
+- **Live OpenAPI 3.1 JSON (Runtime)**: [http://localhost:8080/v3/api-docs](http://localhost:8080/v3/api-docs)
+- **Authoritative Repository Specification Export**: [`docs/openapi.json`](docs/openapi.json)
+- **Comprehensive Markdown API Specification**: [`docs/API.md`](docs/API.md)
+
+### Endpoint Summary by Domain:
+| Domain | Method | Route | Authorization / Access |
+| :--- | :--- | :--- | :--- |
+| **Authentication** | `POST` | `/api/auth/register` | Public (Registers `CUSTOMER` or `MERCHANT`) |
+| **Authentication** | `POST` | `/api/auth/login` | Public (Issues JWT + HttpOnly refresh cookie) |
+| **Authentication** | `POST` | `/api/auth/refresh` | Public (HttpOnly `ledgerguard_refresh_token` cookie) |
+| **Authentication** | `POST` | `/api/auth/logout` | Public (Revokes refresh token in DB + clears cookie) |
+| **Authentication** | `GET` | `/api/auth/me` | Authenticated Bearer JWT |
+| **Wallets** | `GET` | `/api/wallets/me` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` |
+| **Transfers** | `POST` | `/api/transfers` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Idempotent write) |
+| **Transfers** | `GET` | `/api/transfers` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Paginated history) |
+| **Transfers** | `GET` | `/api/transfers/{transferId}` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Transfer detail) |
+| **Payments** | `POST` | `/api/payments` | `ROLE_CUSTOMER` (100 bps platform fee checkout) |
+| **Refunds** | `POST` | `/api/payments/{paymentId}/refund` | `ROLE_MERCHANT` (Full or partial pro-rata fee refund) |
+| **Funding** | `POST` | `/api/funding` | `ROLE_CUSTOMER` (Inbound top-up via PSP simulator) |
+| **Payouts** | `POST` | `/api/payouts` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Pre-reserve hold withdrawal) |
+| **Webhooks** | `POST` | `/api/provider/webhooks` | Public (Verified via HMAC-SHA256 signature headers) |
+| **Reconciliation** | `GET` | `/api/reconciliation/runs` | `ROLE_OPS` (Paginated automated reconciliation runs) |
+| **Reconciliation** | `GET` | `/api/reconciliation/runs/{runId}` | `ROLE_OPS` (Run details and summary metrics) |
+| **Reconciliation** | `GET` | `/api/reconciliation/runs/{runId}/items` | `ROLE_OPS` (Detected discrepancy items) |
+| **Reconciliation** | `GET` | `/api/reconciliation/cases` | `ROLE_OPS` (Operational review queue) |
+| **Reconciliation** | `GET` | `/api/reconciliation/cases/{caseId}` | `ROLE_OPS` (Case investigation detail) |
+| **Reconciliation** | `POST` | `/api/reconciliation/cases/{caseId}/claim` | `ROLE_OPS` (Atomic operator claim assignment) |
+| **Reconciliation** | `POST` | `/api/reconciliation/cases/{caseId}/repair-snapshot` | `ROLE_OPS` (Auto-repairs snapshot from posted journals) |
+| **Reconciliation** | `POST` | `/api/reconciliation/cases/{caseId}/resolve` | `ROLE_OPS` (Manual resolution with audit notes) |
 
 ---
 
-## 7. Current Project Status
+## 14. Technology Stack
 
-- **Current State:** Phase 35 Completed — Production Multi-Stage Docker Images & Compose: Created multi-stage Dockerfiles for 4 deployables (`ledgerguard-api`, `psp-simulator`, `notification-worker`, `ledgerguard-web`), production Nginx SPA configuration, `.dockerignore`, `.env.prod.example`, production Prometheus scrape configuration, and standalone production Compose stack (`docker-compose.prod.yml`). Validated all 8 services booting cleanly with zero root privileges and isolated per-service database credentials. Total workspace tests: 760 (675 API, 18 PSP, 22 Notification Worker, 34 Failure Lab, 11 E2E) passing with 0 failures, 0 errors, 0 skipped.
-- **Next Step:** Phase 36 — Nginx Production Reverse Proxy & SSL Configuration.
-- **Roadmap:** Detailed phase-by-phase progress is tracked in [docs/STATUS.md](docs/STATUS.md).
+- **Backend Runtime**: Java 21 LTS (OpenJDK Temurin)
+- **Application Framework**: Spring Boot 4.1.1 (Spring Framework 7.0.9)
+- **Security & Identity**: Spring Security, Nimbus JOSE/JWT (HS256), BCrypt
+- **API Documentation**: Springdoc OpenAPI 3.1.1 (`springdoc-openapi-starter-webmvc-ui`)
+- **Database & Persistence**: PostgreSQL 17.11, Spring Data JPA / Hibernate, Flyway Migration Engine (V1–V17)
+- **Messaging Spine**: Apache Kafka 4.3.1 (KRaft mode, no ZooKeeper)
+- **Fault Tolerance**: Resilience4j 2.4.0 (CircuitBreaker, Bulkhead, Retry)
+- **Rate Limiting**: Bucket4j 8.19.0, Caffeine 3.x
+- **Observability**: Micrometer, Prometheus 3.2.1, Grafana 11.5.2, OpenTelemetry Tracing
+- **Web Frontend**: React 19, TypeScript 5.7, Vite 8, Material UI 9, TanStack Query, React Hook Form
+- **Edge Proxy**: Nginx 1.27 unprivileged Alpine (TLSv1.2/1.3 termination, rate limiting, static asset caching)
+- **Testing & Quality**: JUnit 5, Testcontainers 1.20, Mockito, ArchUnit, Maven Failsafe
 
 ---
 
-## 8. Local Development Infrastructure
+## 15. Local Developer Quickstart
 
 ### Prerequisites
 - Docker Engine 29+ & Docker Compose v5+
-- Java 21 LTS & Node.js 24 LTS
+- Java 21 LTS & Maven 3.9+ (or use included `mvnw`)
+- Node.js 24 LTS & npm 11+
 
-### 1. Configure Environment
+### 1. Setup Local Environment
 ```bash
-# Copy example environment configuration
-# Windows:
-Copy-Item .env.example .env
-
-# Linux / macOS:
-cp .env.example .env
+# Copy local development environment configuration
+cp .env.example .env    # Windows: Copy-Item .env.example .env
 ```
 
-### 2. Manage Local Infrastructure (PostgreSQL, Kafka, Prometheus & Grafana)
+### 2. Start Core Infrastructure (PostgreSQL, Kafka, Prometheus, Grafana)
 ```bash
-# Start infrastructure in background
 docker compose up -d
-
-# Inspect service health
 docker compose ps
-
-# Stop infrastructure (preserves volumes)
-docker compose down
-
-# Destructive reset (WARNING: DELETES ALL LOCAL DATABASE, KAFKA, AND TELEMETRY DATA)
-docker compose down -v
 ```
 
-### Local Endpoints & Service Ownership
-| Service | Container Name | Host Port | Database / Scope | Owner Role | Owner Deployable |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **PostgreSQL 17.11** | `ledgerguard-postgres` | `5432` | `ledgerguard` | `ledgerguard_app` | `ledgerguard-api` |
-| **PostgreSQL 17.11** | `ledgerguard-postgres` | `5432` | `psp_simulator` | `psp_simulator_app` | `psp-simulator` |
-| **PostgreSQL 17.11** | `ledgerguard-postgres` | `5432` | `notification_worker` | `notification_worker_app` | `notification-worker` |
-| **Apache Kafka 4.3.1 (KRaft)** | `ledgerguard-kafka` | `29092` (host) / `9092` (container) | Broker ID 1 (Cluster ID configured) | — | Outbox event stream |
-| **Prometheus 3.2.1** | `ledgerguard-prometheus` | `9090` | Scrapes `/actuator/prometheus` (15s) | — | Metrics Scraper |
-| **Grafana 11.5.2** | `ledgerguard-grafana` | `3000` | Authenticated Dashboards | `admin` | Operations Visualizer |
-| **Failure Lab Backend** | *(ephemeral Testcontainers)* | `8083` (loopback only) | Ephemeral Testcontainers DB | Loopback isolation + explicit flag (Frontend: OPS-only route) | `failure-lab` |
+### 3. Run Backend Verification & Compile
+```bash
+# Run full reactor test suite (760 tests)
+./mvnw clean verify     # Windows: .\mvnw.cmd clean verify
+```
 
-### 3. Run Production Compose Stack with Nginx Edge Gateway (Phase 36)
+### 4. Start Core API Service
+```bash
+./mvnw -pl backend/ledgerguard-api spring-boot:run
+# Swagger UI available at: http://localhost:8080/swagger-ui/index.html
+# OpenAPI JSON available at: http://localhost:8080/v3/api-docs
+```
 
-In production mode, **Nginx** operates as the authoritative edge reverse proxy and TLS termination gateway:
-- **Single Edge Origin**: Port `80` (HTTP) and Port `443` (HTTPS with TLSv1.2/TLSv1.3 termination).
-- **Edge Routing**: `/api/*` routes to `ledgerguard-api`, `/assets/*` receives aggressive 1-year immutable caching, and `/` serves `ledgerguard-web` SPA with `no-cache` revalidation.
-- **Port Minimization**: Direct host ports for `ledgerguard-api` and `ledgerguard-web` are removed from the public interface; containers communicate securely over `ledgerguard-prod-network`.
-- **Local TLS Certificate Prerequisite**: `server.crt` and `server.key` must be present in `infrastructure/nginx/certs/` before starting (ignored by Git, never committed).
+### 5. Start Frontend Development Server
+```bash
+cd frontend/ledgerguard-web
+npm install
+npm run dev
+# Web application available at: http://localhost:5173
+```
+
+---
+
+## 16. Production-Like Docker Compose Startup
+
+In production-like mode, **Nginx** operates as the authoritative edge reverse proxy and TLS termination gateway:
 
 ```bash
-# 1. Generate local self-signed certificate for TLS termination (ignored by Git)
+# 1. Generate local self-signed TLS certificates (never committed)
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -keyout infrastructure/nginx/certs/server.key \
   -out infrastructure/nginx/certs/server.crt \
   -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
 
-# 2. Create production environment file from template
-# Windows:     Copy-Item .env.prod.example .env
-# Linux/macOS: cp .env.prod.example .env
+# 2. Configure production environment
+cp .env.prod.example .env    # Windows: Copy-Item .env.prod.example .env
 
-# 3. Build and start all 9 production containers
+# 3. Build and launch all 9 production containers
 docker compose -f docker-compose.prod.yml up -d --build
 
-# 4. Inspect running services and health status (all 9 healthy/up)
+# 4. Inspect container health (all 9 containers healthy/up)
 docker compose -f docker-compose.prod.yml ps
 
-# 5. Access the platform:
-# Web UI (HTTP):  http://localhost/
-# Web UI (HTTPS): https://localhost/
-# API Base:       https://localhost/api/
-# Prometheus:     http://localhost:9090/
-# Grafana:        http://localhost:3000/
+# 5. Access points:
+# HTTPS Web Application: https://localhost/
+# API Gateway Endpoint:  https://localhost/api/
+# Prometheus Telemetry:  http://localhost:9090/
+# Grafana Dashboards:    http://localhost:3000/
 
-# 6. Stop and remove production containers
+# 6. Tear down production containers
 docker compose -f docker-compose.prod.yml down
 ```
 
-### 4. Run Money Integrity Failure Lab Operations Console
-```bash
-# 1. Start Failure Lab Local Backend (binds to 127.0.0.1:8083, boots ephemeral Testcontainers)
-# Requires explicit --ledgerguard.lab.enabled=true (fail-closed default is disabled)
-.\mvnw.cmd -pl backend/failure-lab spring-boot:run "-Dspring-boot.run.arguments=--ledgerguard.lab.enabled=true"
+---
 
-# 2. Start Frontend (Vite)
-cd frontend/ledgerguard-web
-npm run dev
+## 17. Repository Documentation Index
 
-# 3. Log in as OPS user (ops@ledgerguard.com) and navigate to:
-# http://localhost:5173/app/failure-lab
-```
+| Document | Purpose |
+| :--- | :--- |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Deep system architecture, domain modularization, and sequence models |
+| [`docs/API.md`](docs/API.md) | Comprehensive API specification, error catalogs, and payload schemas |
+| [`docs/openapi.json`](docs/openapi.json) | Exported OpenAPI 3.1 specification for all 22 REST operations |
+| [`docs/RUNBOOKS.md`](docs/RUNBOOKS.md) | Disaster recovery, point-in-time restore, cutover drills, and operations |
+| [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) | Concurrency contention analysis, pool sizing, and performance reports |
+| [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md) | Authoritative 45-phase development constitution (Phases 0–44) |
+| [`docs/DOMAIN_MODEL.md`](docs/DOMAIN_MODEL.md) | Entity relationships, mathematical invariants, and ER diagrams |
+| [`docs/FAILURE_MODEL.md`](docs/FAILURE_MODEL.md) | Distributed failure matrix, timeout handling, and mitigations |
+| [`docs/SECURITY.md`](docs/SECURITY.md) | Threat modeling, cryptographic standards, and RBAC policies |
+| [`docs/TESTING.md`](docs/TESTING.md) | Testing taxonomy, testcontainers architecture, and failure lab |
+| [`docs/STATUS.md`](docs/STATUS.md) | Real-time project phase execution tracker and historical milestones |
+| [`docs/adr/`](docs/adr/) | Architecture Decision Records (ADRs 001–011) |
 
 ---
 
-## 9. Build & Verification Commands
+## 18. Current Project Status
 
-### Backend Build & Test (from root)
-```bash
-# Windows
-.\mvnw.cmd clean verify
-
-# Linux / macOS
-./mvnw clean verify
-```
-
-### Frontend Build & Lint
-```bash
-cd frontend/ledgerguard-web
-npm install
-npm run lint
-npm run build
-```
-
-### Continuous Integration (GitHub Actions)
-The repository includes an automated GitHub Actions pipeline (`.github/workflows/ci.yml`) triggering on pushes to `main`, pull requests to `main`, and manual dispatch:
-- **Backend Job**: `./mvnw -B -ntp clean verify` with OpenJDK 21 Temurin and Maven dependency caching (runs full reactor with Testcontainers).
-- **Frontend Job**: `npm ci`, `npm run lint`, `npm run build` with Node.js 24 and npm dependency caching.
-- **Financial Integrity Job**: `./mvnw -B -ntp -f backend/failure-lab/pom.xml clean test -Pfinancial-failure-ci` executing core Failure Lab chaos scenarios, asserting that money is never created, destroyed, duplicated, or lost, publishing a step summary and archiving versioned JSON/Markdown invariant reports.
-- **Docker Validation**: Multi-stage image build validation for all 4 application images (`ledgerguard-api`, `psp-simulator`, `notification-worker`, `ledgerguard-web`) gated on backend, frontend, and financial-integrity jobs.
-- **Dependabot**: Automated weekly dependency version updates across Maven, npm, GitHub Actions, and Docker base images via `.github/dependabot.yml`.
-
----
-
-## 10. Documentation Links
-
-- **Architecture Documentation:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- **Master Development Plan (Phases 0–44):** [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md)
-- **Domain Model:** [docs/DOMAIN_MODEL.md](docs/DOMAIN_MODEL.md)
-- **Failure Model & Mitigation:** [docs/FAILURE_MODEL.md](docs/FAILURE_MODEL.md)
-- **Security Architecture:** [docs/SECURITY.md](docs/SECURITY.md)
-- **Testing Strategy:** [docs/TESTING.md](docs/TESTING.md)
-- **API Surface Plan:** [docs/API.md](docs/API.md)
-- **Architecture Decision Records (ADRs):** [docs/adr/](docs/adr/)
+- **Current State:** **Phase 41 Completed** — Final Project Documentation, Architecture Diagrams & API Docs.
+  - Implemented runtime Springdoc OpenAPI 3.1 (`springdoc-openapi-starter-webmvc-ui:3.1.1`) with interactive Swagger UI (`/swagger-ui/index.html`) and live OpenAPI JSON (`/v3/api-docs`).
+  - Exported authoritative 22-operation runtime specification to [`docs/openapi.json`](docs/openapi.json).
+  - Authored embedded GitHub-compatible Mermaid diagrams for End-to-End System Topology, Financial Atomic Posting, and External PSP State Recovery.
+  - Rewrote root `README.md` into comprehensive portfolio presentation.
+  - Formally validated test baseline: 760 tests passing across 5 modules (0 failures, 0 errors, 0 skipped).
+- **Next Phase:** **Phase 42 — Dead-Code, Dependency & Security Cleanup**.

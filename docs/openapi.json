@@ -1,0 +1,1859 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "LedgerGuard Payment Integrity & Ledger Platform API",
+    "description": "High-reliability financial core implementing immutable double-entry ledgering, deterministic concurrency control, transactional outbox messaging, multi-level reconciliation, and ambiguous external payment recovery.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Generated server url"
+    }
+  ],
+  "paths": {
+    "/api/transfers": {
+      "get": {
+        "tags": [
+          "transfer-controller"
+        ],
+        "description": "**Required Roles**: `ROLE_CUSTOMER` or `ROLE_MERCHANT` (Bearer JWT). `OPS` is forbidden.",
+        "operationId": "getTransfers",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedResponseTransferSummaryResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "CUSTOMER",
+          "MERCHANT"
+        ]
+      },
+      "post": {
+        "tags": [
+          "transfer-controller"
+        ],
+        "description": "**Required Roles**: `ROLE_CUSTOMER` or `ROLE_MERCHANT` (Bearer JWT). `OPS` is forbidden.",
+        "operationId": "createTransfer",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTransferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "CUSTOMER",
+          "MERCHANT"
+        ]
+      }
+    },
+    "/api/reconciliation/cases/{caseId}/resolve": {
+      "post": {
+        "tags": [
+          "reconciliation-controller"
+        ],
+        "description": "**Required Roles**: `ROLE_OPS` (Bearer JWT). Customers and Merchants are strictly forbidden.",
+        "operationId": "resolveCase",
+        "parameters": [
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualResolveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconciliationCaseResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "OPS"
+        ]
+      }
+    },
+    "/api/reconciliation/cases/{caseId}/repair-snapshot": {
+      "post": {
+        "tags": [
+          "reconciliation-controller"
+        ],
+        "description": "**Required Roles**: `ROLE_OPS` (Bearer JWT). Customers and Merchants are strictly forbidden.",
+        "operationId": "repairSnapshot",
+        "parameters": [
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotRepairResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "OPS"
+        ]
+      }
+    },
+    "/api/reconciliation/cases/{caseId}/claim": {
+      "post": {
+        "tags": [
+          "reconciliation-controller"
+        ],
+        "description": "**Required Roles**: `ROLE_OPS` (Bearer JWT). Customers and Merchants are strictly forbidden.",
+        "operationId": "claimCase",
+        "parameters": [
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconciliationCaseResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "OPS"
+        ]
+      }
+    },
+    "/api/provider/webhooks": {
+      "post": {
+        "tags": [
+          "provider-webhook-controller"
+        ],
+        "description": "**Access**: External PSP callback. Authenticated via `X-PSP-Webhook-Signature` (HMAC-SHA256) and `X-PSP-Webhook-Timestamp` headers.",
+        "operationId": "receiveWebhook",
+        "parameters": [
+          {
+            "name": "X-PSP-Webhook-Timestamp",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-PSP-Webhook-Signature",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "string",
+                "format": "byte"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "pspWebhookSignature": [],
+            "pspWebhookTimestamp": []
+          }
+        ],
+        "x-auth-type": "HMAC_SHA256"
+      }
+    },
+    "/api/payouts": {
+      "post": {
+        "tags": [
+          "payout-controller"
+        ],
+        "description": "**Required Roles**: `ROLE_CUSTOMER` or `ROLE_MERCHANT` (Bearer JWT). `OPS` is forbidden.",
+        "operationId": "requestPayout",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PayoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "CUSTOMER",
+          "MERCHANT"
+        ]
+      }
+    },
+    "/api/payments": {
+      "post": {
+        "tags": [
+          "payment-controller"
+        ],
+        "description": "**Required Roles**: `ROLE_CUSTOMER` (Bearer JWT). `MERCHANT` and `OPS` are forbidden.",
+        "operationId": "createPayment",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePaymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "CUSTOMER"
+        ]
+      }
+    },
+    "/api/payments/{paymentId}/refund": {
+      "post": {
+        "tags": [
+          "refund-controller"
+        ],
+        "description": "**Required Roles**: `ROLE_MERCHANT` (Bearer JWT). `CUSTOMER` and `OPS` are forbidden.",
+        "operationId": "createRefund",
+        "parameters": [
+          {
+            "name": "paymentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRefundRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefundResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "MERCHANT"
+        ]
+      }
+    },
+    "/api/funding": {
+      "post": {
+        "tags": [
+          "funding-controller"
+        ],
+        "description": "**Required Roles**: `ROLE_CUSTOMER` (Bearer JWT). `MERCHANT` and `OPS` are forbidden.",
+        "operationId": "fundWallet",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FundingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FundingResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "CUSTOMER"
+        ]
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "tags": [
+          "auth-controller"
+        ],
+        "description": "**Access**: Public (Unauthenticated). Permitted registration roles: `CUSTOMER`, `MERCHANT` (`OPS` forbidden).",
+        "operationId": "register",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserSummaryResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [],
+        "x-auth-type": "PUBLIC"
+      }
+    },
+    "/api/auth/refresh": {
+      "post": {
+        "tags": [
+          "auth-controller"
+        ],
+        "description": "**Access**: Authenticated via `ledgerguard_refresh_token` HttpOnly cookie.",
+        "operationId": "refresh",
+        "parameters": [
+          {
+            "name": "ledgerguard_refresh_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "refreshCookie": []
+          }
+        ],
+        "x-auth-type": "REFRESH_COOKIE"
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": [
+          "auth-controller"
+        ],
+        "description": "**Access**: Authenticated via `ledgerguard_refresh_token` HttpOnly cookie.",
+        "operationId": "logout",
+        "parameters": [
+          {
+            "name": "ledgerguard_refresh_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "refreshCookie": []
+          }
+        ],
+        "x-auth-type": "REFRESH_COOKIE"
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "auth-controller"
+        ],
+        "description": "**Access**: Public (Unauthenticated). Permitted registration roles: `CUSTOMER`, `MERCHANT` (`OPS` forbidden).",
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [],
+        "x-auth-type": "PUBLIC"
+      }
+    },
+    "/api/wallets/me": {
+      "get": {
+        "tags": [
+          "wallet-controller"
+        ],
+        "description": "**Required Roles**: `ROLE_CUSTOMER` or `ROLE_MERCHANT` (Bearer JWT). `OPS` is forbidden.",
+        "operationId": "getMyWallet",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "CUSTOMER",
+          "MERCHANT"
+        ]
+      }
+    },
+    "/api/transfers/{transferId}": {
+      "get": {
+        "tags": [
+          "transfer-controller"
+        ],
+        "description": "**Required Roles**: `ROLE_CUSTOMER` or `ROLE_MERCHANT` (Bearer JWT). `OPS` is forbidden.",
+        "operationId": "getTransferDetail",
+        "parameters": [
+          {
+            "name": "transferId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferDetailResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "CUSTOMER",
+          "MERCHANT"
+        ]
+      }
+    },
+    "/api/reconciliation/runs": {
+      "get": {
+        "tags": [
+          "reconciliation-controller"
+        ],
+        "description": "**Required Roles**: `ROLE_OPS` (Bearer JWT). Customers and Merchants are strictly forbidden.",
+        "operationId": "getRuns",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedResponseReconciliationRunSummaryResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "OPS"
+        ]
+      }
+    },
+    "/api/reconciliation/runs/{runId}": {
+      "get": {
+        "tags": [
+          "reconciliation-controller"
+        ],
+        "description": "**Required Roles**: `ROLE_OPS` (Bearer JWT). Customers and Merchants are strictly forbidden.",
+        "operationId": "getRunById",
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconciliationRunSummaryResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "OPS"
+        ]
+      }
+    },
+    "/api/reconciliation/runs/{runId}/items": {
+      "get": {
+        "tags": [
+          "reconciliation-controller"
+        ],
+        "description": "**Required Roles**: `ROLE_OPS` (Bearer JWT). Customers and Merchants are strictly forbidden.",
+        "operationId": "getRunItems",
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedResponseReconciliationItemResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "OPS"
+        ]
+      }
+    },
+    "/api/reconciliation/cases": {
+      "get": {
+        "tags": [
+          "reconciliation-controller"
+        ],
+        "description": "**Required Roles**: `ROLE_OPS` (Bearer JWT). Customers and Merchants are strictly forbidden.",
+        "operationId": "getCases",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "IN_REVIEW",
+                "RESOLVED"
+              ]
+            }
+          },
+          {
+            "name": "level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "JOURNAL_BALANCE",
+                "SNAPSHOT_CONSISTENCY",
+                "PROVIDER_SETTLEMENT"
+              ]
+            }
+          },
+          {
+            "name": "classification",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DISCREPANCY",
+                "UNRESOLVED"
+              ]
+            }
+          },
+          {
+            "name": "problemType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "UNBALANCED_JOURNAL",
+                "MALFORMED_JOURNAL",
+                "SNAPSHOT_MISMATCH",
+                "SNAPSHOT_MISSING",
+                "PROVIDER_STATUS_MISMATCH",
+                "PROVIDER_IDENTITY_MISMATCH",
+                "PROVIDER_NOT_FOUND",
+                "PROVIDER_UNAVAILABLE",
+                "PROVIDER_STILL_PROCESSING"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedResponseReconciliationCaseResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "OPS"
+        ]
+      }
+    },
+    "/api/reconciliation/cases/{caseId}": {
+      "get": {
+        "tags": [
+          "reconciliation-controller"
+        ],
+        "description": "**Required Roles**: `ROLE_OPS` (Bearer JWT). Customers and Merchants are strictly forbidden.",
+        "operationId": "getCaseById",
+        "parameters": [
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconciliationCaseResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "OPS"
+        ]
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "auth-controller"
+        ],
+        "description": "**Access**: Authenticated (Any valid JWT Bearer token).",
+        "operationId": "getCurrentUser",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserSummaryResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-auth-type": "BEARER_JWT"
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CreateTransferRequest": {
+        "type": "object",
+        "properties": {
+          "destinationLedgerAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amountMinor": {
+            "type": "integer",
+            "format": "int64",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "amountMinor",
+          "destinationLedgerAccountId"
+        ]
+      },
+      "TransferResponse": {
+        "type": "object",
+        "properties": {
+          "transferId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceLedgerAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "destinationLedgerAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amountMinor": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "journalTransactionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ManualResolveRequest": {
+        "type": "object",
+        "properties": {
+          "resolutionNote": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 0
+          }
+        },
+        "required": [
+          "resolutionNote"
+        ]
+      },
+      "ReconciliationCaseResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reconciliationItemId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "assignedToUserId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "resolvedByUserId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "resolutionAction": {
+            "type": "string"
+          },
+          "resolutionNote": {
+            "type": "string"
+          },
+          "openedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resolvedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "item": {
+            "$ref": "#/components/schemas/ReconciliationItemResponse"
+          }
+        }
+      },
+      "ReconciliationItemResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reconciliationRunId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "classification": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string"
+          },
+          "problemType": {
+            "type": "string"
+          },
+          "entityType": {
+            "type": "string"
+          },
+          "entityId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "observedLocalStatus": {
+            "type": "string"
+          },
+          "expectedValue": {
+            "type": "string"
+          },
+          "actualValue": {
+            "type": "string"
+          },
+          "providerStatus": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "detectedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SnapshotRepairResponse": {
+        "type": "object",
+        "properties": {
+          "caseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ledgerAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "previousBalanceMinor": {
+            "type": "string"
+          },
+          "repairedBalanceMinor": {
+            "type": "string"
+          },
+          "resolutionAction": {
+            "type": "string"
+          },
+          "snapshotUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PayoutRequest": {
+        "type": "object",
+        "properties": {
+          "amountMinor": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "amountMinor"
+        ]
+      },
+      "PayoutResponse": {
+        "type": "object",
+        "properties": {
+          "payoutId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "amountMinor": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "balanceHoldId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "providerOperationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "journalTransactionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CreatePaymentRequest": {
+        "type": "object",
+        "properties": {
+          "merchantLedgerAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amountMinor": {
+            "type": "integer",
+            "format": "int64",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "amountMinor",
+          "merchantLedgerAccountId"
+        ]
+      },
+      "PaymentResponse": {
+        "type": "object",
+        "properties": {
+          "paymentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "customerLedgerAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "merchantLedgerAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "grossAmountMinor": {
+            "type": "string"
+          },
+          "feeAmountMinor": {
+            "type": "string"
+          },
+          "merchantNetAmountMinor": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "CREATED",
+              "PROCESSING",
+              "SUCCEEDED",
+              "FAILED"
+            ]
+          },
+          "journalTransactionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CreateRefundRequest": {
+        "type": "object",
+        "properties": {
+          "amountMinor": {
+            "type": "integer",
+            "format": "int64",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "amountMinor"
+        ]
+      },
+      "RefundResponse": {
+        "type": "object",
+        "properties": {
+          "refundId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "paymentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "refundAmountMinor": {
+            "type": "string"
+          },
+          "merchantDebitAmountMinor": {
+            "type": "string"
+          },
+          "feeDebitAmountMinor": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "journalTransactionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FundingRequest": {
+        "type": "object",
+        "properties": {
+          "amountMinor": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "amountMinor"
+        ]
+      },
+      "FundingResponse": {
+        "type": "object",
+        "properties": {
+          "fundingId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "amountMinor": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "providerOperationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "journalTransactionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "completedAt": {
+            "type": "string"
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "minLength": 1
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 72,
+            "minLength": 12
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "CUSTOMER",
+              "MERCHANT",
+              "OPS"
+            ]
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      },
+      "UserSummaryResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "CUSTOMER",
+              "MERCHANT",
+              "OPS"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "DISABLED"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AuthResponse": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string"
+          },
+          "tokenType": {
+            "type": "string"
+          },
+          "expiresIn": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserSummaryResponse"
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "minLength": 1
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      },
+      "WalletResponse": {
+        "type": "object",
+        "properties": {
+          "ledgerAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "accountType": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "balanceMinor": {
+            "type": "string"
+          },
+          "activeHoldAmountMinor": {
+            "type": "string"
+          },
+          "availableBalanceMinor": {
+            "type": "string"
+          }
+        }
+      },
+      "PagedResponseTransferSummaryResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TransferSummaryResponse"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalElements": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totalPages": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "TransferSummaryResponse": {
+        "type": "object",
+        "properties": {
+          "transferId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceLedgerAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "destinationLedgerAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amountMinor": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "journalTransactionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "direction": {
+            "type": "string"
+          }
+        }
+      },
+      "JournalDetailResponse": {
+        "type": "object",
+        "properties": {
+          "journalTransactionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "postedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JournalEntryDetailResponse"
+            }
+          }
+        }
+      },
+      "JournalEntryDetailResponse": {
+        "type": "object",
+        "properties": {
+          "ledgerAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "amountMinor": {
+            "type": "string"
+          }
+        }
+      },
+      "TransferDetailResponse": {
+        "type": "object",
+        "properties": {
+          "transferId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceLedgerAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "destinationLedgerAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amountMinor": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "journalTransactionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "journal": {
+            "$ref": "#/components/schemas/JournalDetailResponse"
+          }
+        }
+      },
+      "PagedResponseReconciliationRunSummaryResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReconciliationRunSummaryResponse"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalElements": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totalPages": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ReconciliationRunSummaryResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "triggerSource": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "journalsChecked": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "accountsChecked": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "operationsChecked": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "discrepancyCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "unresolvedCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "failureReason": {
+            "type": "string"
+          }
+        }
+      },
+      "PagedResponseReconciliationItemResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReconciliationItemResponse"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalElements": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totalPages": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "PagedResponseReconciliationCaseResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReconciliationCaseResponse"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalElements": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totalPages": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "description": "Stateless JWT access token. Required for authenticated user, customer, merchant, and ops endpoints.",
+        "name": "bearerAuth",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      },
+      "refreshCookie": {
+        "type": "apiKey",
+        "description": "Opaque refresh token delivered via HttpOnly, SameSite=Strict cookie for session rotation and logout.",
+        "name": "ledgerguard_refresh_token",
+        "in": "cookie"
+      },
+      "pspWebhookSignature": {
+        "type": "apiKey",
+        "description": "HMAC-SHA256 signature payload verification header for external PSP webhook events.",
+        "name": "X-PSP-Webhook-Signature",
+        "in": "header"
+      },
+      "pspWebhookTimestamp": {
+        "type": "apiKey",
+        "description": "Unix epoch millisecond timestamp header for replay attack protection.",
+        "name": "X-PSP-Webhook-Timestamp",
+        "in": "header"
+      }
+    }
+  }
+}
