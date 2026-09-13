@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Phase 43 — Complete Release Verification
-- **Status:** PHASE 43: COMPLETE — RELEASE CANDIDATE VERIFICATION PASS
+- **Current Phase:** Phase 44 — v1.0.0 Portfolio Release
+- **Status:** PHASE 44: COMPLETE — v1.0.0 PORTFOLIO RELEASE
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -49,22 +49,29 @@
   - **Phase 41 — Final Project Documentation, Architecture Diagrams & API Docs** (Completed: 2026-09-12)
   - **Phase 42 — Dead-Code, Dependency & Security Cleanup** (Completed: 2026-09-13)
   - **Phase 43 — Complete Release Verification** (Completed: 2026-09-13)
-- **Current Work:** Phase 43 implemented and verified across all release candidate quality gates:
-  - Backend regression: full `.\mvnw.cmd clean verify` passed with 760/760 tests (API: 675, PSP: 18, Notification Worker: 22, Failure Lab: 34, E2E: 11; 0 failures, 0 errors, 0 skipped).
-  - Financial invariants: 0 invariant violations across double-entry ledger postings, snapshot evaluations, hold allocations, and failure recovery.
-  - Frontend code quality: `npm run lint` passed with 0 errors and 0 warnings; `npm run build` completed successfully (exit code 0).
-  - Frontend security: `npm audit` verified with 0 vulnerabilities (Critical: 0, High: 0, Moderate: 0, Low: 0).
-  - Backend security: OWASP Dependency-Check verified with 0 CRITICAL vulnerabilities and exactly 2 known upstream HIGH vulnerabilities (`CVE-2026-54399` and `CVE-2026-54428` in shaded `httpcore5:5.3.6` within test dependency `docker-java-transport-zerodep:3.7.1`), which remain intentionally unsuppressed as documented upstream exceptions.
-  - Dependency convergence: `.\mvnw.cmd enforcer:enforce "-Denforcer.rules=dependencyConvergence"` passed across all 6 reactor modules with 0 conflicts (`testcontainers.version = 2.0.5`, `tomcat.version = 11.0.25`).
-  - Flyway migration integrity: verified complete sequential migration inventory across all database owners (`ledgerguard-api`: 17 migrations V1..V17; `psp-simulator`: 1 migration V1; `notification-worker`: 1 migration V1; 0 duplicates, 0 invalid naming).
-  - Docker Compose validation: development (`docker-compose.yml`) and production (`docker-compose.prod.yml`) configurations validated with exit code 0.
-  - Container health verification: started local development infrastructure stack; verified `postgres` (healthy), `kafka` (healthy), `prometheus` (healthy / HTTP 200), and `grafana` (healthy / HTTP 200); cleanly shut down without data loss.
-  - UI / E2E workflow verification: verified comprehensive coverage across 11 end-to-end integration tests spanning platform startup, authentication & wallet creation, external funding top-ups, atomic peer-to-peer transfers, merchant payments & refunds, external payouts & holds, and asynchronous Kafka messaging notifications.
-  - Documentation and API contract consistency: all 22 tracked markdown files verified with 0 broken local links; OpenAPI 3.1.0 specification verified with 22 operations and 4 security schemes.
-  - Release candidate verification: PASS.
-- **Next Phase:** Phase 44 — v1.0.0 Portfolio Release
+  - **Phase 44 — v1.0.0 Portfolio Release** (Completed: 2026-09-13)
+- **Phase Completion:** 45 / 45 phases completed (100%)
+- **Current Work:** Phase 44 v1.0.0 Portfolio Release prepared and completed:
+  - Prepared initial v1.0.0 portfolio release artifacts, establishing authoritative release history in `CHANGELOG.md` adhering to Keep a Changelog standards.
+  - Preserved authoritative Phase 43 release candidate verification metrics:
+    - Backend regression: full `.\mvnw.cmd clean verify` passed with 760/760 tests (API: 675, PSP: 18, Notification Worker: 22, Failure Lab: 34, E2E: 11; 0 failures, 0 errors, 0 skipped).
+    - Financial invariants: 0 invariant violations across double-entry ledger postings, snapshot evaluations, hold allocations, and failure recovery.
+    - Frontend code quality: `npm run lint` passed with 0 errors and 0 warnings; `npm run build` completed successfully (exit code 0).
+    - Frontend security: `npm audit` verified with 0 vulnerabilities (Critical: 0, High: 0, Moderate: 0, Low: 0).
+    - Backend security: OWASP Dependency-Check verified with 0 CRITICAL vulnerabilities and exactly 2 known upstream HIGH vulnerabilities (`CVE-2026-54399` and `CVE-2026-54428` in shaded `httpcore5:5.3.6` within test dependency `docker-java-transport-zerodep:3.7.1`), which remain intentionally unsuppressed as documented upstream exceptions.
+    - Dependency convergence: `.\mvnw.cmd enforcer:enforce "-Denforcer.rules=dependencyConvergence"` passed across all 6 reactor modules with 0 conflicts (`testcontainers.version = 2.0.5`, `tomcat.version = 11.0.25`).
+    - Flyway migration integrity: verified complete sequential migration inventory across all database owners (`ledgerguard-api`: 17 migrations V1..V17; `psp-simulator`: 1 migration V1; `notification-worker`: 1 migration V1; 0 duplicates, 0 invalid naming).
+    - Docker Compose validation: development (`docker-compose.yml`) and production (`docker-compose.prod.yml`) configurations validated with exit code 0.
+    - Container health verification: started local development infrastructure stack; verified `postgres` (healthy), `kafka` (healthy), `prometheus` (healthy / HTTP 200), and `grafana` (healthy / HTTP 200); cleanly shut down without data loss.
+    - UI / E2E workflow verification: verified comprehensive coverage across 11 end-to-end integration tests spanning platform startup, authentication & wallet creation, external funding top-ups, atomic peer-to-peer transfers, merchant payments & refunds, external payouts & holds, and asynchronous Kafka messaging notifications.
+    - Documentation and API contract consistency: all 22 tracked markdown files verified with 0 broken local links; OpenAPI 3.1.0 specification verified with 22 operations and 4 security schemes.
+    - Release candidate verification: PASS.
+  - Finalized repository documentation, architectural diagrams, runbooks, benchmarks, and API specifications.
+  - Release tag `v1.0.0` is designated as the final tagging target upon merge to `main`.
+  - Documented upstream shaded dependency exception remains documented and unchanged in Section 5.
+- **Next Phase:** None — Project Complete (v1.0.0 Portfolio Release)
 - **Last Verified:** 2026-09-13
-- **Git Branch:** release/phase-43-complete-release-verification
+- **Git Branch:** release/phase-44-v1.0.0-portfolio-release
 
 
 ---
@@ -149,7 +156,7 @@
 | **Phase 41** | Final Portfolio Documentation & API Docs | **Completed** | 2026-09-12 |
 | **Phase 42** | Dead-Code & Security Cleanup | **Completed (Local Verified)** | 2026-09-13 |
 | **Phase 43** | Complete Release Verification | **Completed** | 2026-09-13 |
-| **Phase 44** | v1.0.0 Portfolio Release | Planned | — |
+| **Phase 44** | v1.0.0 Portfolio Release | **Completed** | 2026-09-13 |
 
 ---
 
