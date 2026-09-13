@@ -1,7 +1,6 @@
 package com.ledgerguard.psp.infrastructure;
 
 import com.ledgerguard.psp.domain.ScenarioConfig;
-import com.ledgerguard.psp.domain.SimulatorScenario;
 import org.springframework.stereotype.Component;
 
 import java.util.UUID;

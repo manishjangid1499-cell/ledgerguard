@@ -2,8 +2,8 @@
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Phase 41 Complete (Local Verified)
-- **Status:** Phase 41 Complete (Local Verified)
+- **Current Phase:** Phase 42 — Dead-Code, Dependency & Security Cleanup
+- **Status:** PHASE 42: COMPLETE WITH DOCUMENTED UPSTREAM DEPENDENCY EXCEPTION
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -47,18 +47,22 @@
   - **Phase 39 — Concurrency Contention & Performance Analysis** (Completed: 2026-09-10)
   - **Phase 40 — Backup, Restore & Operational Runbooks** (Completed: 2026-09-11)
   - **Phase 41 — Final Project Documentation, Architecture Diagrams & API Docs** (Completed: 2026-09-12)
-- **Current Work:** Phase 41 implemented and locally verified. Final project documentation, architecture diagrams, and runtime OpenAPI/Swagger integration established:
-  - Integrated Springdoc OpenAPI 3.1 (`springdoc-openapi-starter-webmvc-ui:3.1.1`) into `backend/ledgerguard-api`, configuring OpenAPI metadata and security schemes in `OpenApiConfig.java` and permitting documentation endpoints in `SecurityConfig.java`.
-  - Verified live runtime Swagger UI (`/swagger-ui/index.html`) and live OpenAPI 3.1 JSON (`/v3/api-docs`) returning HTTP 200.
-  - Exported authoritative 22-operation runtime specification to `docs/openapi.json` with exact security schemes (Bearer JWT, refresh cookie, PSP webhook HMAC headers) and role authorization mappings.
-  - Updated `docs/API.md` documenting Swagger UI, live OpenAPI endpoints, repository JSON export, and role authentication matrix.
-  - Authored embedded GitHub-compatible Mermaid diagrams in `docs/ARCHITECTURE.md` and `README.md` covering End-to-End System Topology (clearly isolating the Failure Lab testing harness), Financial Atomic Posting Flow, and External PSP State Machine (`UNKNOWN != FAILED`).
-  - Rewrote root `README.md` into comprehensive portfolio landing page highlighting core mathematical invariants, modular architecture, resilience patterns, Failure Lab, concurrency benchmarks, DR procedures, and startup guides.
-  - Executed complete documentation links check across all 22 tracked Markdown files (`git ls-files '*.md'`) confirming 0 broken local links.
-  - Maintained authoritative regression baseline: 760 Maven tests across 5 modules (675 API, 18 PSP, 22 Notification Worker, 34 Failure Lab, 11 E2E; 0 failures, 0 errors, 0 skipped), frontend lint and build passing cleanly, Docker Compose configs verified.
-- **Next Phase:** Phase 42 — Dead-Code, Dependency & Security Cleanup
-- **Last Verified:** 2026-09-12
-- **Git Branch:** docs/phase-41-final-portfolio-documentation-api-docs
+  - **Phase 42 — Dead-Code, Dependency & Security Cleanup** (Completed: 2026-09-13)
+- **Current Work:** Phase 42 implemented and locally verified with documented upstream dependency exception:
+  - Testcontainers converged to 2.0.5 uniformly across root and all reactor child modules (`testcontainers-bom:2.0.5`, `testcontainers-postgresql:2.0.5`, `testcontainers-kafka:2.0.5`, `testcontainers-junit-jupiter:2.0.5`, `testcontainers:2.0.5`).
+  - Embedded Tomcat security remediation: all modules aligned to 11.0.25 via `<tomcat.version>11.0.25</tomcat.version>` in root `pom.xml`.
+  - Maven Enforcer `DependencyConvergence` passes cleanly with zero conflicts across all 6 reactor modules.
+  - OWASP Dependency-Check verified:
+    - CRITICAL = 0
+    - HIGH = 2 (`CVE-2026-54399`, `CVE-2026-54428` in shaded `org.apache.httpcomponents.core5:httpcore5:5.3.6` inside `com.github.docker-java:docker-java-transport-zerodep:3.7.1`). These remain unsuppressed as accepted upstream dependency risk.
+    - False positives cleanly suppressed in `dependency-check-suppressions.xml`: Prometheus client_java CPE false positive, Testcontainers PostgreSQL server CPE false positive, and `CVE-2026-71290` (affecting only async HttpClient, whereas docker-java uses classic HttpClient).
+  - Backend regression: full `.\mvnw.cmd clean verify` passed with 760/760 tests (API: 675, PSP: 18, Notification Worker: 22, Failure Lab: 34, E2E: 11; 0 failures, 0 errors, 0 skipped).
+  - Frontend gates: `npm run lint` and `npm run build` pass cleanly; `npm audit` reports 0 vulnerabilities.
+  - Docker Compose validation: development (`docker-compose.yml`) and production (`docker-compose.prod.yml`) configurations pass syntax/semantic validation (`exit 0`).
+  - Codebase hygiene: unused main Java imports = 0, unreferenced main classes = 0, dead config files = 0.
+- **Next Phase:** Phase 43 — Release Verification
+- **Last Verified:** 2026-09-13
+- **Git Branch:** cleanup/phase-42-dead-code-dependency-security-cleanup
 
 
 ---
@@ -140,8 +144,8 @@
 | **Phase 38** | Financial Failure Scenarios in CI | **Completed** | 2026-09-09 |
 | **Phase 39** | Concurrency Contention & Performance | **Completed (Local Verified)** | 2026-09-10 |
 | **Phase 40** | Backup, Restore & Operational Runbooks | **Completed (Local Verified)** | 2026-09-11 |
-| **Phase 41** | Final Portfolio Documentation & API Docs | Planned | — |
-| **Phase 42** | Dead-Code & Security Cleanup | Planned | — |
+| **Phase 41** | Final Portfolio Documentation & API Docs | **Completed** | 2026-09-12 |
+| **Phase 42** | Dead-Code & Security Cleanup | **Completed (Local Verified)** | 2026-09-13 |
 | **Phase 43** | Release Verification | Planned | — |
 | **Phase 44** | v1.0.0 Portfolio Release | Planned | — |
 
@@ -160,6 +164,7 @@
 
 ## 5. Known Issues & Limitations
 - **Kafka Single-Broker Development Limitation:** The local Kafka setup runs a single local broker in KRaft mode for local development.
+- **Upstream Shaded Dependency Security Exception (CVE-2026-54399 & CVE-2026-54428):** Testcontainers 2.0.5 transitively brings in `com.github.docker-java:docker-java-transport-zerodep:3.7.1`, which shades `org.apache.httpcomponents.core5:httpcore5:5.3.6`. This shaded library carries two unpatched upstream HIGH CVEs (`CVE-2026-54399` and `CVE-2026-54428`). These findings are test-scoped only, do not affect production artifacts, and remain intentionally unsuppressed as a documented, accepted upstream dependency exception pending an upstream release by `docker-java`.
 
 ---
 

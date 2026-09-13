@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.4.xsd">
+
+    <!-- 1. org.glassfish.jaxb:jaxb-core:4.0.9 -->
+    <suppress until="2027-01-01Z">
+        <notes><![CDATA[
+            False Positive: CVE-2026-2586 and CVE-2026-2587 affect GlassFish application server
+            and administrative console components. The scanned artifact is JAXB Core (XML binding
+            library) and was erroneously matched to the eclipse:glassfish application server CPE.
+        ]]></notes>
+        <gav regex="true">^org\.glassfish\.jaxb:jaxb-core:4\.0\.9$</gav>
+        <cve>CVE-2026-2586</cve>
+        <cve>CVE-2026-2587</cve>
+    </suppress>
+
+    <!-- 2. org.glassfish.jaxb:txw2:4.0.9 -->
+    <suppress until="2027-01-01Z">
+        <notes><![CDATA[
+            False Positive: CVE-2026-2586 and CVE-2026-2587 affect GlassFish application server
+            and administrative console components. The scanned artifact is TXW2 (XML writing library)
+            and was erroneously matched to the eclipse:glassfish application server CPE.
+        ]]></notes>
+        <gav regex="true">^org\.glassfish\.jaxb:txw2:4\.0\.9$</gav>
+        <cve>CVE-2026-2586</cve>
+        <cve>CVE-2026-2587</cve>
+    </suppress>
+
+    <!-- 3. org.flywaydb:flyway-database-postgresql:12.4.0 -->
+    <suppress until="2027-01-01Z">
+        <notes><![CDATA[
+            False Positive: This Maven artifact is Flyway's PostgreSQL database migration adapter
+            version 12.4.0, which was erroneously mapped to PostgreSQL Server 12.4.0 CPE.
+        ]]></notes>
+        <gav regex="true">^org\.flywaydb:flyway-database-postgresql:12\.4\.0$</gav>
+        <cpe>cpe:2.3:a:postgresql:postgresql:12.4.0:*:*:*:*:*:*:*</cpe>
+        <cpe>cpe:/a:postgresql:postgresql:12.4.0</cpe>
+    </suppress>
+
+    <!-- 4. org.jetbrains.kotlin:kotlin-stdlib:2.3.21 -->
+    <suppress until="2027-01-01Z">
+        <notes><![CDATA[
+            False Positive: CVE-2026-53914 concerns unsafe deserialization in Kotlin build-cache metadata.
+            The runtime kotlin-stdlib artifact does not implement the affected build-cache compiler functionality.
+        ]]></notes>
+        <gav regex="true">^org\.jetbrains\.kotlin:kotlin-stdlib:2\.3\.21$</gav>
+        <cve>CVE-2026-53914</cve>
+    </suppress>
+
+    <!-- 5. io.opentelemetry.semconv:opentelemetry-semconv:1.41.1 -->
+    <suppress until="2027-01-01Z">
+        <notes><![CDATA[
+            False Positive: CVE-2026-39883 applies to opentelemetry-go and its BSD/Solaris host-ID
+            implementation. This artifact is the Java semantic-conventions library.
+        ]]></notes>
+        <gav regex="true">^io\.opentelemetry\.semconv:opentelemetry-semconv:1\.41\.1$</gav>
+        <cve>CVE-2026-39883</cve>
+    </suppress>
+
+    <!-- 6. io.micrometer:micrometer-registry-prometheus:1.17.1 -->
+    <suppress until="2027-01-01Z">
+        <notes><![CDATA[
+            False Positive: CVE-2026-42154 affects the Prometheus server remote-read /api/v1/read
+            endpoint, not Micrometer's Java registry client library.
+        ]]></notes>
+        <gav regex="true">^io\.micrometer:micrometer-registry-prometheus:1\.17\.1$</gav>
+        <cve>CVE-2026-42154</cve>
+    </suppress>
+
+    <!-- 7. org.glassfish.jaxb:jaxb-runtime:4.0.9 -->
+    <suppress until="2027-01-01Z">
+        <notes><![CDATA[
+            These CVEs affect Eclipse GlassFish application-server Admin Console
+            functionality. The scanned Maven artifact is JAXB Runtime and does not
+            contain the affected GlassFish Admin Console functionality. Dependency-Check
+            has incorrectly associated the artifact with the eclipse:glassfish product CPE.
+        ]]></notes>
+        <gav regex="true">^org\.glassfish\.jaxb:jaxb-runtime:4\.0\.9$</gav>
+        <cve>CVE-2026-2586</cve>
+        <cve>CVE-2026-2587</cve>
+    </suppress>
+
+    <!-- 8. io.prometheus:prometheus-metrics-*:1.7.0 CPE false-positive -->
+    <suppress until="2027-01-01Z">
+        <notes><![CDATA[
+            Prometheus client_java 1.7.0 modules are being incorrectly mapped
+            to the Prometheus server 1.7.0 CPE.
+
+            These io.prometheus:prometheus-metrics-* artifacts belong to the
+            Java client_java project and do not implement the Prometheus server
+            or its /api/v1/read remote-read endpoint.
+
+            Therefore the Prometheus server CPE is not applicable to these
+            Java client modules.
+
+            This rule suppresses ONLY that incorrect server CPE and only for
+            io.prometheus:prometheus-metrics-* artifacts at version 1.7.0.
+            Vulnerabilities associated through any other CPE or identifier
+            remain visible.
+        ]]></notes>
+        <gav regex="true">^io\.prometheus:prometheus-metrics-[^:]+:1\.7\.0$</gav>
+        <cpe>cpe:/a:prometheus:prometheus:1.7.0</cpe>
+    </suppress>
+
+    <!-- 9. org.testcontainers:testcontainers-postgresql:2.0.5 CPE false-positive -->
+    <suppress until="2027-01-01Z">
+        <notes><![CDATA[
+            False Positive: This Maven artifact is a Testcontainers Java module for launching
+            PostgreSQL containers in testing and simulation environments. It was incorrectly
+            mapped by Dependency-Check to PostgreSQL Server version 2.0.5 CPE.
+        ]]></notes>
+        <gav regex="true">^org\.testcontainers:testcontainers-postgresql:2\.0\.5$</gav>
+        <cpe>cpe:/a:postgresql:postgresql:2.0.5</cpe>
+    </suppress>
+
+    <!-- 10. com.github.docker-java:docker-java-transport-zerodep:3.7.1 (CVE-2026-71290 not applicable) -->
+    <suppress until="2027-01-01Z">
+        <notes><![CDATA[
+            docker-java-transport-zerodep 3.7.1 shades Apache HttpClient 5.5.1.
+            CVE-2026-71290 affects the ASYNC HttpClient implementation.
+            The Apache advisory explicitly states that the CLASSIC HttpClient implementation is not affected.
+            docker-java zerodep uses the classic HttpClient transport path.
+            Therefore the vulnerable async execution path is not used by this component in LedgerGuard/Testcontainers.
+            This is a NOT-AFFECTED / usage-context classification.
+        ]]></notes>
+        <filePath regex="true">.*docker-java-transport-zerodep-3\.7\.1\.jar.*httpclient5.*</filePath>
+        <cve>CVE-2026-71290</cve>
+    </suppress>
+
+</suppressions>
