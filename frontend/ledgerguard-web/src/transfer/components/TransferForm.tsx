@@ -19,8 +19,8 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { transferApi } from '../api/transferApi';
 import { parseInrToMinorUnits } from '../../shared/utils/money';
-import { ApiError } from '../../shared/types/api.types';
 import { TransferResponse } from '../types/transfer.types';
+import { transferFeedback } from '../utils/transferFeedback';
 
 function generateUUID(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -38,8 +38,11 @@ export const TransferForm: React.FC = () => {
 
   const [destinationId, setDestinationId] = useState('');
   const [amountInr, setAmountInr] = useState('');
-  const [clientError, setClientError] = useState<string | null>(null);
+  const [clientError, setClientError] = useState<{ field: 'destination' | 'amount'; message: string } | null>(null);
   const [lastSuccess, setLastSuccess] = useState<TransferResponse | null>(null);
+  const submitting = useRef(false);
+  const destinationInput = useRef<HTMLInputElement>(null);
+  const amountInput = useRef<HTMLInputElement>(null);
 
   // Logical retry idempotency tracking
   const idempotencyRef = useRef<{
@@ -59,6 +62,8 @@ export const TransferForm: React.FC = () => {
     setClientError(null);
     setLastSuccess(null);
 
+    transferMutation.reset();
+
     if (val !== idempotencyRef.current.boundDestination) {
       idempotencyRef.current = {
         key: generateUUID(),
@@ -73,6 +78,7 @@ export const TransferForm: React.FC = () => {
     setAmountInr(val);
     setClientError(null);
     setLastSuccess(null);
+    transferMutation.reset();
 
     if (val.trim() !== idempotencyRef.current.boundAmount) {
       idempotencyRef.current = {
@@ -116,28 +122,33 @@ export const TransferForm: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['wallet'] });
       queryClient.invalidateQueries({ queryKey: ['transfers'] });
     },
+    onSettled: () => { submitting.current = false; },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting.current) return;
     setClientError(null);
     setLastSuccess(null);
 
     const dest = destinationId.trim();
     if (!dest) {
-      setClientError('Destination wallet ID is required');
+      setClientError({ field: 'destination', message: 'Recipient wallet ID is required.' });
+      destinationInput.current?.focus();
       return;
     }
 
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(dest)) {
-      setClientError('Destination wallet ID must be a valid UUID');
+      setClientError({ field: 'destination', message: 'Enter a valid 36-character wallet ID.' });
+      destinationInput.current?.focus();
       return;
     }
 
     const parseResult = parseInrToMinorUnits(amountInr);
     if (!parseResult.ok || parseResult.minorUnits === undefined) {
-      setClientError(parseResult.error || 'Invalid amount');
+      setClientError({ field: 'amount', message: parseResult.error || 'Enter a valid amount.' });
+      amountInput.current?.focus();
       return;
     }
 
@@ -145,6 +156,7 @@ export const TransferForm: React.FC = () => {
     idempotencyRef.current.boundDestination = dest;
     idempotencyRef.current.boundAmount = amountInr.trim();
 
+    submitting.current = true;
     transferMutation.mutate({
       destId: dest,
       minorUnits: parseResult.minorUnits,
@@ -152,38 +164,16 @@ export const TransferForm: React.FC = () => {
     });
   };
 
-  const getErrorMessage = (error: unknown): string => {
-    if (error instanceof ApiError) {
-      if (error.problem.errorCode === 'INSUFFICIENT_FUNDS') {
-        return 'Insufficient funds for this transfer.';
-      }
-      if (error.problem.errorCode === 'RESOURCE_NOT_FOUND') {
-        return 'Destination wallet account not found.';
-      }
-      if (error.problem.status === 0) {
-        return "We couldn't confirm the transfer result. You can safely retry without risking double-deduction.";
-      }
-      return error.problem.detail || 'Transfer failed. Please check details and try again.';
-    }
-    if (error instanceof Error) {
-      return error.message;
-    }
-    return 'Transfer failed. Please try again.';
-  };
-
-  const isNetworkError =
-    transferMutation.isError &&
-    transferMutation.error instanceof ApiError &&
-    transferMutation.error.problem.status === 0;
+  const feedback = transferMutation.isError ? transferFeedback(transferMutation.error) : null;
 
   return (
-    <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+    <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, height: '100%' }}>
       <CardContent sx={{ p: { xs: 2.5, sm: 3 } }}>
-        <Typography variant="h6" sx={{ fontWeight: 700, mb: 0.5 }}>
-          Send Internal Transfer
+        <Typography variant="h6" component="h2" sx={{ fontWeight: 700, mb: 0.5 }}>
+          Send funds
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
-          Transfer INR funds instantly to another LedgerGuard wallet account.
+          Transfer INR to another LedgerGuard wallet.
         </Typography>
 
         <Collapse in={!!lastSuccess}>
@@ -195,28 +185,21 @@ export const TransferForm: React.FC = () => {
               onClose={() => setLastSuccess(null)}
             >
               <AlertTitle sx={{ fontWeight: 700 }}>
-                Transfer Completed {lastSuccess.replayed ? '(Idempotent Replay)' : 'Successfully'}
+                {lastSuccess.replayed ? 'Transfer already completed' : 'Transfer completed'}
               </AlertTitle>
+              {lastSuccess.replayed && 'Your original transfer is confirmed. No additional funds were moved. '}
               Transfer ID: <code style={{ wordBreak: 'break-all' }}>{lastSuccess.transferId}</code>
             </Alert>
           )}
         </Collapse>
 
-        <Collapse in={!!clientError}>
-          {clientError && (
-            <Alert severity="error" sx={{ mb: 2.5 }} onClose={() => setClientError(null)}>
-              {clientError}
-            </Alert>
-          )}
-        </Collapse>
-
         <Collapse in={transferMutation.isError}>
-          {transferMutation.isError && (
+          {feedback && (
             <Alert
-              severity={isNetworkError ? 'warning' : 'error'}
+              severity={feedback.severity}
               sx={{ mb: 2.5 }}
               action={
-                isNetworkError && (
+                feedback.canRetry && (
                   <Button
                     color="inherit"
                     size="small"
@@ -224,30 +207,32 @@ export const TransferForm: React.FC = () => {
                     onClick={handleSubmit}
                     disabled={transferMutation.isPending}
                   >
-                    Retry Safely
+                    Retry
                   </Button>
                 )
               }
             >
               <AlertTitle sx={{ fontWeight: 700 }}>
-                {isNetworkError ? 'Connection Issue' : 'Transfer Rejected'}
+                {feedback.title}
               </AlertTitle>
-              {getErrorMessage(transferMutation.error)}
+              {feedback.message}
             </Alert>
           )}
         </Collapse>
 
-        <Box component="form" onSubmit={handleSubmit} noValidate>
+        <Box component="form" onSubmit={handleSubmit} noValidate aria-busy={transferMutation.isPending}>
           <Stack spacing={2.5}>
             <TextField
-              label="Destination Wallet ID"
-              placeholder="e.g. 550e8400-e29b-41d4-a716-446655440000"
+              id="transfer-destination"
+              inputRef={destinationInput}
+              label="Recipient wallet ID"
+              error={clientError?.field === 'destination'}
               value={destinationId}
               onChange={handleDestinationChange}
               fullWidth
               required
               disabled={transferMutation.isPending}
-              helperText="Enter the recipient's 36-character ledger account UUID"
+              helperText={clientError?.field === 'destination' ? clientError.message : 'Ask the recipient for the wallet ID shown on their dashboard.'}
               slotProps={{
                 input: {
                   sx: { fontFamily: 'monospace', fontSize: '0.9rem' },
@@ -256,15 +241,19 @@ export const TransferForm: React.FC = () => {
             />
 
             <TextField
+              id="transfer-amount"
+              inputRef={amountInput}
               label="Amount (INR)"
+              error={clientError?.field === 'amount'}
               placeholder="e.g. 100.00"
               value={amountInr}
               onChange={handleAmountChange}
               fullWidth
               required
               disabled={transferMutation.isPending}
-              helperText="Positive amount with up to 2 decimal places"
+              helperText={clientError?.field === 'amount' ? clientError.message : 'Enter a positive amount with up to 2 decimal places.'}
               slotProps={{
+                htmlInput: { inputMode: 'decimal' },
                 input: {
                   startAdornment: <InputAdornment position="start">₹</InputAdornment>,
                   sx: { fontWeight: 600, fontSize: '1.05rem' },
@@ -280,14 +269,14 @@ export const TransferForm: React.FC = () => {
                 disabled={transferMutation.isPending || !destinationId.trim() || !amountInr.trim()}
                 startIcon={
                   transferMutation.isPending ? (
-                    <CircularProgress size={20} color="inherit" />
+                    <CircularProgress size={20} color="inherit" aria-hidden="true" />
                   ) : (
                     <SendIcon />
                   )
                 }
-                sx={{ px: 4, py: 1.2, fontWeight: 700 }}
+                sx={{ px: 4, py: 1.2, fontWeight: 700, width: { xs: '100%', sm: 'auto' } }}
               >
-                {transferMutation.isPending ? 'Executing Transfer...' : 'Send Transfer'}
+                {transferMutation.isPending ? 'Sending funds…' : 'Send funds'}
               </Button>
             </Box>
           </Stack>

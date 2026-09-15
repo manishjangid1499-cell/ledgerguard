@@ -2,7 +2,6 @@ import React from 'react';
 import {
   Box,
   Button,
-  Chip,
   Paper,
   Table,
   TableBody,
@@ -13,7 +12,9 @@ import {
   Typography,
 } from '@mui/material';
 import VisibilityIcon from '@mui/icons-material/Visibility';
-import { LabRunView, ScenarioStatus } from '../types/failureLab.types';
+import { LabRunView } from '../types/failureLab.types';
+import { StatusBadge } from '../../shared/components/StatusBadge';
+import { formatDateTime } from '../../shared/utils/display';
 
 interface Props {
   runs: LabRunView[];
@@ -21,28 +22,12 @@ interface Props {
   onSelectRun: (runId: string) => void;
 }
 
-function getStatusChipColor(status: ScenarioStatus): 'default' | 'primary' | 'success' | 'error' | 'warning' {
-  switch (status) {
-    case 'PENDING':
-    case 'RUNNING':
-      return 'primary';
-    case 'PASSED':
-      return 'success';
-    case 'FAILED':
-      return 'error';
-    case 'TIMED_OUT':
-      return 'warning';
-    default:
-      return 'default';
-  }
-}
-
 export const RunHistoryTable: React.FC<Props> = ({ runs, selectedRunId, onSelectRun }) => {
   if (!runs || runs.length === 0) {
     return (
       <Box sx={{ p: 3, textAlign: 'center' }}>
         <Typography variant="body2" color="text.secondary">
-          No recent runs recorded. Choose a scenario above to start your first chaos run.
+          No runs recorded yet. Choose an available scenario to begin.
         </Typography>
       </Box>
     );
@@ -50,12 +35,12 @@ export const RunHistoryTable: React.FC<Props> = ({ runs, selectedRunId, onSelect
 
   return (
     <Box>
-      <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>
-        Recent Execution History
+      <Typography variant="h6" component="h2" sx={{ fontWeight: 700, mb: 2 }}>
+        Recent runs
       </Typography>
 
-      <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
-        <Table size="small">
+      <TableContainer component={Paper} variant="outlined" tabIndex={0} role="region" aria-label="Run history, scroll horizontally for more columns" sx={{ borderRadius: 2 }}>
+        <Table size="small" aria-label="Failure Lab run history" sx={{ minWidth: 780 }}>
           <TableHead sx={{ bgcolor: 'action.hover' }}>
             <TableRow>
               <TableCell sx={{ fontWeight: 700 }}>Run ID</TableCell>
@@ -70,7 +55,7 @@ export const RunHistoryTable: React.FC<Props> = ({ runs, selectedRunId, onSelect
           <TableBody>
             {runs.map((r) => {
               const isSelected = r.runId === selectedRunId;
-              const durationSec = r.durationMs ? `${(r.durationMs / 1000).toFixed(2)}s` : '�';
+              const durationSec = r.durationMs ? `${(r.durationMs / 1000).toFixed(2)}s` : '—';
               const passedInvariants = r.invariantResults ? r.invariantResults.filter((inv) => inv.passed).length : 0;
               const totalInvariants = r.invariantResults ? r.invariantResults.length : 0;
 
@@ -87,25 +72,21 @@ export const RunHistoryTable: React.FC<Props> = ({ runs, selectedRunId, onSelect
                   </TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>{r.scenarioId}</TableCell>
                   <TableCell>
-                    <Chip
-                      label={r.status}
-                      size="small"
-                      color={getStatusChipColor(r.status)}
-                      sx={{ fontWeight: 700, fontSize: '0.68rem', height: 22 }}
-                    />
+                    <StatusBadge status={r.status} />
                   </TableCell>
                   <TableCell sx={{ fontSize: '0.8rem', color: 'text.secondary' }}>
-                    {new Date(r.startedAt).toLocaleTimeString()}
+                    {formatDateTime(r.startedAt)}
                   </TableCell>
                   <TableCell sx={{ fontSize: '0.8rem', fontFamily: 'monospace' }}>
                     {durationSec}
                   </TableCell>
                   <TableCell sx={{ fontSize: '0.8rem' }}>
-                    {totalInvariants > 0 ? `${passedInvariants}/${totalInvariants} Passed` : '�'}
+                    {totalInvariants > 0 ? `${passedInvariants}/${totalInvariants} Passed` : '—'}
                   </TableCell>
                   <TableCell align="right">
                     <Button
                       size="small"
+                      aria-label={`Inspect run ${r.runId}`}
                       variant={isSelected ? 'contained' : 'outlined'}
                       startIcon={<VisibilityIcon fontSize="small" />}
                       onClick={(e) => {

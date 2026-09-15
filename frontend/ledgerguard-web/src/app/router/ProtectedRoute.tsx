@@ -7,7 +7,7 @@ export const ProtectedRoute: React.FC = () => {
   const { status } = useAuth();
 
   if (status === 'loading') {
-    return <LoadingScreen message="Checking session credentials..." />;
+    return <LoadingScreen />;
   }
 
   if (status === 'unauthenticated') {

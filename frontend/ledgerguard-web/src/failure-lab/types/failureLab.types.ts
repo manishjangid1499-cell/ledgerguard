@@ -69,7 +69,7 @@ export const INVARIANT_DEFINITIONS: InvariantDefinition[] = [
     key: 'JOURNAL_INTEGRITY',
     name: 'Journal Integrity',
     formula: 'Sum(Debits) == Sum(Credits) [Diff = 0]',
-    description: 'Every posted journal entry is cryptographically and structurally balanced with zero discrepancy.',
+    description: 'Posted journal transactions contain balanced debit and credit entries with zero discrepancy.',
     matchPatterns: ['Debit == Credit', 'Structural Balance', 'DEBIT_CREDIT_EQUALITY', 'Journal Structure'],
     applicableScenarios: ['OPPOSING_TRANSFERS', 'TIMEOUT_AFTER_COMMIT', 'CORRUPTED_SNAPSHOT', 'WEBHOOK_RACE'],
   },

@@ -5,18 +5,21 @@ import { AppLayout } from '../../shared/layout/AppLayout';
 import { LandingPage } from '../../shared/pages/LandingPage';
 import { LoginPage } from '../../auth/pages/LoginPage';
 import { RegisterPage } from '../../auth/pages/RegisterPage';
-import { AppHomePage } from '../../shared/pages/AppHomePage';
-import { ProfilePage } from '../../shared/pages/ProfilePage';
-import { TransferDetailPage } from '../../transfer/pages/TransferDetailPage';
 import { NotFoundPage } from '../../shared/pages/NotFoundPage';
-import { FailureLabPage } from '../../failure-lab/pages/FailureLabPage';
 import { ProtectedRoute } from './ProtectedRoute';
 import { PublicOnlyRoute } from './PublicOnlyRoute';
 import { OpsRoute } from './OpsRoute';
+import { RouteMetadata } from './RouteMetadata';
+
+const AppHomePage = React.lazy(() => import('../../shared/pages/AppHomePage').then(module => ({ default: module.AppHomePage })));
+const ProfilePage = React.lazy(() => import('../../shared/pages/ProfilePage').then(module => ({ default: module.ProfilePage })));
+const TransferDetailPage = React.lazy(() => import('../../transfer/pages/TransferDetailPage').then(module => ({ default: module.TransferDetailPage })));
+const FailureLabPage = React.lazy(() => import('../../failure-lab/pages/FailureLabPage').then(module => ({ default: module.FailureLabPage })));
 
 export const AppRouter: React.FC = () => {
   return (
     <BrowserRouter>
+      <RouteMetadata />
       <Routes>
         {/* Public Landing Route */}
         <Route element={<PublicLayout />}>

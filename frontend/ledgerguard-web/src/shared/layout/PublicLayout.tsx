@@ -1,36 +1,56 @@
-import React from 'react';
-import { Box, AppBar, Toolbar, Container, Button, Stack } from '@mui/material';
-import { Link as RouterLink, Outlet } from 'react-router-dom';
+import { AppBar, Box, Button, Container, Stack, Toolbar } from '@mui/material';
+import { Link as RouterLink, Outlet, useLocation } from 'react-router-dom';
+import { useAuth } from '../../auth/hooks/useAuth';
 import { BrandLogo } from '../components/BrandLogo';
+import { PublicFooter } from '../components/PublicFooter';
 
-export const PublicLayout: React.FC = () => {
+export const PublicLayout = () => {
+  const { pathname } = useLocation();
+  const { status } = useAuth();
+  const isLanding = pathname === '/';
+
   return (
-    <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
-      <AppBar
-        position="static"
-        color="transparent"
-        elevation={0}
-        sx={{ borderBottom: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}
-      >
+    <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <a className="skip-link" href="#main-content">Skip to content</a>
+      <AppBar position="static" color="transparent" elevation={0}
+        sx={{ borderBottom: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}>
         <Container maxWidth="lg">
-          <Toolbar disableGutters sx={{ justifyContent: 'space-between' }}>
-            <RouterLink to="/" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <Toolbar disableGutters sx={{ justifyContent: 'space-between', gap: 1, minHeight: 72 }}>
+            <RouterLink to="/" aria-label="LedgerGuard home" style={{ textDecoration: 'none' }}>
               <BrandLogo size="small" />
             </RouterLink>
-            <Stack direction="row" spacing={1.5}>
-              <Button component={RouterLink} to="/login" variant="outlined" color="primary" size="small">
-                Sign in
-              </Button>
-              <Button component={RouterLink} to="/register" variant="contained" color="primary" size="small">
-                Create account
-              </Button>
+            {isLanding && (
+              <Stack component="nav" aria-label="Platform" direction="row" spacing={1}
+                sx={{ display: { xs: 'none', md: 'flex' } }}>
+                <Button href="#platform" color="inherit">Platform</Button>
+                <Button href="#architecture" color="inherit">Architecture</Button>
+                <Button href="#security" color="inherit">Security</Button>
+              </Stack>
+            )}
+            <Stack component="nav" aria-label="Account" direction="row" spacing={1}>
+              {status === 'authenticated' ? (
+                <Button component={RouterLink} to="/app" variant="contained" size="small">Dashboard</Button>
+              ) : (
+                <>
+                  {pathname !== '/login' && (
+                    <Button component={RouterLink} to="/login" variant={isLanding ? 'text' : 'outlined'}
+                      size="small" sx={{ whiteSpace: 'nowrap', minWidth: 0, px: { xs: 1, sm: 2 } }}>Sign in</Button>
+                  )}
+                  {pathname !== '/register' && (
+                    <Button component={RouterLink} to="/register" variant="contained" size="small"
+                      sx={{ whiteSpace: 'nowrap', px: { xs: 1.25, sm: 2 } }}>Create account</Button>
+                  )}
+                </>
+              )}
             </Stack>
           </Toolbar>
         </Container>
       </AppBar>
-      <Box component="main" sx={{ flexGrow: 1, py: { xs: 4, md: 6 } }}>
+      <Box component="main" id="main-content" tabIndex={-1}
+        sx={{ flexGrow: 1, py: isLanding ? 0 : { xs: 4, md: 6 }, outline: 'none' }}>
         <Outlet />
       </Box>
+      <PublicFooter compact={!isLanding} />
     </Box>
   );
 };

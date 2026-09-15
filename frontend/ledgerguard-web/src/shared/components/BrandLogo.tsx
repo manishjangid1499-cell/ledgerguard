@@ -12,7 +12,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({ size = 'medium', subtitle 
   const titleVariant = size === 'small' ? 'h6' : size === 'large' ? 'h4' : 'h5';
 
   return (
-    <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+    <Stack direction="row" spacing={size === 'small' ? 1 : 1.5} sx={{ alignItems: 'center' }}>
       <SecurityIcon color="primary" sx={{ fontSize: iconSize }} />
       <Box>
         <Typography
@@ -23,12 +23,13 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({ size = 'medium', subtitle 
             color: 'primary.main',
             display: 'block',
             lineHeight: 1.1,
+            ...(size === 'small' && { fontSize: '1.125rem' }),
           }}
         >
           LedgerGuard
         </Typography>
         {subtitle && size !== 'small' && (
-          <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.2 }}>
+          <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5, lineHeight: 1.5 }}>
             Payment Integrity & Ledger Platform
           </Typography>
         )}

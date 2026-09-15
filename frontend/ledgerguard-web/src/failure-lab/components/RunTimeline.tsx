@@ -73,19 +73,20 @@ export const RunTimeline: React.FC<Props> = ({ timeline, isRunning }) => {
               }}
             >
               <Stack
-                direction="row"
+                direction={{ xs: 'column', sm: 'row' }}
                 spacing={1}
                 sx={{ justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.5 }}
               >
-                <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap', minWidth: 0 }}>
                   <Chip
                     label={event.stepName}
                     size="small"
                     color={color}
-                    sx={{ fontWeight: 700, fontSize: '0.68rem', height: 20 }}
+                    variant="outlined"
+                    sx={{ fontWeight: 600, fontSize: '0.7rem', maxWidth: '100%' }}
                   />
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {event.description}
+                  <Typography variant="body2" sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>
+                    {event.stepName === 'ERROR' ? 'An execution error was recorded.' : event.description}
                   </Typography>
                 </Stack>
                 <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
@@ -93,7 +94,7 @@ export const RunTimeline: React.FC<Props> = ({ timeline, isRunning }) => {
                 </Typography>
               </Stack>
 
-              {event.details && (
+              {event.details && event.stepName !== 'ERROR' && (
                 <Box
                   component="pre"
                   sx={{
@@ -126,7 +127,7 @@ export const RunTimeline: React.FC<Props> = ({ timeline, isRunning }) => {
               gap: 1.5,
             }}
           >
-            <HourglassEmptyIcon color="action" fontSize="small" sx={{ animation: 'spin 2s linear infinite' }} />
+            <HourglassEmptyIcon color="action" fontSize="small" />
             <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
               Executing next step...
             </Typography>

@@ -9,11 +9,11 @@ export const NotFoundPage: React.FC = () => {
   const targetLabel = status === 'authenticated' ? 'Return to Dashboard' : 'Return to Home';
 
   return (
-    <Container maxWidth="sm" sx={{ py: 8 }}>
+    <Container component="main" maxWidth="sm" sx={{ py: 8 }}>
       <Paper
         elevation={0}
         sx={{
-          p: 5,
+          p: { xs: 3, sm: 5 },
           textAlign: 'center',
           border: '1px solid',
           borderColor: 'divider',
@@ -24,7 +24,7 @@ export const NotFoundPage: React.FC = () => {
         <Typography variant="h2" component="h1" color="primary.main" sx={{ fontWeight: 800, mb: 1 }}>
           404
         </Typography>
-        <Typography variant="h5" gutterBottom sx={{ fontWeight: 600 }}>
+        <Typography variant="h5" component="h2" gutterBottom sx={{ fontWeight: 600 }}>
           Page not found
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3.5, maxWidth: 380, mx: 'auto' }}>

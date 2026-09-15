@@ -1,210 +1,83 @@
-import React from 'react';
-import {
-  Box,
-  AppBar,
-  Toolbar,
-  Container,
-  Button,
-  Stack,
-  Chip,
-  Typography,
-  IconButton,
-  Menu,
-  MenuItem,
-  ListItemIcon,
-  ListItemText,
-} from '@mui/material';
-import { Link as RouterLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { Suspense, useState } from 'react';
+import { AppBar, Box, Button, Chip, Container, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Stack, Toolbar, Typography } from '@mui/material';
+import { Link as RouterLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
+import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
+import PersonOutlineIcon from '@mui/icons-material/Person';
+import ScienceOutlinedIcon from '@mui/icons-material/ScienceOutlined';
 import LogoutIcon from '@mui/icons-material/Logout';
-import DashboardIcon from '@mui/icons-material/Dashboard';
-import PersonIcon from '@mui/icons-material/Person';
-import ScienceIcon from '@mui/icons-material/Science';
 import { useAuth } from '../../auth/hooks/useAuth';
 import { BrandLogo } from '../components/BrandLogo';
-import { UserRole } from '../types/user.types';
+import { DataLoading } from '../components/DataLoading';
+import { PageErrorBoundary } from '../components/PageErrorBoundary';
+import { formatRoleLabel } from '../utils/display';
 
-function formatRoleLabel(role: UserRole): string {
-  switch (role) {
-    case 'CUSTOMER':
-      return 'Customer';
-    case 'MERCHANT':
-      return 'Merchant';
-    case 'OPS':
-      return 'Operations';
-    default:
-      return role;
-  }
-}
-
-function roleColor(role: UserRole): 'default' | 'primary' | 'secondary' | 'info' {
-  switch (role) {
-    case 'MERCHANT':
-      return 'secondary';
-    case 'OPS':
-      return 'info';
-    case 'CUSTOMER':
-    default:
-      return 'primary';
-  }
-}
-
-export const AppLayout: React.FC = () => {
+export const AppLayout = () => {
   const { user, logout } = useAuth();
+  const { pathname } = useLocation();
   const navigate = useNavigate();
-  const location = useLocation();
-  const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const links = [
+    { to: '/app', label: 'Dashboard', icon: DashboardOutlinedIcon, active: pathname === '/app' || pathname.startsWith('/app/transfers/') },
+    { to: '/profile', label: 'Profile', icon: PersonOutlineIcon, active: pathname === '/profile' },
+    ...(user?.role === 'OPS' ? [{ to: '/app/failure-lab', label: 'Failure Lab', icon: ScienceOutlinedIcon, active: pathname.startsWith('/app/failure-lab') }] : []),
+  ];
 
-  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
-    setAnchorEl(event.currentTarget);
-  };
-
-  const handleMenuClose = () => {
-    setAnchorEl(null);
-  };
-
-  const handleLogout = async () => {
-    handleMenuClose();
-    await logout();
-    navigate('/login');
-  };
+  const navigation = (
+    <Stack component="nav" aria-label="Main navigation" direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: 'wrap' }}>
+      {links.map(({ to, label, icon: Icon, active }) => (
+        <Button key={to} component={RouterLink} to={to} size="small" startIcon={<Icon />}
+          aria-current={active ? 'page' : undefined}
+          sx={{ px: 1.5, color: active ? 'primary.main' : 'text.secondary', bgcolor: active ? 'action.selected' : 'transparent' }}>
+          {label}
+        </Button>
+      ))}
+    </Stack>
+  );
 
   return (
-    <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
-      <AppBar
-        position="sticky"
-        color="transparent"
-        elevation={0}
-        sx={{ borderBottom: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}
-      >
+    <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <a className="skip-link" href="#main-content">Skip to content</a>
+      <AppBar position="sticky" color="transparent" elevation={0}
+        sx={{ borderBottom: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}>
         <Container maxWidth="lg">
-          <Toolbar disableGutters sx={{ justifyContent: 'space-between' }}>
-            <Stack direction="row" spacing={3} sx={{ alignItems: 'center' }}>
-              <RouterLink to="/app" style={{ textDecoration: 'none', color: 'inherit' }}>
-                <BrandLogo size="small" subtitle={false} />
-              </RouterLink>
-              <Stack direction="row" spacing={1} sx={{ display: { xs: 'none', sm: 'flex' } }}>
-                <Button
-                  component={RouterLink}
-                  to="/app"
-                  size="small"
-                  variant={location.pathname === '/app' ? 'contained' : 'text'}
-                  color={location.pathname === '/app' ? 'primary' : 'inherit'}
-                  startIcon={<DashboardIcon />}
-                >
-                  Dashboard
-                </Button>
-                <Button
-                  component={RouterLink}
-                  to="/profile"
-                  size="small"
-                  variant={location.pathname === '/profile' ? 'contained' : 'text'}
-                  color={location.pathname === '/profile' ? 'primary' : 'inherit'}
-                  startIcon={<PersonIcon />}
-                >
-                  Profile
-                </Button>
-                {user?.role === 'OPS' && (
-                  <Button
-                    component={RouterLink}
-                    to="/app/failure-lab"
-                    size="small"
-                    variant={location.pathname.startsWith('/app/failure-lab') ? 'contained' : 'text'}
-                    color={location.pathname.startsWith('/app/failure-lab') ? 'primary' : 'inherit'}
-                    startIcon={<ScienceIcon />}
-                  >
-                    Failure Lab
-                  </Button>
-                )}
-              </Stack>
+          <Toolbar disableGutters sx={{ justifyContent: 'space-between', gap: 2 }}>
+            <Stack direction="row" spacing={3} sx={{ alignItems: 'center', minWidth: 0 }}>
+              <RouterLink to="/app" aria-label="LedgerGuard dashboard" style={{ textDecoration: 'none' }}><BrandLogo size="small" /></RouterLink>
+              <Box sx={{ display: { xs: 'none', md: 'block' } }}>{navigation}</Box>
             </Stack>
-
-            <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-              {user && (
-                <Chip
-                  label={formatRoleLabel(user.role)}
-                  color={roleColor(user.role)}
-                  variant="outlined"
-                  size="small"
-                  sx={{ fontWeight: 600 }}
-                />
-              )}
-
-              {user && (
-                <Typography variant="body2" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' } }}>
-                  {user.email}
-                </Typography>
-              )}
-
-              <IconButton
-                onClick={handleMenuOpen}
-                size="small"
-                aria-label="account options"
-                aria-controls="user-menu"
-                aria-haspopup="true"
-                color="inherit"
-              >
-                <AccountCircleIcon fontSize="medium" />
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
+              {user && <Chip label={formatRoleLabel(user.role)} size="small" variant="outlined" sx={{ fontWeight: 600 }} />}
+              {user && <Typography variant="body2" color="text.secondary" noWrap title={user.email}
+                sx={{ display: { xs: 'none', lg: 'block' }, maxWidth: 220 }}>{user.email}</Typography>}
+              <IconButton id="account-menu-button" aria-label="Account options" aria-haspopup="menu"
+                aria-expanded={Boolean(anchor)} aria-controls={anchor ? 'account-menu' : undefined}
+                onClick={event => setAnchor(event.currentTarget)}>
+                <AccountCircleIcon />
               </IconButton>
-
-              <Menu
-                id="user-menu"
-                anchorEl={anchorEl}
-                open={Boolean(anchorEl)}
-                onClose={handleMenuClose}
-                transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-                anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-                slotProps={{ paper: { sx: { minWidth: 180, mt: 1 } } }}
-              >
-                <MenuItem
-                  component={RouterLink}
-                  to="/app"
-                  onClick={handleMenuClose}
-                  selected={location.pathname === '/app'}
-                >
-                  <ListItemIcon>
-                    <DashboardIcon fontSize="small" />
-                  </ListItemIcon>
-                  <ListItemText primary="Dashboard" />
-                </MenuItem>
-                <MenuItem
-                  component={RouterLink}
-                  to="/profile"
-                  onClick={handleMenuClose}
-                  selected={location.pathname === '/profile'}
-                >
-                  <ListItemIcon>
-                    <PersonIcon fontSize="small" />
-                  </ListItemIcon>
-                  <ListItemText primary="Profile" />
-                </MenuItem>
-                {user?.role === 'OPS' && (
-                  <MenuItem
-                    component={RouterLink}
-                    to="/app/failure-lab"
-                    onClick={handleMenuClose}
-                    selected={location.pathname.startsWith('/app/failure-lab')}
-                  >
-                    <ListItemIcon>
-                      <ScienceIcon fontSize="small" />
-                    </ListItemIcon>
-                    <ListItemText primary="Failure Lab" />
+              <Menu id="account-menu" anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}
+                transformOrigin={{ horizontal: 'right', vertical: 'top' }} anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+                slotProps={{ list: { 'aria-labelledby': 'account-menu-button' }, paper: { sx: { minWidth: 200, maxWidth: 'calc(100vw - 32px)' } } }}>
+                {links.map(({ to, label, icon: Icon, active }) => (
+                  <MenuItem key={to} component={RouterLink} to={to} selected={active} onClick={() => setAnchor(null)}>
+                    <ListItemIcon><Icon fontSize="small" /></ListItemIcon><ListItemText>{label}</ListItemText>
                   </MenuItem>
-                )}
-                <MenuItem onClick={handleLogout}>
-                  <ListItemIcon>
-                    <LogoutIcon fontSize="small" />
-                  </ListItemIcon>
-                  <ListItemText primary="Sign out" />
+                ))}
+                <MenuItem onClick={async () => { setAnchor(null); await logout(); navigate('/login'); }}>
+                  <ListItemIcon><LogoutIcon fontSize="small" /></ListItemIcon><ListItemText>Sign out</ListItemText>
                 </MenuItem>
               </Menu>
             </Stack>
           </Toolbar>
+          <Box sx={{ display: { xs: 'block', md: 'none' }, pb: 1 }}>{navigation}</Box>
         </Container>
       </AppBar>
-
-      <Box component="main" sx={{ flexGrow: 1, py: { xs: 3, md: 5 } }}>
-        <Outlet />
+      <Box component="main" id="main-content" tabIndex={-1} sx={{ flexGrow: 1, py: { xs: 3, md: 4 }, outline: 'none', minWidth: 0 }}>
+        <PageErrorBoundary key={pathname}>
+          <Suspense fallback={<Container maxWidth="lg"><DataLoading label="Loading page" minHeight={400} /></Container>}>
+            <Outlet />
+          </Suspense>
+        </PageErrorBoundary>
       </Box>
     </Box>
   );

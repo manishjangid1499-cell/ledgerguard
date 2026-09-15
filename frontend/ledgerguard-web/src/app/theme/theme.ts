@@ -21,9 +21,13 @@ export const theme = createTheme({
     },
     text: {
       primary: '#1e293b',
-      secondary: '#64748b',
+      secondary: '#526277',
     },
     divider: '#e2e8f0',
+    success: { main: '#24705b' },
+    warning: { main: '#8a5a12' },
+    info: { main: '#225f8a' },
+    error: { main: '#b42318' },
   },
   typography: {
     fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
@@ -51,12 +55,28 @@ export const theme = createTheme({
       styleOverrides: {
         root: {
           borderRadius: 6,
+          minHeight: 40,
           boxShadow: 'none',
           '&:hover': {
             boxShadow: 'none',
           },
         },
       },
+    },
+    MuiIconButton: {
+      styleOverrides: { root: { minWidth: 40, minHeight: 40 } },
+    },
+    MuiSkeleton: {
+      defaultProps: { animation: false },
+    },
+    MuiTableCell: {
+      styleOverrides: {
+        head: { color: '#526277', fontSize: '0.75rem', fontWeight: 600 },
+        root: { borderColor: '#e2e8f0' },
+      },
+    },
+    MuiAlert: {
+      styleOverrides: { message: { minWidth: 0, overflowWrap: 'anywhere' } },
     },
     MuiPaper: {
       styleOverrides: {
