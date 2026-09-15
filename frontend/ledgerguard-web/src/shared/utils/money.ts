@@ -61,7 +61,7 @@ export function parseInrToMinorUnits(input: string): ParseInrResult {
   if (minorUnitsBigInt > BigInt(Number.MAX_SAFE_INTEGER)) {
     return {
       ok: false,
-      error: 'Amount exceeds maximum supported safe integer value',
+      error: 'This amount is too large to submit. Enter a smaller amount.',
     };
   }
 
@@ -69,7 +69,7 @@ export function parseInrToMinorUnits(input: string): ParseInrResult {
   if (!Number.isSafeInteger(minorUnits)) {
     return {
       ok: false,
-      error: 'Amount cannot be safely represented as an integer',
+      error: 'This amount cannot be submitted accurately. Enter a smaller amount.',
     };
   }
 
@@ -88,14 +88,16 @@ export function formatMinorUnitsToInr(
   minorUnits: string | bigint | number | null | undefined
 ): string {
   if (minorUnits === null || minorUnits === undefined || minorUnits === '') {
-    return '₹0.00';
+    return '—';
   }
 
   let val: bigint;
+  if (typeof minorUnits === 'string' && !/^-?\d+$/.test(minorUnits.trim())) return '—';
+  if (typeof minorUnits === 'number' && !Number.isSafeInteger(minorUnits)) return '—';
   try {
     val = typeof minorUnits === 'bigint' ? minorUnits : BigInt(String(minorUnits).trim());
   } catch {
-    return '₹0.00';
+    return '—';
   }
 
   const isNegative = val < 0n;

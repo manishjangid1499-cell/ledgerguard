@@ -1,133 +1,125 @@
-import React from 'react';
-import { Container, Box, Typography, Button, Stack, Card, CardContent, Grid } from '@mui/material';
+import { Box, Button, Card, CardContent, Container, Grid, Stack, Typography } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
-import SecurityIcon from '@mui/icons-material/Security';
-import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
+import AccountBalanceOutlinedIcon from '@mui/icons-material/AccountBalanceOutlined';
 import SyncAltIcon from '@mui/icons-material/SyncAlt';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
+import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircle';
+import SecurityIcon from '@mui/icons-material/Security';
+import { PlatformArchitecture } from '../components/PlatformArchitecture';
+import { useAuth } from '../../auth/hooks/useAuth';
 
-export const LandingPage: React.FC = () => {
+const capabilities = [
+  { title: 'Immutable Double-Entry', icon: AccountBalanceOutlinedIcon,
+    copy: 'Every financial movement is recorded through balanced debit and credit journal entries, preserving an auditable source of truth.' },
+  { title: 'Payment Integrity', icon: SyncAltIcon,
+    copy: 'Transfers, payments, refunds, funding and payouts use idempotent processing, controlled state transitions and balance protection.' },
+  { title: 'Reliable Event Delivery', icon: HubOutlinedIcon,
+    copy: 'Transactional outbox processing keeps committed financial state and asynchronous event publication consistent.' },
+  { title: 'Reconciliation & Recovery', icon: FactCheckOutlinedIcon,
+    copy: 'Reconciliation compares journal records, balance snapshots and provider outcomes to identify discrepancies and guide recovery.' },
+];
+
+const safeguards = [
+  ['Immutable history', 'Posted journal records preserve the history of each financial movement.'],
+  ['Traceable balances', 'Balance snapshots are derived from the journal and can be checked against it.'],
+  ['Safe repeat requests', 'Idempotency prevents the same operation from moving money twice.'],
+  ['Explicit uncertainty', 'An unknown provider outcome stays unresolved until there is evidence to settle it.'],
+];
+
+export const LandingPage = () => {
+  const { status } = useAuth();
+  const authenticated = status === 'authenticated';
+  const accountActions = (
+    <Stack direction="row" spacing={1.5} useFlexGap sx={{ justifyContent: 'center', flexWrap: 'wrap' }}>
+      <Button component={RouterLink} to={authenticated ? '/app' : '/register'} variant="contained" size="large" sx={{ px: 3, py: 1.25 }}>
+        {authenticated ? 'Open dashboard' : 'Create account'}
+      </Button>
+      {!authenticated && <Button component={RouterLink} to="/login" variant="outlined" size="large" sx={{ px: 3, py: 1.25 }}>Sign in</Button>}
+    </Stack>
+  );
+
   return (
     <Container maxWidth="lg">
-      <Box sx={{ textAlign: 'center', py: { xs: 4, md: 8 } }}>
-        <Typography
-          variant="overline"
-          sx={{ color: 'secondary.main', fontWeight: 700, letterSpacing: '0.1em' }}
-        >
-          Payment Integrity & Ledger Platform
+      <Box component="section" aria-labelledby="hero-heading" sx={{ textAlign: 'center', py: { xs: 6, md: 8 } }}>
+        <Typography variant="overline" color="secondary.main" sx={{ fontWeight: 700, letterSpacing: '0.1em' }}>
+          Payment Integrity &amp; Ledger Platform
         </Typography>
-        <Typography
-          variant="h3"
-          component="h1"
-          sx={{
-            fontWeight: 800,
-            color: 'primary.main',
-            mt: 1,
-            mb: 2,
-            fontSize: { xs: '2rem', sm: '2.75rem', md: '3.25rem' },
-          }}
-        >
-          Correctness-First Financial Infrastructure
+        <Typography id="hero-heading" component="h1" variant="h3"
+          sx={{ color: 'primary.main', fontWeight: 700, letterSpacing: '-0.035em', lineHeight: 1.12,
+            fontSize: { xs: '2.25rem', sm: '3rem', md: '3.5rem' }, maxWidth: 850, mx: 'auto', mt: 2, mb: 2.5 }}>
+          Correctness-First<br /> Financial Infrastructure
         </Typography>
-        <Typography
-          variant="body1"
-          color="text.secondary"
-          sx={{ maxWidth: 680, mx: 'auto', mb: 4, fontSize: '1.1rem', lineHeight: 1.6 }}
-        >
-          LedgerGuard is an immutable double-entry accounting engine designed for high-concurrency payment integrity,
-          transactional outbox messaging, and rigorous three-level reconciliation.
+        <Typography color="text.secondary" sx={{ maxWidth: 680, mx: 'auto', lineHeight: 1.75, fontSize: { xs: '1rem', md: '1.125rem' } }}>
+          Reliable payments. Immutable accounting. LedgerGuard is a payment integrity and ledger platform built to preserve financial truth.
         </Typography>
-        <Stack direction="row" spacing={2} sx={{ justifyContent: 'center' }}>
-          <Button
-            component={RouterLink}
-            to="/register"
-            variant="contained"
-            color="primary"
-            size="large"
-            sx={{ px: 3.5, py: 1.2 }}
-          >
-            Get Started
-          </Button>
-          <Button
-            component={RouterLink}
-            to="/login"
-            variant="outlined"
-            color="primary"
-            size="large"
-            sx={{ px: 3.5, py: 1.2 }}
-          >
-            Sign in
-          </Button>
-        </Stack>
+        <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 640, mx: 'auto', mt: 1.5, mb: 3.5, lineHeight: 1.7 }}>
+          Designed for concurrent transactions, repeat requests, asynchronous processing and uncertain provider outcomes.
+        </Typography>
+        {accountActions}
       </Box>
 
-      <Grid container spacing={3} sx={{ mt: 2, mb: 6 }}>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent sx={{ p: 3 }}>
-              <SecurityIcon color="primary" sx={{ fontSize: 36, mb: 1.5 }} />
-              <Typography variant="h6" component="h2" gutterBottom sx={{ fontWeight: 600 }}>
-                Identity & Security
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-                Stateless HS256 JWT access tokens paired with single-use opaque refresh tokens stored in HttpOnly cookies
-                and protected with pessimistic database locking.
-              </Typography>
-            </CardContent>
-          </Card>
+      <Box component="section" id="platform" aria-labelledby="platform-heading" sx={{ pb: { xs: 6, md: 7 } }}>
+        <Typography id="platform-heading" component="h2" variant="h5" color="primary.main" sx={{ mb: 1 }}>Integrity at every step</Typography>
+        <Typography color="text.secondary" variant="body2" sx={{ mb: 3 }}>A consistent financial foundation, from the first request to the final record.</Typography>
+        <Grid container spacing={2.5}>
+          {capabilities.map(({ title, icon: Icon, copy }) => (
+            <Grid key={title} size={{ xs: 12, sm: 6, lg: 3 }}>
+              <Card sx={{ height: '100%' }}>
+                <CardContent sx={{ p: 3 }}>
+                  <Icon color="secondary" sx={{ fontSize: 30, mb: 2 }} />
+                  <Typography component="h3" variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>{title}</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7 }}>{copy}</Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}
         </Grid>
+      </Box>
 
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent sx={{ p: 3 }}>
-              <AccountBalanceWalletIcon color="secondary" sx={{ fontSize: 36, mb: 1.5 }} />
-              <Typography variant="h6" component="h2" gutterBottom sx={{ fontWeight: 600 }}>
-                Immutable Double-Entry
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-                Authoritative double-entry financial ledger backed by PostgreSQL ACID transactions. Balanced debits and
-                credits with absolute mathematical integrity.
-              </Typography>
-            </CardContent>
-          </Card>
+      <Box component="section" aria-labelledby="truth-heading"
+        sx={{ p: { xs: 3, md: 4 }, mb: { xs: 6, md: 7 }, bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+        <Grid container spacing={{ xs: 3, md: 5 }}>
+          <Grid size={{ xs: 12, md: 4 }}>
+            <Typography variant="overline" color="secondary.main" sx={{ fontWeight: 700 }}>Financial correctness</Typography>
+            <Typography id="truth-heading" component="h2" variant="h5" color="primary.main" sx={{ mt: 0.75, mb: 2 }}>One financial source of truth</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7 }}>Every posted journal transaction preserves balanced debits and credits.</Typography>
+          </Grid>
+          <Grid size={{ xs: 12, md: 8 }}>
+            <Grid container spacing={3}>
+              {safeguards.map(([title, copy]) => (
+                <Grid key={title} size={{ xs: 12, sm: 6 }}>
+                  <Stack direction="row" spacing={1.25} sx={{ alignItems: 'flex-start' }}>
+                    <CheckCircleOutlineIcon color="secondary" sx={{ fontSize: 20, mt: 0.25 }} />
+                    <Box>
+                      <Typography component="h3" variant="subtitle2" sx={{ mb: 0.5 }}>{title}</Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7 }}>{copy}</Typography>
+                    </Box>
+                  </Stack>
+                </Grid>
+              ))}
+            </Grid>
+          </Grid>
         </Grid>
+      </Box>
 
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent sx={{ p: 3 }}>
-              <SyncAltIcon color="primary" sx={{ fontSize: 36, mb: 1.5 }} />
-              <Typography variant="h6" component="h2" gutterBottom sx={{ fontWeight: 600 }}>
-                Transactional Outbox
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-                Post-commit asynchronous event publishing to Apache Kafka in KRaft mode via non-blocking SKIP LOCKED row
-                claiming for reliable downstream event delivery.
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
+      <PlatformArchitecture />
 
-      <Box
-        sx={{
-          p: 3,
-          border: '1px solid',
-          borderColor: 'divider',
-          borderRadius: 2,
-          bgcolor: 'background.paper',
-          mb: 6,
-        }}
-      >
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1 }}>
-          <CheckCircleIcon color="secondary" fontSize="small" />
-          <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-            Phase 5 Milestone: Frontend Shell & Secure Authentication
+      <Box component="section" id="security" aria-labelledby="security-heading"
+        sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, borderTop: '1px solid', borderBottom: '1px solid', borderColor: 'divider', py: 3 }}>
+        <SecurityIcon color="secondary" sx={{ fontSize: 30, mt: 0.5 }} />
+        <Box>
+          <Typography id="security-heading" component="h2" variant="h6" sx={{ mb: 0.5 }}>Protected access, clear boundaries</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7 }}>
+            Role-based access control, short-lived access tokens and protected session renewal. Account ownership and permissions are enforced by the server.
           </Typography>
-        </Stack>
-        <Typography variant="body2" color="text.secondary">
-          The security and identity foundation is active. In-memory JWT access token lifecycle, HttpOnly refresh cookie
-          session restoration, and server-authorized RBAC are fully operational.
-        </Typography>
+        </Box>
+      </Box>
+
+      <Box component="section" aria-labelledby="cta-heading" sx={{ py: { xs: 5, md: 6 }, textAlign: 'center' }}>
+        <Typography id="cta-heading" component="h2" variant="h5" color="primary.main" sx={{ mb: 1 }}>Explore LedgerGuard</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>Access your wallet, transfer funds and trace each transfer to its journal record.</Typography>
+        {accountActions}
       </Box>
     </Container>
   );

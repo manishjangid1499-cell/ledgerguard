@@ -1,27 +1,10 @@
-import React, { useState } from 'react';
-import {
-  Card,
-  CardContent,
-  Typography,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Chip,
-  IconButton,
-  Tooltip,
-  Box,
-  Stack,
-  Divider,
-} from '@mui/material';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import CheckIcon from '@mui/icons-material/Check';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import LockIcon from '@mui/icons-material/Lock';
+import { Alert, Box, Card, CardContent, Chip, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import { JournalDetail } from '../types/transfer.types';
 import { formatMinorUnitsToInr } from '../../shared/utils/money';
+import { formatDateTime } from '../../shared/utils/display';
+import { CopyButton } from '../../shared/components/CopyButton';
+import { StatusBadge } from '../../shared/components/StatusBadge';
 
 interface JournalInspectorProps {
   journal: JournalDetail;
@@ -29,205 +12,87 @@ interface JournalInspectorProps {
   destinationLedgerAccountId: string;
 }
 
-export const JournalInspector: React.FC<JournalInspectorProps> = ({
-  journal,
-  sourceLedgerAccountId,
-  destinationLedgerAccountId,
-}) => {
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  const handleCopy = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedId(text);
-      setTimeout(() => setCopiedId(null), 2000);
-    } catch {
-      // Fallback
-    }
-  };
-
-  // Exact BigInt calculation of total debits and credits
+export const JournalInspector = ({ journal, sourceLedgerAccountId, destinationLedgerAccountId }: JournalInspectorProps) => {
+  // Display totals use exact minor-unit arithmetic; the server remains authoritative.
   let totalDebitsMinor = 0n;
   let totalCreditsMinor = 0n;
-
+  let readable = true;
   for (const entry of journal.entries) {
     try {
       const amount = BigInt(entry.amountMinor);
-      if (entry.direction === 'DEBIT') {
-        totalDebitsMinor += amount;
-      } else if (entry.direction === 'CREDIT') {
-        totalCreditsMinor += amount;
-      }
+      if (entry.direction === 'DEBIT') totalDebitsMinor += amount;
+      else if (entry.direction === 'CREDIT') totalCreditsMinor += amount;
+      else readable = false;
     } catch {
-      // ignore
+      readable = false;
     }
   }
-
-  const isBalanced = totalDebitsMinor > 0n && totalDebitsMinor === totalCreditsMinor;
+  const isBalanced = readable && totalDebitsMinor > 0n && totalDebitsMinor === totalCreditsMinor;
 
   return (
-    <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+    <Card>
       <CardContent sx={{ p: { xs: 2.5, sm: 3 } }}>
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={2}
-          sx={{ justifyContent: 'space-between', alignItems: { sm: 'center' }, mb: 2 }}
-        >
-          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 36,
-                height: 36,
-                borderRadius: 1.5,
-                bgcolor: 'primary.50',
-                color: 'primary.main',
-              }}
-            >
-              <LockIcon fontSize="small" />
-            </Box>
-            <Box>
-              <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                Double-Entry Journal Inspector
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                Immutable financial posting record in ledger engine
-              </Typography>
-            </Box>
-          </Stack>
-
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-            <Chip
-              label={journal.status}
-              color="primary"
-              size="small"
-              sx={{ fontWeight: 700, letterSpacing: 0.5 }}
-            />
-            {isBalanced && (
-              <Chip
-                icon={<CheckCircleIcon fontSize="small" />}
-                label="Balanced (Debits = Credits)"
-                color="success"
-                size="small"
-                variant="outlined"
-                sx={{ fontWeight: 600 }}
-              />
-            )}
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ justifyContent: 'space-between', mb: 2.5 }}>
+          <Box>
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 0.5 }}>
+              <LockOutlinedIcon color="secondary" fontSize="small" /><Typography component="h2" variant="h6">Journal record</Typography>
+            </Stack>
+            <Typography variant="body2" color="text.secondary">Immutable debit and credit entries for this transfer.</Typography>
+          </Box>
+          <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+            <StatusBadge status={journal.status} />
+            {isBalanced && <Chip label="Balanced" color="success" size="small" variant="outlined" />}
           </Stack>
         </Stack>
-
-        <Box sx={{ mb: 2.5, p: 1.5, bgcolor: 'background.default', borderRadius: 1.5 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-            Journal Transaction ID
-          </Typography>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-            <Typography
-              variant="body2"
-              sx={{ fontFamily: 'monospace', fontWeight: 600, wordBreak: 'break-all' }}
-            >
-              {journal.journalTransactionId}
-            </Typography>
-            <Tooltip title={copiedId === journal.journalTransactionId ? 'Copied!' : 'Copy ID'}>
-              <IconButton size="small" onClick={() => handleCopy(journal.journalTransactionId)}>
-                {copiedId === journal.journalTransactionId ? (
-                  <CheckIcon fontSize="small" color="success" />
-                ) : (
-                  <ContentCopyIcon fontSize="small" />
-                )}
-              </IconButton>
-            </Tooltip>
+        <Box sx={{ p: 1.5, mb: 2, bgcolor: 'background.default', borderRadius: 1 }}>
+          <Typography variant="caption" color="text.secondary">Journal transaction ID</Typography>
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+            <Typography variant="body2" sx={{ fontFamily: 'monospace', overflowWrap: 'anywhere', minWidth: 0 }}>{journal.journalTransactionId}</Typography>
+            <CopyButton value={journal.journalTransactionId} label="journal transaction ID" />
           </Stack>
         </Box>
-
-        <TableContainer sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider', mb: 2 }}>
-          <Table size="small">
-            <TableHead sx={{ bgcolor: 'action.hover' }}>
+        {!readable && <Alert severity="warning" sx={{ mb: 2 }}>Some journal amounts could not be displayed. Totals are unavailable.</Alert>}
+        <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'block', md: 'none' }, mb: 1 }}>Scroll the table to view all journal columns.</Typography>
+        <TableContainer tabIndex={0} role="region" aria-label="Journal entries, scroll horizontally for more columns"
+          sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+          <Table size="small" sx={{ minWidth: 740 }} aria-label="Transfer journal entries">
+            <TableHead sx={{ bgcolor: 'background.default' }}>
               <TableRow>
-                <TableCell sx={{ fontWeight: 700 }}>Ledger Account ID</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Account Role</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700 }}>Debit (INR)</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700 }}>Credit (INR)</TableCell>
+                <TableCell>Ledger account</TableCell><TableCell>Account</TableCell>
+                <TableCell align="right">Debit (INR)</TableCell><TableCell align="right">Credit (INR)</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {journal.entries.map((entry, idx) => {
-                const isSource = entry.ledgerAccountId === sourceLedgerAccountId;
-                const isDestination = entry.ledgerAccountId === destinationLedgerAccountId;
-                const roleLabel = isSource
-                  ? 'Source Wallet'
-                  : isDestination
-                  ? 'Destination Wallet'
-                  : 'Ledger Account';
-
-                const formattedAmount = formatMinorUnitsToInr(entry.amountMinor);
-
-                return (
-                  <TableRow key={idx} hover>
-                    <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>
-                      <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-                        <span>{entry.ledgerAccountId}</span>
-                        <Tooltip title={copiedId === entry.ledgerAccountId ? 'Copied!' : 'Copy'}>
-                          <IconButton
-                            size="small"
-                            onClick={() => handleCopy(entry.ledgerAccountId)}
-                            sx={{ p: 0.25 }}
-                          >
-                            {copiedId === entry.ledgerAccountId ? (
-                              <CheckIcon fontSize="inherit" color="success" />
-                            ) : (
-                              <ContentCopyIcon fontSize="inherit" />
-                            )}
-                          </IconButton>
-                        </Tooltip>
-                      </Stack>
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={roleLabel}
-                        size="small"
-                        color={isSource ? 'default' : isDestination ? 'secondary' : 'default'}
-                        variant="outlined"
-                        sx={{ fontSize: '0.75rem', fontWeight: 600 }}
-                      />
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
-                      {entry.direction === 'DEBIT' ? formattedAmount : '—'}
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
-                      {entry.direction === 'CREDIT' ? formattedAmount : '—'}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-
-              {/* Totals Summary Row */}
-              <TableRow sx={{ bgcolor: 'action.selected' }}>
-                <TableCell colSpan={2} sx={{ fontWeight: 700 }}>
-                  Total (Double-Entry Invariant Check)
-                </TableCell>
-                <TableCell align="right" sx={{ fontFamily: 'monospace', fontWeight: 800 }}>
-                  {formatMinorUnitsToInr(totalDebitsMinor.toString())}
-                </TableCell>
-                <TableCell align="right" sx={{ fontFamily: 'monospace', fontWeight: 800 }}>
-                  {formatMinorUnitsToInr(totalCreditsMinor.toString())}
-                </TableCell>
+              {journal.entries.map((entry, index) => (
+                <TableRow key={index}>
+                  <TableCell>
+                    <Stack direction="row" sx={{ alignItems: 'center' }}>
+                      <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{entry.ledgerAccountId}</Typography>
+                      <CopyButton value={entry.ledgerAccountId} label="ledger account ID" />
+                    </Stack>
+                  </TableCell>
+                  <TableCell sx={{ color: 'text.secondary', fontSize: '0.8rem' }}>
+                    {entry.ledgerAccountId === sourceLedgerAccountId ? 'Source wallet' : entry.ledgerAccountId === destinationLedgerAccountId ? 'Recipient wallet' : 'Ledger account'}
+                  </TableCell>
+                  <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                    {entry.direction === 'DEBIT' ? formatMinorUnitsToInr(entry.amountMinor) : '—'}
+                  </TableCell>
+                  <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                    {entry.direction === 'CREDIT' ? formatMinorUnitsToInr(entry.amountMinor) : '—'}
+                  </TableCell>
+                </TableRow>
+              ))}
+              <TableRow sx={{ bgcolor: 'background.default' }}>
+                <TableCell colSpan={2} sx={{ fontWeight: 700 }}>Total</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{readable ? formatMinorUnitsToInr(totalDebitsMinor) : '—'}</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{readable ? formatMinorUnitsToInr(totalCreditsMinor) : '—'}</TableCell>
               </TableRow>
             </TableBody>
           </Table>
         </TableContainer>
-
-        <Divider sx={{ my: 1.5 }} />
-
-        <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="caption" color="text.secondary">
-            Financial Invariant: &sum; Debits = &sum; Credits
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Posted At: {journal.postedAt ? new Date(journal.postedAt).toUTCString() : 'N/A'}
-          </Typography>
-        </Stack>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2 }}>
+          Posted {journal.postedAt ? formatDateTime(journal.postedAt) : '—'}
+        </Typography>
       </CardContent>
     </Card>
   );

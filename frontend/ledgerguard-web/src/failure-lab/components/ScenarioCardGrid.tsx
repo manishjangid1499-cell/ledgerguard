@@ -65,8 +65,8 @@ export const ScenarioCardGrid: React.FC<Props> = ({
 }) => {
   return (
     <Box sx={{ mb: 4 }}>
-      <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>
-        Available Chaos Scenarios
+      <Typography variant="h6" component="h2" sx={{ fontWeight: 700, mb: 2 }}>
+        Available scenarios
       </Typography>
 
       <Grid container spacing={2.5}>
@@ -81,23 +81,18 @@ export const ScenarioCardGrid: React.FC<Props> = ({
                   height: '100%',
                   display: 'flex',
                   flexDirection: 'column',
-                  borderRadius: 2,
-                  transition: 'all 0.2s ease-in-out',
-                  '&:hover': {
-                    boxShadow: 2,
-                    borderColor: 'primary.light',
-                  },
+                  borderRadius: 1,
                 }}
               >
                 <CardContent sx={{ flexGrow: 1, pb: 1 }}>
                   <Stack
-                    direction="row"
+                    direction={{ xs: 'column', sm: 'row' }}
                     spacing={1}
                     sx={{ justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}
                   >
                     <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
                       {getScenarioIcon(scenario.id)}
-                      <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                      <Typography variant="subtitle1" component="h3" sx={{ fontWeight: 700 }}>
                         {scenario.name}
                       </Typography>
                     </Stack>
@@ -118,13 +113,13 @@ export const ScenarioCardGrid: React.FC<Props> = ({
                     <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
                       Fault Mechanisms:
                     </Typography>
-                    <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap' }}>
+                    <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: 'wrap' }}>
                       {scenario.faultMechanisms.map((mech, idx) => (
                         <Chip
                           key={idx}
                           label={mech}
                           size="small"
-                          sx={{ fontSize: '0.72rem', bgcolor: 'action.hover', mb: 0.5 }}
+                          sx={{ fontSize: '0.72rem', bgcolor: 'action.hover', mb: 0.5, height: 'auto', maxWidth: '100%', '& .MuiChip-label': { whiteSpace: 'normal', py: 0.5 } }}
                         />
                       ))}
                     </Stack>
@@ -137,7 +132,7 @@ export const ScenarioCardGrid: React.FC<Props> = ({
                     <Stack direction="column" spacing={0.3}>
                       {scenario.keyInvariants.map((inv, idx) => (
                         <Typography key={idx} variant="caption" color="text.secondary">
-                          � {inv}
+                          • {inv}
                         </Typography>
                       ))}
                     </Stack>
@@ -154,7 +149,7 @@ export const ScenarioCardGrid: React.FC<Props> = ({
                     startIcon={isThisStarting ? <CircularProgress size={16} color="inherit" /> : <PlayArrowIcon />}
                     sx={{ fontWeight: 600 }}
                   >
-                    {isThisStarting ? 'Dispatching Run...' : 'Execute Chaos Run'}
+                    {isThisStarting ? 'Starting scenario…' : 'Run scenario'}
                   </Button>
                 </CardActions>
               </Card>

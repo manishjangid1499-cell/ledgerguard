@@ -4,18 +4,15 @@ import {
   Box,
   Card,
   CardContent,
-  Chip,
-  IconButton,
   Stack,
   Tab,
   Tabs,
-  Tooltip,
   Typography,
 } from '@mui/material';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import CheckIcon from '@mui/icons-material/Check';
 import TimerIcon from '@mui/icons-material/Timer';
-import { LabRunView, ScenarioStatus, getApplicableInvariants } from '../types/failureLab.types';
+import { LabRunView, getApplicableInvariants } from '../types/failureLab.types';
+import { CopyButton } from '../../shared/components/CopyButton';
+import { StatusBadge } from '../../shared/components/StatusBadge';
 import { RunTimeline } from './RunTimeline';
 import { InvariantReportCards } from './InvariantReportCards';
 
@@ -23,25 +20,8 @@ interface Props {
   run: LabRunView;
 }
 
-function getStatusChipColor(status: ScenarioStatus): 'default' | 'primary' | 'success' | 'error' | 'warning' {
-  switch (status) {
-    case 'PENDING':
-    case 'RUNNING':
-      return 'primary';
-    case 'PASSED':
-      return 'success';
-    case 'FAILED':
-      return 'error';
-    case 'TIMED_OUT':
-      return 'warning';
-    default:
-      return 'default';
-  }
-}
-
 export const ActiveRunView: React.FC<Props> = ({ run }) => {
   const [tab, setTab] = useState<number>(0);
-  const [copied, setCopied] = useState<boolean>(false);
   const [elapsedMs, setElapsedMs] = useState<number>(0);
 
   const isRunning = run.status === 'RUNNING' || run.status === 'PENDING';
@@ -60,16 +40,10 @@ export const ActiveRunView: React.FC<Props> = ({ run }) => {
     return () => clearInterval(interval);
   }, [isRunning, run.startedAt, run.durationMs]);
 
-  const handleCopyRunId = () => {
-    navigator.clipboard.writeText(run.runId);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
   const formattedDuration = (elapsedMs / 1000).toFixed(2);
 
   return (
-    <Card variant="outlined" sx={{ mb: 4, borderRadius: 2 }}>
+    <Card variant="outlined" sx={{ mb: 4, borderRadius: 1 }}>
       <CardContent sx={{ pb: 1 }}>
         <Stack
           direction={{ xs: 'column', sm: 'row' }}
@@ -77,27 +51,18 @@ export const ActiveRunView: React.FC<Props> = ({ run }) => {
           sx={{ justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, mb: 2 }}
         >
           <Box>
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-              <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                Scenario Run: {run.scenarioId}
+            <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+              <Typography variant="h6" component="h2" sx={{ fontWeight: 700, overflowWrap: 'anywhere' }}>
+                {run.scenarioId.replaceAll('_', ' ')}
               </Typography>
-              <Chip
-                label={run.status}
-                color={getStatusChipColor(run.status)}
-                size="small"
-                sx={{ fontWeight: 700 }}
-              />
+              <StatusBadge status={run.status} />
             </Stack>
 
             <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mt: 0.5 }}>
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere', minWidth: 0 }}>
                 Run ID: <code>{run.runId}</code>
               </Typography>
-              <Tooltip title={copied ? 'Copied!' : 'Copy Run ID'}>
-                <IconButton size="small" onClick={handleCopyRunId}>
-                  {copied ? <CheckIcon fontSize="inherit" color="success" /> : <ContentCopyIcon fontSize="inherit" />}
-                </IconButton>
-              </Tooltip>
+              <CopyButton value={run.runId} label="run ID" />
             </Stack>
           </Box>
 
@@ -118,21 +83,29 @@ export const ActiveRunView: React.FC<Props> = ({ run }) => {
                 ? 'Financial Invariant Violation:'
                 : 'Execution Error:'}
             </strong>{' '}
-            {run.error}
+            The run did not complete successfully. Review the timeline and invariant results for the recorded outcome.
           </Alert>
         )}
 
         <Tabs
+          aria-label="Run details"
+          variant="scrollable"
+          scrollButtons="auto"
+          allowScrollButtonsMobile
           value={tab}
           onChange={(_, newTab) => setTab(newTab)}
           sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}
         >
-          <Tab label={`Live Timeline (${run.timeline.length})`} />
-          <Tab label={`Mathematical Invariants (${getApplicableInvariants(run.scenarioId).length})`} />
+          <Tab id="timeline-tab" aria-controls="timeline-panel" label={`Timeline (${run.timeline.length})`} />
+          <Tab id="invariants-tab" aria-controls="invariants-panel" label={`Invariants (${getApplicableInvariants(run.scenarioId).length})`} />
         </Tabs>
 
-        {tab === 0 && <RunTimeline timeline={run.timeline} isRunning={isRunning} />}
-        {tab === 1 && <InvariantReportCards run={run} />}
+        <Box role="tabpanel" id="timeline-panel" aria-labelledby="timeline-tab" hidden={tab !== 0} tabIndex={0}>
+          {tab === 0 && <RunTimeline timeline={run.timeline} isRunning={isRunning} />}
+        </Box>
+        <Box role="tabpanel" id="invariants-panel" aria-labelledby="invariants-tab" hidden={tab !== 1} tabIndex={0}>
+          {tab === 1 && <InvariantReportCards run={run} />}
+        </Box>
       </CardContent>
     </Card>
   );

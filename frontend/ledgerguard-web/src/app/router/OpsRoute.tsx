@@ -7,7 +7,7 @@ export const OpsRoute: React.FC = () => {
   const { user, status } = useAuth();
 
   if (status === 'loading') {
-    return <LoadingScreen message="Checking operations authorization..." />;
+    return <LoadingScreen />;
   }
 
   if (status === 'unauthenticated' || !user) {

@@ -70,7 +70,7 @@ export const InvariantReportCards: React.FC<Props> = ({ run }) => {
               >
                 <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
                   <Stack
-                    direction="row"
+                    direction={{ xs: 'column', sm: 'row' }}
                     spacing={1}
                     sx={{ justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}
                   >
@@ -84,6 +84,7 @@ export const InvariantReportCards: React.FC<Props> = ({ run }) => {
                           fontFamily: 'monospace',
                           color: 'primary.main',
                           fontWeight: 600,
+                          overflowWrap: 'anywhere',
                         }}
                       >
                         {def.formula}
@@ -133,7 +134,7 @@ export const InvariantReportCards: React.FC<Props> = ({ run }) => {
 
                   {evidence && (
                     <Box sx={{ p: 1, bgcolor: 'background.default', borderRadius: 1 }}>
-                      <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
+                      <Stack direction="row" useFlexGap spacing={1} sx={{ justifyContent: 'space-between', flexWrap: 'wrap', overflowWrap: 'anywhere' }}>
                         <Typography variant="caption" color="text.secondary">
                           Expected: <strong>{evidence.expected}</strong>
                         </Typography>
