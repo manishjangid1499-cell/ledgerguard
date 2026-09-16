@@ -19,7 +19,7 @@ export const PublicFooter = ({ compact = false }: { compact?: boolean }) => (
           </Box>
           <Stack component="nav" aria-label="Resources" direction="row" spacing={3}>
             <Link href="https://github.com/manishjangid1499-cell/ledgerguard/blob/HEAD/README.md" variant="body2" underline="hover">Documentation</Link>
-            <Link href="#architecture" variant="body2" underline="hover">Architecture</Link>
+            <Link href="#how-it-works" variant="body2" underline="hover">How it works</Link>
             <Link href="https://github.com/manishjangid1499-cell/ledgerguard" variant="body2" underline="hover">GitHub</Link>
           </Stack>
         </Stack>

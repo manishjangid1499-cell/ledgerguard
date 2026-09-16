@@ -20,10 +20,10 @@ export const PublicLayout = () => {
               <BrandLogo size="small" />
             </RouterLink>
             {isLanding && (
-              <Stack component="nav" aria-label="Platform" direction="row" spacing={1}
+              <Stack component="nav" aria-label="Product navigation" direction="row" spacing={1}
                 sx={{ display: { xs: 'none', md: 'flex' } }}>
-                <Button href="#platform" color="inherit">Platform</Button>
-                <Button href="#architecture" color="inherit">Architecture</Button>
+                <Button href="#product" color="inherit">Product</Button>
+                <Button href="#how-it-works" color="inherit">How it works</Button>
                 <Button href="#security" color="inherit">Security</Button>
               </Stack>
             )}
