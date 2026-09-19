@@ -1,5 +1,7 @@
 package com.ledgerguard.payment.application;
 
+import com.ledgerguard.identity.domain.User;
+import com.ledgerguard.identity.domain.UserRepository;
 import com.ledgerguard.hold.domain.AvailableBalance;
 import com.ledgerguard.hold.infrastructure.BalanceHoldRepository;
 import com.ledgerguard.idempotency.application.IdempotencyCommand;
@@ -27,6 +29,7 @@ import com.ledgerguard.payment.domain.PlatformFeeAccountException;
 import com.ledgerguard.payment.domain.PlatformFeePolicy;
 import com.ledgerguard.payment.infrastructure.PaymentRepository;
 import com.ledgerguard.transfer.domain.InsufficientFundsException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -56,6 +59,28 @@ public class PaymentService {
     private final IdempotencyService idempotencyService;
     private final PaymentRepository paymentRepository;
     private final OutboxService outboxService;
+    private final UserRepository userRepository;
+
+    @Autowired
+    public PaymentService(
+            LedgerAccountRepository ledgerAccountRepository,
+            LedgerBalanceSnapshotRepository ledgerBalanceSnapshotRepository,
+            BalanceHoldRepository balanceHoldRepository,
+            LedgerPostingService ledgerPostingService,
+            IdempotencyService idempotencyService,
+            PaymentRepository paymentRepository,
+            OutboxService outboxService,
+            UserRepository userRepository
+    ) {
+        this.ledgerAccountRepository = ledgerAccountRepository;
+        this.ledgerBalanceSnapshotRepository = ledgerBalanceSnapshotRepository;
+        this.balanceHoldRepository = balanceHoldRepository;
+        this.ledgerPostingService = ledgerPostingService;
+        this.idempotencyService = idempotencyService;
+        this.paymentRepository = paymentRepository;
+        this.outboxService = outboxService;
+        this.userRepository = userRepository;
+    }
 
     public PaymentService(
             LedgerAccountRepository ledgerAccountRepository,
@@ -66,13 +91,8 @@ public class PaymentService {
             PaymentRepository paymentRepository,
             OutboxService outboxService
     ) {
-        this.ledgerAccountRepository = ledgerAccountRepository;
-        this.ledgerBalanceSnapshotRepository = ledgerBalanceSnapshotRepository;
-        this.balanceHoldRepository = balanceHoldRepository;
-        this.ledgerPostingService = ledgerPostingService;
-        this.idempotencyService = idempotencyService;
-        this.paymentRepository = paymentRepository;
-        this.outboxService = outboxService;
+        this(ledgerAccountRepository, ledgerBalanceSnapshotRepository, balanceHoldRepository,
+                ledgerPostingService, idempotencyService, paymentRepository, outboxService, null);
     }
 
     /**
@@ -241,6 +261,13 @@ public class PaymentService {
             paymentRepository.saveAndFlush(payment);
 
             // G. Append PAYMENT_SUCCEEDED domain event to transactional outbox
+            User customerUser = (userRepository != null && customerAccount.getOwnerUserId() != null)
+                    ? userRepository.findById(customerAccount.getOwnerUserId()).orElse(null)
+                    : null;
+            User merchantUser = (userRepository != null && merchantAccount.getOwnerUserId() != null)
+                    ? userRepository.findById(merchantAccount.getOwnerUserId()).orElse(null)
+                    : null;
+
             outboxService.append(PaymentSucceededEvent.of(
                     UUID.randomUUID(),
                     payment.getId(),
@@ -253,7 +280,11 @@ public class PaymentService {
                             String.valueOf(payment.getFeeAmountMinor()),
                             String.valueOf(payment.getMerchantNetAmountMinor()),
                             payment.getCurrency(),
-                            postingResult.journalTransactionId().toString()
+                            postingResult.journalTransactionId().toString(),
+                            customerUser != null ? customerUser.getId().toString() : null,
+                            customerUser != null ? customerUser.getEmail() : null,
+                            merchantUser != null ? merchantUser.getId().toString() : null,
+                            merchantUser != null ? merchantUser.getEmail() : null
                     )
             ));
 

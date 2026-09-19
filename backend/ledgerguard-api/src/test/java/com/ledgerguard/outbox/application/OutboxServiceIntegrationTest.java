@@ -171,7 +171,7 @@ class OutboxServiceIntegrationTest extends AbstractIntegrationTest {
         OutboxEvent event = events.get(0);
         assertThat(event.getAggregateType()).isEqualTo("TRANSFER");
         assertThat(event.getEventType()).isEqualTo("TRANSFER_COMPLETED");
-        assertThat(event.getEventVersion()).isEqualTo(1);
+        assertThat(event.getEventVersion()).isEqualTo(2);
         assertThat(event.getStatus()).isEqualTo(OutboxStatus.PENDING);
         assertThat(event.getPublishedAt()).isNull();
 
@@ -182,6 +182,10 @@ class OutboxServiceIntegrationTest extends AbstractIntegrationTest {
         assertThat(payloadNode.get("amountMinor").asText()).isEqualTo("15000");
         assertThat(payloadNode.get("currency").asText()).isEqualTo("INR");
         assertThat(payloadNode.get("journalTransactionId").asText()).isEqualTo(result1.journalTransactionId().toString());
+        assertThat(payloadNode.get("sourceUserId").asText()).isEqualTo(sender.getId().toString());
+        assertThat(payloadNode.get("sourceEmail").asText()).isEqualTo(sender.getEmail());
+        assertThat(payloadNode.get("destinationUserId").asText()).isEqualTo(recipient.getId().toString());
+        assertThat(payloadNode.get("destinationEmail").asText()).isEqualTo(recipient.getEmail());
 
         // 2. Idempotent replay with same key
         TransferResult result2 = transferService.createTransfer(new CreateTransferCommand(
@@ -259,7 +263,7 @@ class OutboxServiceIntegrationTest extends AbstractIntegrationTest {
         OutboxEvent event = events.get(0);
         assertThat(event.getAggregateType()).isEqualTo("PAYMENT");
         assertThat(event.getEventType()).isEqualTo("PAYMENT_SUCCEEDED");
-        assertThat(event.getEventVersion()).isEqualTo(1);
+        assertThat(event.getEventVersion()).isEqualTo(2);
         assertThat(event.getStatus()).isEqualTo(OutboxStatus.PENDING);
         assertThat(event.getPublishedAt()).isNull();
 
@@ -272,6 +276,10 @@ class OutboxServiceIntegrationTest extends AbstractIntegrationTest {
         assertThat(payloadNode.get("merchantNetAmountMinor").asText()).isEqualTo("9900");
         assertThat(payloadNode.get("currency").asText()).isEqualTo("INR");
         assertThat(payloadNode.get("journalTransactionId").asText()).isEqualTo(result1.journalTransactionId().toString());
+        assertThat(payloadNode.get("customerUserId").asText()).isEqualTo(customer.getId().toString());
+        assertThat(payloadNode.get("customerEmail").asText()).isEqualTo(customer.getEmail());
+        assertThat(payloadNode.get("merchantUserId").asText()).isEqualTo(merchant.getId().toString());
+        assertThat(payloadNode.get("merchantEmail").asText()).isEqualTo(merchant.getEmail());
 
         // 2. Replay with same key
         PaymentResult result2 = paymentService.createPayment(new CreatePaymentCommand(
@@ -328,7 +336,7 @@ class OutboxServiceIntegrationTest extends AbstractIntegrationTest {
         OutboxEvent event = events.get(0);
         assertThat(event.getAggregateType()).isEqualTo("REFUND");
         assertThat(event.getEventType()).isEqualTo("REFUND_COMPLETED");
-        assertThat(event.getEventVersion()).isEqualTo(1);
+        assertThat(event.getEventVersion()).isEqualTo(2);
         assertThat(event.getStatus()).isEqualTo(OutboxStatus.PENDING);
         assertThat(event.getPublishedAt()).isNull();
 
@@ -340,6 +348,10 @@ class OutboxServiceIntegrationTest extends AbstractIntegrationTest {
         assertThat(payloadNode.get("feeDebitAmountMinor").asText()).isEqualTo(String.valueOf(refResult1.feeDebitAmountMinor()));
         assertThat(payloadNode.get("currency").asText()).isEqualTo("INR");
         assertThat(payloadNode.get("journalTransactionId").asText()).isEqualTo(refResult1.journalTransactionId().toString());
+        assertThat(payloadNode.get("customerUserId").asText()).isEqualTo(customer.getId().toString());
+        assertThat(payloadNode.get("customerEmail").asText()).isEqualTo(customer.getEmail());
+        assertThat(payloadNode.get("merchantUserId").asText()).isEqualTo(merchant.getId().toString());
+        assertThat(payloadNode.get("merchantEmail").asText()).isEqualTo(merchant.getEmail());
 
         // 2. Replay same refund key
         RefundResult refResult2 = refundService.createRefund(new CreateRefundCommand(

@@ -14,7 +14,11 @@ public record PaymentSucceededPayload(
         String feeAmountMinor,
         String merchantNetAmountMinor,
         String currency,
-        String journalTransactionId
+        String journalTransactionId,
+        String customerUserId,
+        String customerEmail,
+        String merchantUserId,
+        String merchantEmail
 ) {
     public PaymentSucceededPayload {
         Objects.requireNonNull(paymentId, "paymentId must not be null");
@@ -25,5 +29,18 @@ public record PaymentSucceededPayload(
         Objects.requireNonNull(merchantNetAmountMinor, "merchantNetAmountMinor must not be null");
         Objects.requireNonNull(currency, "currency must not be null");
         Objects.requireNonNull(journalTransactionId, "journalTransactionId must not be null");
+    }
+
+    public PaymentSucceededPayload(
+            String paymentId,
+            String customerLedgerAccountId,
+            String merchantLedgerAccountId,
+            String grossAmountMinor,
+            String feeAmountMinor,
+            String merchantNetAmountMinor,
+            String currency,
+            String journalTransactionId
+    ) {
+        this(paymentId, customerLedgerAccountId, merchantLedgerAccountId, grossAmountMinor, feeAmountMinor, merchantNetAmountMinor, currency, journalTransactionId, null, null, null, null);
     }
 }

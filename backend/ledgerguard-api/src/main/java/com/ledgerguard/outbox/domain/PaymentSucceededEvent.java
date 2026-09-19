@@ -25,9 +25,21 @@ public record PaymentSucceededEvent(
         Objects.requireNonNull(payload, "payload must not be null");
     }
 
+    public static final int CURRENT_EVENT_VERSION = 2;
+
     public static PaymentSucceededEvent of(
             UUID eventId,
             UUID paymentId,
+            Instant occurredAt,
+            PaymentSucceededPayload payload
+    ) {
+        return of(eventId, paymentId, CURRENT_EVENT_VERSION, occurredAt, payload);
+    }
+
+    public static PaymentSucceededEvent of(
+            UUID eventId,
+            UUID paymentId,
+            int eventVersion,
             Instant occurredAt,
             PaymentSucceededPayload payload
     ) {
@@ -36,7 +48,7 @@ public record PaymentSucceededEvent(
                 "PAYMENT",
                 paymentId,
                 "PAYMENT_SUCCEEDED",
-                1,
+                eventVersion,
                 occurredAt,
                 payload
         );

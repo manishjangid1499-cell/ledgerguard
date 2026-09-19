@@ -25,9 +25,21 @@ public record RefundCompletedEvent(
         Objects.requireNonNull(payload, "payload must not be null");
     }
 
+    public static final int CURRENT_EVENT_VERSION = 2;
+
     public static RefundCompletedEvent of(
             UUID eventId,
             UUID refundId,
+            Instant occurredAt,
+            RefundCompletedPayload payload
+    ) {
+        return of(eventId, refundId, CURRENT_EVENT_VERSION, occurredAt, payload);
+    }
+
+    public static RefundCompletedEvent of(
+            UUID eventId,
+            UUID refundId,
+            int eventVersion,
             Instant occurredAt,
             RefundCompletedPayload payload
     ) {
@@ -36,7 +48,7 @@ public record RefundCompletedEvent(
                 "REFUND",
                 refundId,
                 "REFUND_COMPLETED",
-                1,
+                eventVersion,
                 occurredAt,
                 payload
         );

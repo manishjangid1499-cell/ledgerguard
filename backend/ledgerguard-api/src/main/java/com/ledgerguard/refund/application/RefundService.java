@@ -1,5 +1,7 @@
 package com.ledgerguard.refund.application;
 
+import com.ledgerguard.identity.domain.User;
+import com.ledgerguard.identity.domain.UserRepository;
 import com.ledgerguard.idempotency.application.IdempotencyCommand;
 import com.ledgerguard.idempotency.application.IdempotencyExecutionResult;
 import com.ledgerguard.idempotency.application.IdempotencyService;
@@ -32,6 +34,7 @@ import com.ledgerguard.refund.domain.RefundAllocation;
 import com.ledgerguard.refund.domain.RefundAllocationPolicy;
 import com.ledgerguard.refund.domain.RefundLimitExceededException;
 import com.ledgerguard.refund.infrastructure.RefundRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -61,6 +64,30 @@ public class RefundService {
     private final LedgerPostingService ledgerPostingService;
     private final IdempotencyService idempotencyService;
     private final OutboxService outboxService;
+    private final UserRepository userRepository;
+
+    @Autowired
+    public RefundService(
+            PaymentRepository paymentRepository,
+            RefundRepository refundRepository,
+            LedgerAccountRepository ledgerAccountRepository,
+            LedgerBalanceSnapshotRepository ledgerBalanceSnapshotRepository,
+            JournalEntryRepository journalEntryRepository,
+            LedgerPostingService ledgerPostingService,
+            IdempotencyService idempotencyService,
+            OutboxService outboxService,
+            UserRepository userRepository
+    ) {
+        this.paymentRepository = Objects.requireNonNull(paymentRepository, "paymentRepository must not be null");
+        this.refundRepository = Objects.requireNonNull(refundRepository, "refundRepository must not be null");
+        this.ledgerAccountRepository = Objects.requireNonNull(ledgerAccountRepository, "ledgerAccountRepository must not be null");
+        this.ledgerBalanceSnapshotRepository = Objects.requireNonNull(ledgerBalanceSnapshotRepository, "ledgerBalanceSnapshotRepository must not be null");
+        this.journalEntryRepository = Objects.requireNonNull(journalEntryRepository, "journalEntryRepository must not be null");
+        this.ledgerPostingService = Objects.requireNonNull(ledgerPostingService, "ledgerPostingService must not be null");
+        this.idempotencyService = Objects.requireNonNull(idempotencyService, "idempotencyService must not be null");
+        this.outboxService = Objects.requireNonNull(outboxService, "outboxService must not be null");
+        this.userRepository = userRepository;
+    }
 
     public RefundService(
             PaymentRepository paymentRepository,
@@ -72,14 +99,8 @@ public class RefundService {
             IdempotencyService idempotencyService,
             OutboxService outboxService
     ) {
-        this.paymentRepository = Objects.requireNonNull(paymentRepository, "paymentRepository must not be null");
-        this.refundRepository = Objects.requireNonNull(refundRepository, "refundRepository must not be null");
-        this.ledgerAccountRepository = Objects.requireNonNull(ledgerAccountRepository, "ledgerAccountRepository must not be null");
-        this.ledgerBalanceSnapshotRepository = Objects.requireNonNull(ledgerBalanceSnapshotRepository, "ledgerBalanceSnapshotRepository must not be null");
-        this.journalEntryRepository = Objects.requireNonNull(journalEntryRepository, "journalEntryRepository must not be null");
-        this.ledgerPostingService = Objects.requireNonNull(ledgerPostingService, "ledgerPostingService must not be null");
-        this.idempotencyService = Objects.requireNonNull(idempotencyService, "idempotencyService must not be null");
-        this.outboxService = Objects.requireNonNull(outboxService, "outboxService must not be null");
+        this(paymentRepository, refundRepository, ledgerAccountRepository, ledgerBalanceSnapshotRepository,
+                journalEntryRepository, ledgerPostingService, idempotencyService, outboxService, null);
     }
 
     /**
@@ -216,6 +237,15 @@ public class RefundService {
                     refundRepository.saveAndFlush(refund);
 
                     // 12. Append REFUND_COMPLETED domain event to transactional outbox
+                    LedgerAccount customerAccount = ledgerAccountRepository.findById(payment.getCustomerLedgerAccountId()).orElse(null);
+                    LedgerAccount merchantAccount = ledgerAccountRepository.findById(payment.getMerchantLedgerAccountId()).orElse(null);
+                    User customerUser = (userRepository != null && customerAccount != null && customerAccount.getOwnerUserId() != null)
+                            ? userRepository.findById(customerAccount.getOwnerUserId()).orElse(null)
+                            : null;
+                    User merchantUser = (userRepository != null && merchantAccount != null && merchantAccount.getOwnerUserId() != null)
+                            ? userRepository.findById(merchantAccount.getOwnerUserId()).orElse(null)
+                            : null;
+
                     outboxService.append(RefundCompletedEvent.of(
                             UUID.randomUUID(),
                             refund.getId(),
@@ -227,7 +257,11 @@ public class RefundService {
                                     String.valueOf(refund.getMerchantDebitAmountMinor()),
                                     String.valueOf(refund.getFeeDebitAmountMinor()),
                                     refund.getCurrency(),
-                                    postingResult.journalTransactionId().toString()
+                                    postingResult.journalTransactionId().toString(),
+                                    customerUser != null ? customerUser.getId().toString() : null,
+                                    customerUser != null ? customerUser.getEmail() : null,
+                                    merchantUser != null ? merchantUser.getId().toString() : null,
+                                    merchantUser != null ? merchantUser.getEmail() : null
                             )
                     ));
 

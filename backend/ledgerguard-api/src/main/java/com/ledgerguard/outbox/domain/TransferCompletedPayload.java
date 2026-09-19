@@ -12,7 +12,11 @@ public record TransferCompletedPayload(
         String destinationLedgerAccountId,
         String amountMinor,
         String currency,
-        String journalTransactionId
+        String journalTransactionId,
+        String sourceUserId,
+        String sourceEmail,
+        String destinationUserId,
+        String destinationEmail
 ) {
     public TransferCompletedPayload {
         Objects.requireNonNull(transferId, "transferId must not be null");
@@ -21,5 +25,16 @@ public record TransferCompletedPayload(
         Objects.requireNonNull(amountMinor, "amountMinor must not be null");
         Objects.requireNonNull(currency, "currency must not be null");
         Objects.requireNonNull(journalTransactionId, "journalTransactionId must not be null");
+    }
+
+    public TransferCompletedPayload(
+            String transferId,
+            String sourceLedgerAccountId,
+            String destinationLedgerAccountId,
+            String amountMinor,
+            String currency,
+            String journalTransactionId
+    ) {
+        this(transferId, sourceLedgerAccountId, destinationLedgerAccountId, amountMinor, currency, journalTransactionId, null, null, null, null);
     }
 }
