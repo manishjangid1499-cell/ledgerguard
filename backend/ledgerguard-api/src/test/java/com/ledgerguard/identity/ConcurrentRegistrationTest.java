@@ -47,6 +47,7 @@ class ConcurrentRegistrationTest extends AbstractIntegrationTest {
         String sameEmail = "race.registration@example.com";
         String payload = """
                 {
+                  "fullName": "Concurrent User",
                   "email": "%s",
                   "password": "ValidPassword1234!",
                   "role": "CUSTOMER"

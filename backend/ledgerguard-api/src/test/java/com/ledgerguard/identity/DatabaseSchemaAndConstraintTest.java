@@ -31,7 +31,7 @@ class DatabaseSchemaAndConstraintTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("Users table columns match Phase 4 specification")
+    @DisplayName("Users table includes full name while preserving existing identity columns")
     void usersTableColumnsMatchSpec() {
         List<String> columns = jdbcTemplate.queryForList(
                 "SELECT column_name FROM information_schema.columns WHERE table_name = 'users'",
@@ -39,8 +39,17 @@ class DatabaseSchemaAndConstraintTest extends AbstractIntegrationTest {
         );
 
         assertThat(columns).containsExactlyInAnyOrder(
-                "id", "email", "password_hash", "role", "status", "created_at", "updated_at"
+                "id", "full_name", "email", "password_hash", "role", "status", "created_at", "updated_at"
         );
+
+        var fullName = jdbcTemplate.queryForMap("""
+                SELECT data_type, character_maximum_length, is_nullable
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'full_name'
+                """);
+        assertThat(fullName).containsEntry("data_type", "character varying")
+                .containsEntry("character_maximum_length", 120)
+                .containsEntry("is_nullable", "YES");
     }
 
     @Test

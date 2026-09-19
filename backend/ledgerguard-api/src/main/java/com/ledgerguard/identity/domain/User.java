@@ -21,6 +21,9 @@ public class User {
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
+    @Column(name = "full_name", length = 120)
+    private String fullName;
+
     @Column(name = "email", nullable = false, unique = true, length = 255)
     private String email;
 
@@ -45,8 +48,9 @@ public class User {
         // Required by JPA
     }
 
-    public User(UUID id, String email, String passwordHash, UserRole role, UserStatus status) {
+    public User(UUID id, String fullName, String email, String passwordHash, UserRole role, UserStatus status) {
         this.id = id != null ? id : UUID.randomUUID();
+        this.fullName = fullName;
         this.email = email;
         this.passwordHash = passwordHash;
         this.role = role;
@@ -55,8 +59,16 @@ public class User {
         this.updatedAt = this.createdAt;
     }
 
+    public User(UUID id, String email, String passwordHash, UserRole role, UserStatus status) {
+        this(id, null, email, passwordHash, role, status);
+    }
+
+    public static User create(String fullName, String email, String passwordHash, UserRole role) {
+        return new User(UUID.randomUUID(), fullName, email, passwordHash, role, UserStatus.ACTIVE);
+    }
+
     public static User create(String email, String passwordHash, UserRole role) {
-        return new User(UUID.randomUUID(), email, passwordHash, role, UserStatus.ACTIVE);
+        return create(null, email, passwordHash, role);
     }
 
     @PrePersist
@@ -79,6 +91,10 @@ public class User {
 
     public UUID getId() {
         return id;
+    }
+
+    public String getFullName() {
+        return fullName;
     }
 
     public String getEmail() {
