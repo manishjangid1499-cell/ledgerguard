@@ -70,7 +70,7 @@ class NotificationProcessingServiceIntegrationTest extends AbstractNotificationW
         NotificationDelivery delivery = deliveryRepository.findByEventId(eventId).orElseThrow();
         assertThat(delivery.getEventType()).isEqualTo("TRANSFER_COMPLETED");
         assertThat(delivery.getAggregateId()).isEqualTo(aggregateId);
-        assertThat(delivery.getStatus()).isEqualTo("DELIVERED");
+        assertThat(delivery.getStatus()).isEqualTo("LEGACY_RECORDED");
     }
 
     @Test
@@ -210,7 +210,7 @@ class NotificationProcessingServiceIntegrationTest extends AbstractNotificationW
                 processedEventRepository,
                 new NotificationDeliveryService(deliveryRepository) {
                     @Override
-                    public NotificationDelivery recordDelivery(IncomingDomainEvent ev) {
+                    public List<NotificationDelivery> recordDelivery(IncomingDomainEvent ev) {
                         throw new RuntimeException("Simulated transient database/persistence failure during delivery creation");
                     }
                 }

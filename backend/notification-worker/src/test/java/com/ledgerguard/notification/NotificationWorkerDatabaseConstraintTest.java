@@ -56,7 +56,7 @@ class NotificationWorkerDatabaseConstraintTest extends AbstractNotificationWorke
     }
 
     @Test
-    @DisplayName("notification_deliveries enforces FK to processed_events, unique event_id, and status constraint")
+    @DisplayName("notification_deliveries enforces FK to processed_events, composite uniqueness, and V2 status constraint")
     void notificationDeliveriesConstraintsEnforced() {
         UUID eventId = UUID.randomUUID();
         Instant now = Instant.now();
@@ -64,44 +64,53 @@ class NotificationWorkerDatabaseConstraintTest extends AbstractNotificationWorke
 
         // Foreign key violation if event not in processed_events
         assertThatThrownBy(() -> jdbcTemplate.update(
-                "INSERT INTO notification_deliveries (id, event_id, event_type, aggregate_type, aggregate_id, status, created_at) " +
-                        "VALUES (?, ?, 'TRANSFER_COMPLETED', 'TRANSFER', ?, 'DELIVERED', ?)",
+                "INSERT INTO notification_deliveries (id, event_id, event_type, aggregate_type, aggregate_id, status, recipient_email, channel, template_key, created_at) " +
+                        "VALUES (?, ?, 'TRANSFER_COMPLETED', 'TRANSFER', ?, 'PENDING', 'alice@example.com', 'EMAIL', 'TRANSFER_SENDER', ?)",
                 UUID.randomUUID(), eventId, UUID.randomUUID(), nowTs
         )).isInstanceOf(DataIntegrityViolationException.class);
 
         // Insert into processed_events first
         jdbcTemplate.update(
                 "INSERT INTO processed_events (event_id, event_type, event_version, aggregate_type, aggregate_id, processed_at) " +
-                        "VALUES (?, 'TRANSFER_COMPLETED', 1, 'TRANSFER', ?, ?)",
+                        "VALUES (?, 'TRANSFER_COMPLETED', 2, 'TRANSFER', ?, ?)",
                 eventId, UUID.randomUUID(), nowTs
         );
 
         // Valid delivery insert
         UUID deliveryId = UUID.randomUUID();
         int inserted = jdbcTemplate.update(
-                "INSERT INTO notification_deliveries (id, event_id, event_type, aggregate_type, aggregate_id, status, created_at) " +
-                        "VALUES (?, ?, 'TRANSFER_COMPLETED', 'TRANSFER', ?, 'DELIVERED', ?)",
+                "INSERT INTO notification_deliveries (id, event_id, event_type, aggregate_type, aggregate_id, status, recipient_email, channel, template_key, created_at) " +
+                        "VALUES (?, ?, 'TRANSFER_COMPLETED', 'TRANSFER', ?, 'PENDING', 'alice@example.com', 'EMAIL', 'TRANSFER_SENDER', ?)",
                 deliveryId, eventId, UUID.randomUUID(), nowTs
         );
         assertThat(inserted).isEqualTo(1);
 
-        // Duplicate event_id violates unique constraint
+        // Multi-recipient delivery for the same event succeeds with different recipient
+        UUID deliveryId2 = UUID.randomUUID();
+        int inserted2 = jdbcTemplate.update(
+                "INSERT INTO notification_deliveries (id, event_id, event_type, aggregate_type, aggregate_id, status, recipient_email, channel, template_key, created_at) " +
+                        "VALUES (?, ?, 'TRANSFER_COMPLETED', 'TRANSFER', ?, 'PENDING', 'bob@example.com', 'EMAIL', 'TRANSFER_RECEIVER', ?)",
+                deliveryId2, eventId, UUID.randomUUID(), nowTs
+        );
+        assertThat(inserted2).isEqualTo(1);
+
+        // Duplicate composite key (same event_id, recipient_email, channel, template_key) violates unique constraint
         assertThatThrownBy(() -> jdbcTemplate.update(
-                "INSERT INTO notification_deliveries (id, event_id, event_type, aggregate_type, aggregate_id, status, created_at) " +
-                        "VALUES (?, ?, 'TRANSFER_COMPLETED', 'TRANSFER', ?, 'DELIVERED', ?)",
+                "INSERT INTO notification_deliveries (id, event_id, event_type, aggregate_type, aggregate_id, status, recipient_email, channel, template_key, created_at) " +
+                        "VALUES (?, ?, 'TRANSFER_COMPLETED', 'TRANSFER', ?, 'PENDING', 'alice@example.com', 'EMAIL', 'TRANSFER_SENDER', ?)",
                 UUID.randomUUID(), eventId, UUID.randomUUID(), nowTs
         )).isInstanceOf(DataIntegrityViolationException.class);
 
-        // Invalid status violates check constraint
+        // Invalid status ('DELIVERED' or 'FOOBAR') violates check constraint
         UUID eventId2 = UUID.randomUUID();
         jdbcTemplate.update(
                 "INSERT INTO processed_events (event_id, event_type, event_version, aggregate_type, aggregate_id, processed_at) " +
-                        "VALUES (?, 'TRANSFER_COMPLETED', 1, 'TRANSFER', ?, ?)",
+                        "VALUES (?, 'TRANSFER_COMPLETED', 2, 'TRANSFER', ?, ?)",
                 eventId2, UUID.randomUUID(), nowTs
         );
         assertThatThrownBy(() -> jdbcTemplate.update(
-                "INSERT INTO notification_deliveries (id, event_id, event_type, aggregate_type, aggregate_id, status, created_at) " +
-                        "VALUES (?, ?, 'TRANSFER_COMPLETED', 'TRANSFER', ?, 'PENDING', ?)",
+                "INSERT INTO notification_deliveries (id, event_id, event_type, aggregate_type, aggregate_id, status, recipient_email, channel, template_key, created_at) " +
+                        "VALUES (?, ?, 'TRANSFER_COMPLETED', 'TRANSFER', ?, 'INVALID_STATUS', 'alice@example.com', 'EMAIL', 'TRANSFER_SENDER', ?)",
                 UUID.randomUUID(), eventId2, UUID.randomUUID(), nowTs
         )).isInstanceOf(DataIntegrityViolationException.class);
     }

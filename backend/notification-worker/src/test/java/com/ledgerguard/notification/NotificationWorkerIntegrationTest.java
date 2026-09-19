@@ -92,7 +92,7 @@ class NotificationWorkerIntegrationTest extends AbstractNotificationWorkerIntegr
             Optional<NotificationDelivery> delivery = deliveryRepository.findByEventId(eventId);
             assertThat(delivery).isPresent();
             assertThat(delivery.get().getEventType()).isEqualTo("TRANSFER_COMPLETED");
-            assertThat(delivery.get().getStatus()).isEqualTo("DELIVERED");
+            assertThat(delivery.get().getStatus()).isEqualTo("LEGACY_RECORDED");
         });
     }
 

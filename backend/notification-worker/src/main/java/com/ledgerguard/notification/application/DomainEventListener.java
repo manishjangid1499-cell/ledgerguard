@@ -28,7 +28,7 @@ public class DomainEventListener {
     private static final String EXPECTED_SPEC_VERSION = "1.0";
     private static final String EXPECTED_SOURCE = "urn:ledgerguard:ledgerguard-api";
     private static final String EXPECTED_CONTENT_TYPE = "application/json";
-    private static final int SUPPORTED_EVENT_VERSION = 1;
+    private static final Set<Integer> SUPPORTED_EVENT_VERSIONS = Set.of(1, 2);
 
     private static final String TYPE_TRANSFER_COMPLETED = "TRANSFER_COMPLETED";
     private static final String TYPE_PAYMENT_SUCCEEDED = "PAYMENT_SUCCEEDED";
@@ -167,7 +167,7 @@ public class DomainEventListener {
             throw new InvalidDomainEventException("Missing or invalid integer 'eventversion'");
         }
         int eventVersion = versionNode.asInt();
-        if (eventVersion != SUPPORTED_EVENT_VERSION) {
+        if (!SUPPORTED_EVENT_VERSIONS.contains(eventVersion)) {
             throw new UnsupportedEventVersionException("Unsupported event version: " + eventVersion);
         }
 
@@ -209,7 +209,7 @@ public class DomainEventListener {
             throw new InvalidDomainEventException("Missing or invalid 'data' payload object");
         }
 
-        validateEventPayload(eventType, aggregateId, dataNode);
+        validateEventPayload(eventType, aggregateId, dataNode, eventVersion);
 
         return new IncomingDomainEvent(
                 eventId,
@@ -242,7 +242,7 @@ public class DomainEventListener {
         }
     }
 
-    private void validateEventPayload(String eventType, UUID aggregateId, JsonNode data) {
+    private void validateEventPayload(String eventType, UUID aggregateId, JsonNode data, int eventVersion) {
         switch (eventType) {
             case TYPE_TRANSFER_COMPLETED -> {
                 UUID transferId = validateRequiredUuid(data, "transferId");
@@ -254,6 +254,13 @@ public class DomainEventListener {
                 validateMoneyString(data, "amountMinor");
                 validateRequiredCurrency(data, "currency");
                 validateRequiredUuid(data, "journalTransactionId");
+
+                if (eventVersion == 2) {
+                    validateRequiredUuid(data, "sourceUserId");
+                    validateEmail(data, "sourceEmail");
+                    validateRequiredUuid(data, "destinationUserId");
+                    validateEmail(data, "destinationEmail");
+                }
             }
             case TYPE_PAYMENT_SUCCEEDED -> {
                 UUID paymentId = validateRequiredUuid(data, "paymentId");
@@ -267,6 +274,13 @@ public class DomainEventListener {
                 validateMoneyString(data, "merchantNetAmountMinor");
                 validateRequiredCurrency(data, "currency");
                 validateRequiredUuid(data, "journalTransactionId");
+
+                if (eventVersion == 2) {
+                    validateRequiredUuid(data, "customerUserId");
+                    validateEmail(data, "customerEmail");
+                    validateRequiredUuid(data, "merchantUserId");
+                    validateEmail(data, "merchantEmail");
+                }
             }
             case TYPE_REFUND_COMPLETED -> {
                 UUID refundId = validateRequiredUuid(data, "refundId");
@@ -279,6 +293,13 @@ public class DomainEventListener {
                 validateMoneyString(data, "feeDebitAmountMinor");
                 validateRequiredCurrency(data, "currency");
                 validateRequiredUuid(data, "journalTransactionId");
+
+                if (eventVersion == 2) {
+                    validateRequiredUuid(data, "customerUserId");
+                    validateEmail(data, "customerEmail");
+                    validateRequiredUuid(data, "merchantUserId");
+                    validateEmail(data, "merchantEmail");
+                }
             }
             default -> throw new UnsupportedEventTypeException("Unexpected event type validation: " + eventType);
         }
@@ -293,6 +314,17 @@ public class DomainEventListener {
             return UUID.fromString(node.asText());
         } catch (IllegalArgumentException e) {
             throw new InvalidDomainEventException("Invalid UUID format in payload field '" + fieldName + "': " + node.asText(), e);
+        }
+    }
+
+    private void validateEmail(JsonNode data, String fieldName) {
+        JsonNode node = data.get(fieldName);
+        if (node == null || !node.isTextual() || node.asText().isBlank()) {
+            throw new InvalidDomainEventException("Missing or blank required email field in data: " + fieldName);
+        }
+        String email = node.asText().trim();
+        if (!email.contains("@") || email.length() < 3) {
+            throw new InvalidDomainEventException("Invalid email format in payload field '" + fieldName + "': " + email);
         }
     }
 
