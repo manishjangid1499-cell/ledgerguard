@@ -21,11 +21,10 @@ public class PlatformStartupIT extends AbstractE2ETest {
     }
 
     @Test
-    @DisplayName("Flyway migrations V1 through V17 are applied on ledgerguard; V18 is ABSENT")
+    @DisplayName("Flyway migrations V1 through V18 are applied on ledgerguard")
     void testLedgerGuardFlywayMigrations() {
         List<String> versions = db.getAppliedFlywayVersions("ledgerguard");
-        assertThat(versions).contains("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17");
-        assertThat(versions).doesNotContain("18");
+        assertThat(versions).contains("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18");
     }
 
     @Test
