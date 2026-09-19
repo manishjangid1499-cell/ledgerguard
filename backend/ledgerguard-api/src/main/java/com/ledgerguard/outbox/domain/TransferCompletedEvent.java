@@ -25,9 +25,21 @@ public record TransferCompletedEvent(
         Objects.requireNonNull(payload, "payload must not be null");
     }
 
+    public static final int CURRENT_EVENT_VERSION = 2;
+
     public static TransferCompletedEvent of(
             UUID eventId,
             UUID transferId,
+            Instant occurredAt,
+            TransferCompletedPayload payload
+    ) {
+        return of(eventId, transferId, CURRENT_EVENT_VERSION, occurredAt, payload);
+    }
+
+    public static TransferCompletedEvent of(
+            UUID eventId,
+            UUID transferId,
+            int eventVersion,
             Instant occurredAt,
             TransferCompletedPayload payload
     ) {
@@ -36,7 +48,7 @@ public record TransferCompletedEvent(
                 "TRANSFER",
                 transferId,
                 "TRANSFER_COMPLETED",
-                1,
+                eventVersion,
                 occurredAt,
                 payload
         );

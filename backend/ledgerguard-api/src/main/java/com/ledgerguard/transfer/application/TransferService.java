@@ -24,6 +24,9 @@ import com.ledgerguard.transfer.domain.Transfer;
 import com.ledgerguard.transfer.domain.TransferDestinationNotFoundException;
 import com.ledgerguard.transfer.domain.TransferValidationException;
 import com.ledgerguard.transfer.infrastructure.TransferRepository;
+import com.ledgerguard.identity.domain.User;
+import com.ledgerguard.identity.domain.UserRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -52,6 +55,28 @@ public class TransferService {
     private final IdempotencyService idempotencyService;
     private final TransferRepository transferRepository;
     private final OutboxService outboxService;
+    private final UserRepository userRepository;
+
+    @Autowired
+    public TransferService(
+            LedgerAccountRepository ledgerAccountRepository,
+            LedgerBalanceSnapshotRepository ledgerBalanceSnapshotRepository,
+            BalanceHoldRepository balanceHoldRepository,
+            LedgerPostingService ledgerPostingService,
+            IdempotencyService idempotencyService,
+            TransferRepository transferRepository,
+            OutboxService outboxService,
+            UserRepository userRepository
+    ) {
+        this.ledgerAccountRepository = ledgerAccountRepository;
+        this.ledgerBalanceSnapshotRepository = ledgerBalanceSnapshotRepository;
+        this.balanceHoldRepository = balanceHoldRepository;
+        this.ledgerPostingService = ledgerPostingService;
+        this.idempotencyService = idempotencyService;
+        this.transferRepository = transferRepository;
+        this.outboxService = outboxService;
+        this.userRepository = userRepository;
+    }
 
     public TransferService(
             LedgerAccountRepository ledgerAccountRepository,
@@ -62,13 +87,8 @@ public class TransferService {
             TransferRepository transferRepository,
             OutboxService outboxService
     ) {
-        this.ledgerAccountRepository = ledgerAccountRepository;
-        this.ledgerBalanceSnapshotRepository = ledgerBalanceSnapshotRepository;
-        this.balanceHoldRepository = balanceHoldRepository;
-        this.ledgerPostingService = ledgerPostingService;
-        this.idempotencyService = idempotencyService;
-        this.transferRepository = transferRepository;
-        this.outboxService = outboxService;
+        this(ledgerAccountRepository, ledgerBalanceSnapshotRepository, balanceHoldRepository,
+                ledgerPostingService, idempotencyService, transferRepository, outboxService, null);
     }
 
     /**
@@ -189,6 +209,13 @@ public class TransferService {
             transferRepository.saveAndFlush(transfer);
 
             // E. Append TRANSFER_COMPLETED domain event to transactional outbox
+            User sourceUser = (userRepository != null && sourceAccount.getOwnerUserId() != null)
+                    ? userRepository.findById(sourceAccount.getOwnerUserId()).orElse(null)
+                    : null;
+            User destinationUser = (userRepository != null && destinationAccount.getOwnerUserId() != null)
+                    ? userRepository.findById(destinationAccount.getOwnerUserId()).orElse(null)
+                    : null;
+
             outboxService.append(TransferCompletedEvent.of(
                     UUID.randomUUID(),
                     transfer.getId(),
@@ -199,7 +226,11 @@ public class TransferService {
                             transfer.getDestinationLedgerAccountId().toString(),
                             String.valueOf(transfer.getAmountMinor()),
                             transfer.getCurrency(),
-                            postingResult.journalTransactionId().toString()
+                            postingResult.journalTransactionId().toString(),
+                            sourceUser != null ? sourceUser.getId().toString() : null,
+                            sourceUser != null ? sourceUser.getEmail() : null,
+                            destinationUser != null ? destinationUser.getId().toString() : null,
+                            destinationUser != null ? destinationUser.getEmail() : null
                     )
             ));
 

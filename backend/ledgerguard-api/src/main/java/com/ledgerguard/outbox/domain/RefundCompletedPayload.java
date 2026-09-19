@@ -13,7 +13,11 @@ public record RefundCompletedPayload(
         String merchantDebitAmountMinor,
         String feeDebitAmountMinor,
         String currency,
-        String journalTransactionId
+        String journalTransactionId,
+        String customerUserId,
+        String customerEmail,
+        String merchantUserId,
+        String merchantEmail
 ) {
     public RefundCompletedPayload {
         Objects.requireNonNull(refundId, "refundId must not be null");
@@ -23,5 +27,17 @@ public record RefundCompletedPayload(
         Objects.requireNonNull(feeDebitAmountMinor, "feeDebitAmountMinor must not be null");
         Objects.requireNonNull(currency, "currency must not be null");
         Objects.requireNonNull(journalTransactionId, "journalTransactionId must not be null");
+    }
+
+    public RefundCompletedPayload(
+            String refundId,
+            String paymentId,
+            String refundAmountMinor,
+            String merchantDebitAmountMinor,
+            String feeDebitAmountMinor,
+            String currency,
+            String journalTransactionId
+    ) {
+        this(refundId, paymentId, refundAmountMinor, merchantDebitAmountMinor, feeDebitAmountMinor, currency, journalTransactionId, null, null, null, null);
     }
 }
