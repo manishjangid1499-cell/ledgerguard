@@ -92,6 +92,7 @@ public class RefreshTokenService {
                         token.revoke(now);
                         refreshTokenRepository.save(token);
                     }
+                    refreshTokenRepository.revokeAllActiveForUserId(token.getUser().getId(), now);
                 });
     }
 
