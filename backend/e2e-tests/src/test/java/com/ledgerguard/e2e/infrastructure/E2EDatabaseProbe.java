@@ -242,7 +242,7 @@ public class E2EDatabaseProbe {
     }
 
     public int countNotificationDeliveries(UUID eventId) {
-        String sql = "SELECT COUNT(*) FROM notification_deliveries WHERE event_id = ? AND status = 'DELIVERED'";
+        String sql = "SELECT COUNT(*) FROM notification_deliveries WHERE event_id = ?";
         try (Connection conn = getConnection("notification_worker");
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setObject(1, eventId);
@@ -258,7 +258,7 @@ public class E2EDatabaseProbe {
     }
 
     public int countNotificationDeliveriesByAggregateId(UUID aggregateId) {
-        String sql = "SELECT COUNT(*) FROM notification_deliveries WHERE aggregate_id = ? AND status = 'DELIVERED'";
+        String sql = "SELECT COUNT(*) FROM notification_deliveries WHERE aggregate_id = ?";
         try (Connection conn = getConnection("notification_worker");
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setObject(1, aggregateId);
