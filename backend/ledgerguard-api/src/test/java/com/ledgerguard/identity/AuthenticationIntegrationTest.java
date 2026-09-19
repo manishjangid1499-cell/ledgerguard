@@ -83,6 +83,15 @@ class AuthenticationIntegrationTest extends AbstractIntegrationTest {
         Cookie refreshCookie = result.getResponse().getCookie(AuthController.REFRESH_COOKIE_NAME);
         assertThat(refreshCookie).isNotNull();
         assertThat(refreshCookie.getValue()).isNotBlank();
+        assertThat(refreshCookie.getMaxAge()).isEqualTo(-1);
+
+        String setCookieHeader = result.getResponse().getHeader(org.springframework.http.HttpHeaders.SET_COOKIE);
+        assertThat(setCookieHeader).isNotNull();
+        assertThat(setCookieHeader).contains("HttpOnly");
+        assertThat(setCookieHeader).contains("SameSite=Strict");
+        assertThat(setCookieHeader).contains("Path=/api/auth");
+        assertThat(setCookieHeader).doesNotContain("Max-Age");
+        assertThat(setCookieHeader).doesNotContain("Expires");
     }
 
     @Test

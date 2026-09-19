@@ -88,7 +88,6 @@ public class AuthController {
                 .secure(secureCookie)
                 .sameSite("Strict")
                 .path(AUTH_PATH)
-                .maxAge(jwtProperties.getRefreshTokenTtl())
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
