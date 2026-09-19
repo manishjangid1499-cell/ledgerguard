@@ -3,6 +3,7 @@ package com.ledgerguard.shared.error;
 import com.ledgerguard.identity.application.EmailAlreadyRegisteredException;
 import com.ledgerguard.identity.application.ForbiddenRegistrationException;
 import com.ledgerguard.identity.application.InvalidCredentialsException;
+import com.ledgerguard.identity.application.InvalidFullNameException;
 import com.ledgerguard.identity.application.InvalidPasswordException;
 import com.ledgerguard.identity.application.InvalidRefreshTokenException;
 import org.slf4j.Logger;
@@ -158,6 +159,22 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
                 HttpStatus.BAD_REQUEST,
                 "Registration with OPS role is not permitted."
+        );
+        problemDetail.setTitle("Validation failed");
+        enrichProblemDetail(problemDetail, ApiErrorCode.VALIDATION_FAILED, request);
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
+    @ExceptionHandler(InvalidFullNameException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidFullName(InvalidFullNameException ex, WebRequest request) {
+        log.warn("Registration rejected: full name does not meet validation policy");
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                ex.getMessage()
         );
         problemDetail.setTitle("Validation failed");
         enrichProblemDetail(problemDetail, ApiErrorCode.VALIDATION_FAILED, request);

@@ -50,8 +50,8 @@ public class E2EHttpClient {
 
     public HttpResponseView register(String email, String password, String role) {
         Map<String, Object> payload = role != null ?
-                Map.of("email", email, "password", password, "role", role) :
-                Map.of("email", email, "password", password);
+                Map.of("fullName", "E2E Test User", "email", email, "password", password, "role", role) :
+                Map.of("fullName", "E2E Test User", "email", email, "password", password);
         return postApi("/api/auth/register", payload, null, false);
     }
 

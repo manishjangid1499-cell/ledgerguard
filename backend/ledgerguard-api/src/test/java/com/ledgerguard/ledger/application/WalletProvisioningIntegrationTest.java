@@ -123,7 +123,7 @@ class WalletProvisioningIntegrationTest extends AbstractIntegrationTest {
     @DisplayName("AuthService registration provisions user and wallet atomically in one transaction")
     void authRegistrationProvisionsWalletAtomically() {
         String email = "wallet_user_" + UUID.randomUUID() + "@example.com";
-        RegisterRequest request = new RegisterRequest(email, "SecurePassword123!", UserRole.CUSTOMER);
+        RegisterRequest request = new RegisterRequest("Wallet Test User", email, "SecurePassword123!", UserRole.CUSTOMER);
 
         UserSummaryResponse response = authService.register(request);
 

@@ -53,6 +53,7 @@ public class AuthService {
             throw new ForbiddenRegistrationException("Registration with OPS role is not permitted.");
         }
 
+        String normalizedFullName = validateAndNormalizeFullName(request.fullName());
         validatePasswordPolicy(request.password());
 
         String normalizedEmail = normalizeEmail(request.email());
@@ -64,7 +65,7 @@ public class AuthService {
         // Password is not trimmed or lowercased
         String encodedPassword = passwordEncoder.encode(request.password());
 
-        User user = User.create(normalizedEmail, encodedPassword, role);
+        User user = User.create(normalizedFullName, normalizedEmail, encodedPassword, role);
         try {
             User savedUser = userRepository.saveAndFlush(user);
             walletProvisioningService.provisionWallet(savedUser.getId(), savedUser.getRole());
@@ -135,6 +136,17 @@ public class AuthService {
         if (utf8Bytes.length > MAX_PASSWORD_UTF8_BYTES) {
             throw new InvalidPasswordException("Password exceeds maximum allowed BCrypt byte length of " + MAX_PASSWORD_UTF8_BYTES + " UTF-8 bytes.");
         }
+    }
+
+    private String validateAndNormalizeFullName(String fullName) {
+        if (fullName == null || fullName.isBlank()) {
+            throw new InvalidFullNameException("Full name must not be blank.");
+        }
+        String trimmed = fullName.trim();
+        if (trimmed.length() < 2 || trimmed.length() > 120) {
+            throw new InvalidFullNameException("Full name must be between 2 and 120 characters.");
+        }
+        return trimmed;
     }
 
     private String normalizeEmail(String email) {
