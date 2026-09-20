@@ -17,6 +17,7 @@ import SendIcon from '@mui/icons-material/Send';
 import ReplayIcon from '@mui/icons-material/Replay';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link as RouterLink } from 'react-router-dom';
 import { transferApi } from '../api/transferApi';
 import { parseInrToMinorUnits } from '../../shared/utils/money';
 import { TransferResponse } from '../types/transfer.types';
@@ -170,10 +171,10 @@ export const TransferForm: React.FC = () => {
     <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, height: '100%' }}>
       <CardContent sx={{ p: { xs: 2.5, sm: 3 } }}>
         <Typography variant="h6" component="h2" sx={{ fontWeight: 700, mb: 0.5 }}>
-          Send funds
+          Send money
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
-          Transfer INR to another LedgerGuard wallet.
+          Send INR to another Customer wallet.
         </Typography>
 
         <Collapse in={!!lastSuccess}>
@@ -199,7 +200,16 @@ export const TransferForm: React.FC = () => {
               severity={feedback.severity}
               sx={{ mb: 2.5 }}
               action={
-                feedback.canRetry && (
+                feedback.payMerchantLink ? (
+                  <Button
+                    color="inherit"
+                    size="small"
+                    component={RouterLink}
+                    to="/app/payments"
+                  >
+                    Pay merchant
+                  </Button>
+                ) : feedback.canRetry ? (
                   <Button
                     color="inherit"
                     size="small"
@@ -209,7 +219,7 @@ export const TransferForm: React.FC = () => {
                   >
                     Retry
                   </Button>
-                )
+                ) : undefined
               }
             >
               <AlertTitle sx={{ fontWeight: 700 }}>
@@ -232,7 +242,7 @@ export const TransferForm: React.FC = () => {
               fullWidth
               required
               disabled={transferMutation.isPending}
-              helperText={clientError?.field === 'destination' ? clientError.message : 'Ask the recipient for the wallet ID shown on their dashboard.'}
+              helperText={clientError?.field === 'destination' ? clientError.message : 'Enter the Customer wallet ID you want to send money to.'}
               slotProps={{
                 input: {
                   sx: { fontFamily: 'monospace', fontSize: '0.9rem' },
@@ -276,7 +286,7 @@ export const TransferForm: React.FC = () => {
                 }
                 sx={{ px: 4, py: 1.2, fontWeight: 700, width: { xs: '100%', sm: 'auto' } }}
               >
-                {transferMutation.isPending ? 'Sending funds…' : 'Send funds'}
+                {transferMutation.isPending ? 'Sending money…' : 'Send money'}
               </Button>
             </Box>
           </Stack>
