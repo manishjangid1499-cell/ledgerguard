@@ -480,10 +480,10 @@ class HoldServiceIntegrationTest extends AbstractIntegrationTest {
     @DisplayName("Transfer respects existing hold: posted 10000, hold 7000 -> transfer 4000 fails (available=3000); transfer 3000 succeeds")
     void testTransferRespectsExistingHold() {
         User customer = createTestUser("cust.txhold." + UUID.randomUUID() + "@example.com", UserRole.CUSTOMER);
-        User merchant = createTestUser("merch.txhold." + UUID.randomUUID() + "@example.com", UserRole.MERCHANT);
+        User recipient = createTestUser("recipient.txhold." + UUID.randomUUID() + "@example.com", UserRole.CUSTOMER);
 
         LedgerAccount customerWallet = createWallet(customer.getId(), AccountType.CUSTOMER);
-        LedgerAccount merchantWallet = createWallet(merchant.getId(), AccountType.MERCHANT);
+        LedgerAccount recipientWallet = createWallet(recipient.getId(), AccountType.CUSTOMER);
         fundWallet(customerWallet.getId(), 10000L);
 
         holdService.createHold(customerWallet.getId(), Money.inr(7000L), Instant.now().plus(1, ChronoUnit.HOURS));
@@ -491,7 +491,7 @@ class HoldServiceIntegrationTest extends AbstractIntegrationTest {
         // Transfer 4000 exceeds available 3000 -> fails
         assertThatThrownBy(() -> transferService.createTransfer(new CreateTransferCommand(
                 customer.getId(),
-                merchantWallet.getId(),
+                recipientWallet.getId(),
                 Money.inr(4000L),
                 "tx-fail-" + UUID.randomUUID()
         ))).isInstanceOf(InsufficientFundsException.class);
@@ -499,7 +499,7 @@ class HoldServiceIntegrationTest extends AbstractIntegrationTest {
         // Transfer 3000 matches available 3000 -> succeeds
         transferService.createTransfer(new CreateTransferCommand(
                 customer.getId(),
-                merchantWallet.getId(),
+                recipientWallet.getId(),
                 Money.inr(3000L),
                 "tx-succ-" + UUID.randomUUID()
         ));
