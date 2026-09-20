@@ -17,6 +17,8 @@ export const AppLayout = () => {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+
   const links = [
     { to: '/app', label: 'Dashboard', icon: DashboardOutlinedIcon, active: pathname === '/app' || pathname.startsWith('/app/transfers/') },
     { to: '/profile', label: 'Profile', icon: PersonOutlineIcon, active: pathname === '/profile' },
@@ -63,8 +65,22 @@ export const AppLayout = () => {
                     <ListItemIcon><Icon fontSize="small" /></ListItemIcon><ListItemText>{label}</ListItemText>
                   </MenuItem>
                 ))}
-                <MenuItem onClick={async () => { setAnchor(null); await logout(); navigate('/login'); }}>
-                  <ListItemIcon><LogoutIcon fontSize="small" /></ListItemIcon><ListItemText>Sign out</ListItemText>
+                <MenuItem
+                  disabled={isSigningOut}
+                  onClick={async () => {
+                    if (isSigningOut) return;
+                    setIsSigningOut(true);
+                    setAnchor(null);
+                    try {
+                      await logout();
+                    } finally {
+                      setIsSigningOut(false);
+                      navigate('/login', { replace: true });
+                    }
+                  }}
+                >
+                  <ListItemIcon><LogoutIcon fontSize="small" /></ListItemIcon>
+                  <ListItemText>{isSigningOut ? 'Signing out...' : 'Sign out'}</ListItemText>
                 </MenuItem>
               </Menu>
             </Stack>

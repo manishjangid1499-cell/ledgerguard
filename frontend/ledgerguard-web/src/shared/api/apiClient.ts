@@ -1,3 +1,4 @@
+import { authSession } from '../../auth/api/authSession';
 import { tokenStore } from '../../auth/api/tokenStore';
 import { AuthResponse } from '../../auth/types/auth.types';
 import { ApiError } from '../types/api.types';
@@ -19,9 +20,15 @@ interface RequestOptions extends RequestInit {
 let activeRefreshPromise: Promise<AuthResponse | null> | null = null;
 
 export async function executeSingleFlightRefresh(): Promise<AuthResponse | null> {
+  if (authSession.isLoggingOut()) {
+    return null;
+  }
+
   if (activeRefreshPromise) {
     return activeRefreshPromise;
   }
+
+  const startEpoch = authSession.getEpoch();
 
   activeRefreshPromise = (async () => {
     try {
@@ -34,12 +41,22 @@ export async function executeSingleFlightRefresh(): Promise<AuthResponse | null>
         credentials: 'include',
       });
 
+      if (!authSession.isValidEpoch(startEpoch)) {
+        return null;
+      }
+
       if (!response.ok) {
-        tokenStore.clearAccessToken();
+        if (authSession.isValidEpoch(startEpoch)) {
+          tokenStore.clearAccessToken();
+        }
         return null;
       }
 
       const data = (await response.json()) as AuthResponse;
+      if (!authSession.isValidEpoch(startEpoch)) {
+        return null;
+      }
+
       if (data && typeof data.accessToken === 'string') {
         tokenStore.setAccessToken(data.accessToken);
         return data;
@@ -48,7 +65,9 @@ export async function executeSingleFlightRefresh(): Promise<AuthResponse | null>
       tokenStore.clearAccessToken();
       return null;
     } catch {
-      tokenStore.clearAccessToken();
+      if (authSession.isValidEpoch(startEpoch)) {
+        tokenStore.clearAccessToken();
+      }
       return null;
     } finally {
       activeRefreshPromise = null;
@@ -85,8 +104,16 @@ export async function apiClient<T>(endpoint: string, options: RequestOptions = {
 
     // Handle 401 Unauthorized for protected endpoints with single-flight refresh retry
     if (response.status === 401 && !isAuthExclusion && !options._retry) {
+      if (authSession.isLoggingOut()) {
+        throw new ApiError({
+          status: 401,
+          title: 'Unauthorized',
+          detail: 'Session invalidated.',
+        });
+      }
+
       const authResult = await executeSingleFlightRefresh();
-      if (authResult?.accessToken) {
+      if (authResult?.accessToken && !authSession.isLoggingOut()) {
         // Retry the original request once with the new access token
         return apiClient<T>(endpoint, {
           ...options,
