@@ -3,6 +3,8 @@ package com.ledgerguard.funding.infrastructure;
 import com.ledgerguard.funding.domain.FundingOperation;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -18,6 +20,10 @@ import java.util.UUID;
  */
 @Repository
 public interface FundingOperationRepository extends JpaRepository<FundingOperation, UUID> {
+
+    Page<FundingOperation> findByInitiatedByUserId(UUID userId, Pageable pageable);
+
+    Optional<FundingOperation> findByIdAndInitiatedByUserId(UUID id, UUID userId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT f FROM FundingOperation f WHERE f.id = :id")

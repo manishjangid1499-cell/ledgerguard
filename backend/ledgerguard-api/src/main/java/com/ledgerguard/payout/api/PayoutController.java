@@ -1,6 +1,11 @@
 package com.ledgerguard.payout.api;
 
 import com.ledgerguard.ledger.domain.Money;
+import com.ledgerguard.payout.application.PayoutQueryService;
+import com.ledgerguard.shared.api.PagedResponse;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 import com.ledgerguard.payout.application.CreatePayoutCommand;
 import com.ledgerguard.payout.application.PayoutResult;
 import com.ledgerguard.payout.application.PayoutService;
@@ -27,9 +32,27 @@ import java.util.UUID;
 public class PayoutController {
 
     private final PayoutService payoutService;
+    private final PayoutQueryService queryService;
 
-    public PayoutController(PayoutService payoutService) {
+    public PayoutController(PayoutService payoutService, PayoutQueryService queryService) {
         this.payoutService = payoutService;
+        this.queryService = queryService;
+    }
+
+    @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'MERCHANT')")
+    public PagedResponse<PayoutReadResponse> list(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "20") int size) {
+        return queryService.list(UUID.fromString(jwt.getSubject()), page, size);
+    }
+
+    @GetMapping(value = "/{payoutId}", produces = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'MERCHANT')")
+    public ResponseEntity<PayoutReadResponse> detail(
+            @AuthenticationPrincipal Jwt jwt, @PathVariable("payoutId") UUID payoutId) {
+        return ResponseEntity.of(queryService.detail(UUID.fromString(jwt.getSubject()), payoutId));
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
