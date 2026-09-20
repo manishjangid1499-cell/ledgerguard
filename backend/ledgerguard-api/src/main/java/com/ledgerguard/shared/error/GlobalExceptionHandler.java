@@ -313,6 +313,22 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .body(problemDetail);
     }
 
+    @ExceptionHandler(com.ledgerguard.transfer.domain.MerchantPaymentRequiredException.class)
+    public ResponseEntity<ProblemDetail> handleMerchantPaymentRequired(com.ledgerguard.transfer.domain.MerchantPaymentRequiredException ex, WebRequest request) {
+        log.warn("Transfer rejected: merchant payment required: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                ex.getMessage()
+        );
+        problemDetail.setTitle("Merchant payment required");
+        enrichProblemDetail(problemDetail, ApiErrorCode.MERCHANT_PAYMENT_REQUIRED, request);
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
     @ExceptionHandler(com.ledgerguard.payment.domain.PaymentDestinationNotFoundException.class)
     public ResponseEntity<ProblemDetail> handlePaymentDestinationNotFound(com.ledgerguard.payment.domain.PaymentDestinationNotFoundException ex, WebRequest request) {
         log.warn("Payment destination not found: {}", ex.getMessage());

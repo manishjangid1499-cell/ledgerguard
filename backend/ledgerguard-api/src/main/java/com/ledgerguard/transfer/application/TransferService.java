@@ -20,6 +20,7 @@ import com.ledgerguard.outbox.application.OutboxService;
 import com.ledgerguard.outbox.domain.TransferCompletedEvent;
 import com.ledgerguard.outbox.domain.TransferCompletedPayload;
 import com.ledgerguard.transfer.domain.InsufficientFundsException;
+import com.ledgerguard.transfer.domain.MerchantPaymentRequiredException;
 import com.ledgerguard.transfer.domain.Transfer;
 import com.ledgerguard.transfer.domain.TransferDestinationNotFoundException;
 import com.ledgerguard.transfer.domain.TransferValidationException;
@@ -119,8 +120,8 @@ public class TransferService {
         if (sourceAccount.getStatus() != AccountStatus.ACTIVE) {
             throw new TransferValidationException("Source wallet account is not active: " + sourceAccount.getId() + " (status: " + sourceAccount.getStatus() + ")");
         }
-        if (sourceAccount.getAccountType() != AccountType.CUSTOMER && sourceAccount.getAccountType() != AccountType.MERCHANT) {
-            throw new TransferValidationException("Source account must be a user wallet: " + sourceAccount.getId());
+        if (sourceAccount.getAccountType() != AccountType.CUSTOMER) {
+            throw new TransferValidationException("Source account must be a customer wallet: " + sourceAccount.getId());
         }
         if (!"INR".equals(sourceAccount.getCurrency())) {
             throw new TransferValidationException("Source wallet currency must be INR: " + sourceAccount.getCurrency());
@@ -136,8 +137,11 @@ public class TransferService {
         if (destinationAccount.getStatus() != AccountStatus.ACTIVE) {
             throw new TransferValidationException("Destination wallet account is not active: " + destinationAccount.getId() + " (status: " + destinationAccount.getStatus() + ")");
         }
-        if (destinationAccount.getAccountType() != AccountType.CUSTOMER && destinationAccount.getAccountType() != AccountType.MERCHANT) {
-            throw new TransferValidationException("Destination account must be a user wallet: " + destinationAccount.getId());
+        if (destinationAccount.getAccountType() == AccountType.MERCHANT) {
+            throw new MerchantPaymentRequiredException("This wallet belongs to a Merchant. Use Pay merchant instead.");
+        }
+        if (destinationAccount.getAccountType() != AccountType.CUSTOMER) {
+            throw new TransferValidationException("Destination account must be a customer wallet: " + destinationAccount.getId());
         }
         if (!"INR".equals(destinationAccount.getCurrency())) {
             throw new TransferValidationException("Destination wallet currency must be INR: " + destinationAccount.getCurrency());

@@ -23,9 +23,15 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import com.ledgerguard.ledger.application.PostingResult;
+import com.ledgerguard.transfer.domain.Transfer;
+import com.ledgerguard.transfer.infrastructure.TransferRepository;
+
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
@@ -51,6 +57,9 @@ class TransferControllerIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private JwtTokenService jwtTokenService;
+
+    @Autowired
+    private TransferRepository transferRepository;
 
     private MockMvc mockMvc;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -144,8 +153,8 @@ class TransferControllerIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("MERCHANT can execute transfer returning HTTP 201")
-    void merchantTransferSucceeds() throws Exception {
+    @DisplayName("MERCHANT attempting transfer is rejected with HTTP 403 Forbidden")
+    void merchantTransferRejectedWith403() throws Exception {
         User merchant = new User(UUID.randomUUID(), "merch." + UUID.randomUUID() + "@example.com", "$2a$hash", UserRole.MERCHANT, UserStatus.ACTIVE);
         User customer = new User(UUID.randomUUID(), "cust." + UUID.randomUUID() + "@example.com", "$2a$hash", UserRole.CUSTOMER, UserStatus.ACTIVE);
         userRepository.save(merchant);
@@ -163,10 +172,83 @@ class TransferControllerIntegrationTest extends AbstractIntegrationTest {
                         .header("Idempotency-Key", "key-merch-trf-" + UUID.randomUUID())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isCreated())
-                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.amountMinor", is("25000")))
-                .andExpect(jsonPath("$.replayed", is(false)));
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Customer attempting transfer to Merchant wallet returns HTTP 400 MERCHANT_PAYMENT_REQUIRED")
+    void customerTransferToMerchantReturns400MerchantPaymentRequired() throws Exception {
+        User customer = new User(UUID.randomUUID(), "cust." + UUID.randomUUID() + "@example.com", "$2a$hash", UserRole.CUSTOMER, UserStatus.ACTIVE);
+        User merchant = new User(UUID.randomUUID(), "merch." + UUID.randomUUID() + "@example.com", "$2a$hash", UserRole.MERCHANT, UserStatus.ACTIVE);
+        userRepository.save(customer);
+        userRepository.save(merchant);
+
+        LedgerAccount customerWallet = createTestWallet(customer.getId(), AccountType.CUSTOMER);
+        LedgerAccount merchantWallet = createTestWallet(merchant.getId(), AccountType.MERCHANT);
+        fundWallet(customerWallet.getId(), 50000L);
+
+        String customerToken = jwtTokenService.generateAccessToken(customer);
+        CreateTransferRequest request = new CreateTransferRequest(merchantWallet.getId(), 10000L);
+
+        mockMvc.perform(post("/api/transfers")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .header("Idempotency-Key", "key-c2m-trf-" + UUID.randomUUID())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.errorCode", is(ApiErrorCode.MERCHANT_PAYMENT_REQUIRED)))
+                .andExpect(jsonPath("$.title", is("Merchant payment required")))
+                .andExpect(jsonPath("$.detail", is("This wallet belongs to a Merchant. Use Pay merchant instead.")));
+    }
+
+    @Test
+    @DisplayName("Merchant can read historical transfers via GET /api/transfers and GET /api/transfers/{id}")
+    void merchantCanReadHistoricalTransfers() throws Exception {
+        User customer = new User(UUID.randomUUID(), "hist.cust." + UUID.randomUUID() + "@example.com", "$2a$hash", UserRole.CUSTOMER, UserStatus.ACTIVE);
+        User merchant = new User(UUID.randomUUID(), "hist.merch." + UUID.randomUUID() + "@example.com", "$2a$hash", UserRole.MERCHANT, UserStatus.ACTIVE);
+        userRepository.save(customer);
+        userRepository.save(merchant);
+
+        LedgerAccount customerWallet = createTestWallet(customer.getId(), AccountType.CUSTOMER);
+        LedgerAccount merchantWallet = createTestWallet(merchant.getId(), AccountType.MERCHANT);
+        fundWallet(customerWallet.getId(), 50000L);
+
+        PostingResult postingResult = ledgerPostingService.post(PostJournalCommand.of(
+                PostingLine.debit(customerWallet.getId(), 10000L),
+                PostingLine.credit(merchantWallet.getId(), 10000L)
+        ));
+
+        Transfer historicalTransfer = new Transfer(
+                UUID.randomUUID(),
+                customer.getId(),
+                customerWallet.getId(),
+                merchantWallet.getId(),
+                10000L,
+                "INR",
+                postingResult.journalTransactionId(),
+                Instant.now()
+        );
+        transferRepository.saveAndFlush(historicalTransfer);
+
+        String merchantToken = jwtTokenService.generateAccessToken(merchant);
+
+        // Merchant list transfers
+        mockMvc.perform(get("/api/transfers?page=0&size=20")
+                        .header("Authorization", "Bearer " + merchantToken)
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()", greaterThanOrEqualTo(1)))
+                .andExpect(jsonPath("$.items[0].transferId", is(historicalTransfer.getId().toString())))
+                .andExpect(jsonPath("$.items[0].direction", is("INCOMING")));
+
+        // Merchant get transfer detail
+        mockMvc.perform(get("/api/transfers/{id}", historicalTransfer.getId())
+                        .header("Authorization", "Bearer " + merchantToken)
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.transferId", is(historicalTransfer.getId().toString())))
+                .andExpect(jsonPath("$.direction", is("INCOMING")));
     }
 
     @Test

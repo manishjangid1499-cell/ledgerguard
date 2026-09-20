@@ -65,7 +65,7 @@ public class TransferController {
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
-    @PreAuthorize("hasAnyRole('CUSTOMER', 'MERCHANT')")
+    @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<TransferResponse> createTransfer(
             @AuthenticationPrincipal Jwt jwt,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
