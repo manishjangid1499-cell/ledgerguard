@@ -10,11 +10,15 @@ import { ProtectedRoute } from './ProtectedRoute';
 import { PublicOnlyRoute } from './PublicOnlyRoute';
 import { OpsRoute } from './OpsRoute';
 import { RouteMetadata } from './RouteMetadata';
+import { FinancialRoute } from './FinancialRoute';
 
 const AppHomePage = React.lazy(() => import('../../shared/pages/AppHomePage').then(module => ({ default: module.AppHomePage })));
 const ProfilePage = React.lazy(() => import('../../shared/pages/ProfilePage').then(module => ({ default: module.ProfilePage })));
 const TransferDetailPage = React.lazy(() => import('../../transfer/pages/TransferDetailPage').then(module => ({ default: module.TransferDetailPage })));
 const FailureLabPage = React.lazy(() => import('../../failure-lab/pages/FailureLabPage').then(module => ({ default: module.FailureLabPage })));
+const ActivityPage = React.lazy(() => import('../../financial/pages/ActivityPage').then(module => ({ default: module.ActivityPage })));
+const ProviderOperationPage = React.lazy(() => import('../../financial/pages/ProviderOperationPage').then(module => ({ default: module.ProviderOperationPage })));
+const PaymentDetailPage = React.lazy(() => import('../../financial/pages/PaymentDetailPage').then(module => ({ default: module.PaymentDetailPage })));
 
 export const AppRouter: React.FC = () => {
   return (
@@ -40,6 +44,17 @@ export const AppRouter: React.FC = () => {
             <Route path="/app" element={<AppHomePage />} />
             <Route path="/app/transfers/:transferId" element={<TransferDetailPage />} />
             <Route path="/profile" element={<ProfilePage />} />
+            <Route element={<FinancialRoute />}>
+              <Route path="/app/activity" element={<ActivityPage />} />
+              <Route path="/app/payments" element={<ActivityPage domain="payments" />} />
+              <Route path="/app/payments/:paymentId" element={<PaymentDetailPage />} />
+              <Route path="/app/payouts" element={<ActivityPage domain="payouts" />} />
+              <Route path="/app/payouts/:operationId" element={<ProviderOperationPage domain="payouts" />} />
+            </Route>
+            <Route element={<FinancialRoute customerOnly />}>
+              <Route path="/app/funding" element={<ActivityPage domain="funding" />} />
+              <Route path="/app/funding/:operationId" element={<ProviderOperationPage domain="funding" />} />
+            </Route>
             <Route element={<OpsRoute />}>
               <Route path="/app/failure-lab" element={<FailureLabPage />} />
             </Route>

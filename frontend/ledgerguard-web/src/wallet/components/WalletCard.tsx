@@ -47,7 +47,10 @@ export const WalletCard = () => {
                 </Stack>
               ))}
             </Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>Wallet ID · Share to receive transfers</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+              {wallet.accountType === 'MERCHANT' ? 'Merchant wallet ID' : 'Wallet ID · Share to receive transfers'}
+            </Typography>
+            {wallet.accountType === 'MERCHANT' && <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Share this ID with a Customer to receive a LedgerGuard payment.</Typography>}
             <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', bgcolor: 'background.default', pl: 1.5, py: 0.5, borderRadius: 1 }}>
               <Typography variant="body2" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', fontFamily: 'monospace', fontSize: '0.8rem' }}>{wallet.ledgerAccountId}</Typography>
               <CopyButton value={wallet.ledgerAccountId} label="wallet ID" />
