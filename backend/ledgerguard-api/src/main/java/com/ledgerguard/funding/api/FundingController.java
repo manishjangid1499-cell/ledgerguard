@@ -6,6 +6,8 @@ import com.ledgerguard.funding.application.FundingService;
 import com.ledgerguard.funding.domain.FundingStatus;
 import com.ledgerguard.funding.domain.FundingValidationException;
 import com.ledgerguard.ledger.domain.Money;
+import com.ledgerguard.funding.application.FundingQueryService;
+import com.ledgerguard.shared.api.PagedResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -26,9 +28,27 @@ import java.util.UUID;
 public class FundingController {
 
     private final FundingService fundingService;
+    private final FundingQueryService queryService;
 
-    public FundingController(FundingService fundingService) {
+    public FundingController(FundingService fundingService, FundingQueryService queryService) {
         this.fundingService = fundingService;
+        this.queryService = queryService;
+    }
+
+    @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public PagedResponse<FundingReadResponse> list(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "20") int size) {
+        return queryService.list(UUID.fromString(jwt.getSubject()), page, size);
+    }
+
+    @GetMapping(value = "/{fundingId}", produces = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<FundingReadResponse> detail(
+            @AuthenticationPrincipal Jwt jwt, @PathVariable("fundingId") UUID fundingId) {
+        return ResponseEntity.of(queryService.detail(UUID.fromString(jwt.getSubject()), fundingId));
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)

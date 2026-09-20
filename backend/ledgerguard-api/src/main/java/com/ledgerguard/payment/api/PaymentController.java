@@ -1,6 +1,12 @@
 package com.ledgerguard.payment.api;
 
 import com.ledgerguard.ledger.domain.Money;
+import com.ledgerguard.identity.domain.UserRole;
+import com.ledgerguard.payment.application.PaymentQueryService;
+import com.ledgerguard.shared.api.PagedResponse;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 import com.ledgerguard.payment.application.CreatePaymentCommand;
 import com.ledgerguard.payment.application.PaymentResult;
 import com.ledgerguard.payment.application.PaymentService;
@@ -28,9 +34,31 @@ import java.util.UUID;
 public class PaymentController {
 
     private final PaymentService paymentService;
+    private final PaymentQueryService queryService;
 
-    public PaymentController(PaymentService paymentService) {
+    public PaymentController(PaymentService paymentService, PaymentQueryService queryService) {
         this.paymentService = paymentService;
+        this.queryService = queryService;
+    }
+
+    @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'MERCHANT')")
+    public PagedResponse<PaymentSummaryResponse> list(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "20") int size) {
+        return queryService.list(UUID.fromString(jwt.getSubject()),
+                UserRole.valueOf(jwt.getClaimAsString("role")), page, size);
+    }
+
+    @GetMapping(value = "/{paymentId}", produces = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'MERCHANT')")
+    public ResponseEntity<PaymentDetailResponse> detail(
+            @AuthenticationPrincipal Jwt jwt, @PathVariable("paymentId") UUID paymentId,
+            @RequestParam(name = "refundPage", defaultValue = "0") int refundPage,
+            @RequestParam(name = "refundSize", defaultValue = "20") int refundSize) {
+        return ResponseEntity.of(queryService.detail(UUID.fromString(jwt.getSubject()),
+                UserRole.valueOf(jwt.getClaimAsString("role")), paymentId, refundPage, refundSize));
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
