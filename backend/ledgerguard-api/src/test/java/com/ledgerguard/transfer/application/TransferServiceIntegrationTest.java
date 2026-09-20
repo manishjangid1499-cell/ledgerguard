@@ -19,6 +19,7 @@ import com.ledgerguard.ledger.infrastructure.JournalEntryRepository;
 import com.ledgerguard.ledger.infrastructure.JournalTransactionRepository;
 import com.ledgerguard.ledger.infrastructure.LedgerAccountRepository;
 import com.ledgerguard.ledger.infrastructure.LedgerBalanceSnapshotRepository;
+import com.ledgerguard.transfer.domain.MerchantPaymentRequiredException;
 import com.ledgerguard.transfer.domain.Transfer;
 import com.ledgerguard.transfer.domain.TransferDestinationNotFoundException;
 import com.ledgerguard.transfer.domain.TransferValidationException;
@@ -141,8 +142,8 @@ class TransferServiceIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("CUSTOMER to MERCHANT transfer executes successfully")
-    void customerToMerchantTransfer() {
+    @DisplayName("CUSTOMER to MERCHANT transfer is rejected with MerchantPaymentRequiredException")
+    void customerToMerchantTransferRejected() {
         UUID senderId = createTestUser("CUSTOMER");
         UUID merchantId = createTestUser("MERCHANT");
         LedgerAccount senderWallet = createTestWallet(senderId, AccountType.CUSTOMER);
@@ -150,21 +151,26 @@ class TransferServiceIntegrationTest extends AbstractIntegrationTest {
 
         fundWallet(senderWallet.getId(), 20000L);
 
-        TransferResult result = transferService.createTransfer(CreateTransferCommand.of(
+        long initialTransferCount = transferRepository.count();
+        long initialJournalCount = journalTransactionRepository.count();
+
+        assertThatThrownBy(() -> transferService.createTransfer(CreateTransferCommand.of(
                 senderId,
                 merchantWallet.getId(),
                 Money.inr(5000L),
                 "key-c2m-" + UUID.randomUUID()
-        ));
+        ))).isInstanceOf(MerchantPaymentRequiredException.class)
+          .hasMessage("This wallet belongs to a Merchant. Use Pay merchant instead.");
 
-        assertThat(result.replayed()).isFalse();
-        assertThat(getSnapshotBalance(senderWallet.getId())).isEqualTo(15000L);
-        assertThat(getSnapshotBalance(merchantWallet.getId())).isEqualTo(5000L);
+        assertThat(getSnapshotBalance(senderWallet.getId())).isEqualTo(20000L);
+        assertThat(getSnapshotBalance(merchantWallet.getId())).isEqualTo(0L);
+        assertThat(transferRepository.count()).isEqualTo(initialTransferCount);
+        assertThat(journalTransactionRepository.count()).isEqualTo(initialJournalCount);
     }
 
     @Test
-    @DisplayName("MERCHANT to CUSTOMER transfer executes successfully")
-    void merchantToCustomerTransfer() {
+    @DisplayName("MERCHANT to CUSTOMER transfer is rejected with TransferValidationException")
+    void merchantToCustomerTransferRejected() {
         UUID merchantId = createTestUser("MERCHANT");
         UUID customerId = createTestUser("CUSTOMER");
         LedgerAccount merchantWallet = createTestWallet(merchantId, AccountType.MERCHANT);
@@ -172,21 +178,26 @@ class TransferServiceIntegrationTest extends AbstractIntegrationTest {
 
         fundWallet(merchantWallet.getId(), 30000L);
 
-        TransferResult result = transferService.createTransfer(CreateTransferCommand.of(
+        long initialTransferCount = transferRepository.count();
+        long initialJournalCount = journalTransactionRepository.count();
+
+        assertThatThrownBy(() -> transferService.createTransfer(CreateTransferCommand.of(
                 merchantId,
                 customerWallet.getId(),
                 Money.inr(12000L),
                 "key-m2c-" + UUID.randomUUID()
-        ));
+        ))).isInstanceOf(TransferValidationException.class)
+          .hasMessageContaining("Source account must be a customer wallet");
 
-        assertThat(result.replayed()).isFalse();
-        assertThat(getSnapshotBalance(merchantWallet.getId())).isEqualTo(18000L);
-        assertThat(getSnapshotBalance(customerWallet.getId())).isEqualTo(12000L);
+        assertThat(getSnapshotBalance(merchantWallet.getId())).isEqualTo(30000L);
+        assertThat(getSnapshotBalance(customerWallet.getId())).isEqualTo(0L);
+        assertThat(transferRepository.count()).isEqualTo(initialTransferCount);
+        assertThat(journalTransactionRepository.count()).isEqualTo(initialJournalCount);
     }
 
     @Test
-    @DisplayName("MERCHANT to MERCHANT transfer between two distinct merchants executes successfully")
-    void merchantToMerchantTransfer() {
+    @DisplayName("MERCHANT to MERCHANT transfer is rejected with TransferValidationException")
+    void merchantToMerchantTransferRejected() {
         UUID m1 = createTestUser("MERCHANT");
         UUID m2 = createTestUser("MERCHANT");
         LedgerAccount w1 = createTestWallet(m1, AccountType.MERCHANT);
@@ -194,16 +205,21 @@ class TransferServiceIntegrationTest extends AbstractIntegrationTest {
 
         fundWallet(w1.getId(), 100000L);
 
-        TransferResult result = transferService.createTransfer(CreateTransferCommand.of(
+        long initialTransferCount = transferRepository.count();
+        long initialJournalCount = journalTransactionRepository.count();
+
+        assertThatThrownBy(() -> transferService.createTransfer(CreateTransferCommand.of(
                 m1,
                 w2.getId(),
                 Money.inr(45000L),
                 "key-m2m-" + UUID.randomUUID()
-        ));
+        ))).isInstanceOf(TransferValidationException.class)
+          .hasMessageContaining("Source account must be a customer wallet");
 
-        assertThat(result.replayed()).isFalse();
-        assertThat(getSnapshotBalance(w1.getId())).isEqualTo(55000L);
-        assertThat(getSnapshotBalance(w2.getId())).isEqualTo(45000L);
+        assertThat(getSnapshotBalance(w1.getId())).isEqualTo(100000L);
+        assertThat(getSnapshotBalance(w2.getId())).isEqualTo(0L);
+        assertThat(transferRepository.count()).isEqualTo(initialTransferCount);
+        assertThat(journalTransactionRepository.count()).isEqualTo(initialJournalCount);
     }
 
     @Test
