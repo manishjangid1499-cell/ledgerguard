@@ -1,7 +1,6 @@
 package com.ledgerguard.outbox.application;
 
 import com.ledgerguard.AbstractIntegrationTest;
-import com.ledgerguard.outbox.domain.DomainEventEnvelope;
 import com.ledgerguard.outbox.domain.OutboxEvent;
 import com.ledgerguard.outbox.domain.OutboxStatus;
 import com.ledgerguard.outbox.infrastructure.OutboxEventRepository;
@@ -14,11 +13,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -42,7 +37,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class OutboxPublisherIntegrationTest extends AbstractIntegrationTest {
 

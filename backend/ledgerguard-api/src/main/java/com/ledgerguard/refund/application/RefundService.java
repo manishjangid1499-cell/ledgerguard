@@ -10,7 +10,6 @@ import com.ledgerguard.ledger.application.LedgerPostingService;
 import com.ledgerguard.ledger.application.PostJournalCommand;
 import com.ledgerguard.ledger.application.PostingLine;
 import com.ledgerguard.ledger.application.PostingResult;
-import com.ledgerguard.ledger.domain.AccountStatus;
 import com.ledgerguard.ledger.domain.AccountType;
 import com.ledgerguard.ledger.domain.EntryDirection;
 import com.ledgerguard.ledger.domain.JournalEntry;

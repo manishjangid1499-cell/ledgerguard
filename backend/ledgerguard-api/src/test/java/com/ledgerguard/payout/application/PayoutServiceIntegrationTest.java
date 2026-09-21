@@ -16,7 +16,6 @@ import com.ledgerguard.ledger.infrastructure.LedgerAccountRepository;
 import com.ledgerguard.ledger.infrastructure.LedgerBalanceSnapshotRepository;
 import com.ledgerguard.payout.domain.Payout;
 import com.ledgerguard.payout.domain.PayoutStatus;
-import com.ledgerguard.payout.domain.PayoutValidationException;
 import com.ledgerguard.payout.infrastructure.PayoutRepository;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;

@@ -7,6 +7,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { transferApi } from '../api/transferApi';
+import { useAuth } from '../../auth/hooks/useAuth';
 import { formatMinorUnitsToInr } from '../../shared/utils/money';
 import { formatDateTime } from '../../shared/utils/display';
 import { CopyButton } from '../../shared/components/CopyButton';
@@ -27,7 +28,18 @@ const TransferAmount = ({ transfer }: { transfer: TransferSummary }) => (
   </Typography>
 );
 
-export const RecentTransfersTable = () => {
+export interface RecentTransfersTableProps {
+  title?: string;
+  description?: string;
+  emptyTitle?: string;
+}
+
+export const RecentTransfersTable = ({
+  title,
+  description,
+  emptyTitle,
+}: RecentTransfersTableProps = {}) => {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(0);
@@ -38,25 +50,31 @@ export const RecentTransfersTable = () => {
   });
   const refresh = () => { void queryClient.invalidateQueries({ queryKey: ['transfers'] }); };
 
+  const headingTitle = title || (user?.role === 'MERCHANT' ? 'Wallet transfer history' : 'Transfer history');
+  const supportingDescription = description || (user?.role === 'MERCHANT'
+    ? 'Direct wallet transfers recorded on this account.'
+    : 'Transfers sent and received by your wallet.');
+  const emptyStateTitle = emptyTitle || (user?.role === 'MERCHANT' ? 'No wallet transfers yet.' : 'No transfers yet');
+
   return (
     <Card>
       <CardContent sx={{ p: { xs: 2.5, sm: 3 } }}>
         <Stack direction="row" spacing={1} sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 2.5 }}>
           <Box>
-            <Typography component="h2" variant="h6" sx={{ mb: 0.5 }}>Transfer history</Typography>
-            <Typography variant="body2" color="text.secondary">Transfers sent and received by your wallet.</Typography>
+            <Typography component="h2" variant="h6" sx={{ mb: 0.5 }}>{headingTitle}</Typography>
+            <Typography variant="body2" color="text.secondary">{supportingDescription}</Typography>
           </Box>
-          <Tooltip title="Refresh transfer history">
-            <span><IconButton aria-label="Refresh transfer history" onClick={refresh} disabled={isFetching}><RefreshIcon fontSize="small" /></IconButton></span>
+          <Tooltip title={`Refresh ${headingTitle.toLowerCase()}`}>
+            <span><IconButton aria-label={`Refresh ${headingTitle.toLowerCase()}`} onClick={refresh} disabled={isFetching}><RefreshIcon fontSize="small" /></IconButton></span>
           </Tooltip>
         </Stack>
-        {isLoading ? <DataLoading label="Loading transfer history" /> : isError ? (
-          <Alert severity="error">{getErrorMessage(error, 'Unable to load transfer history. Please try again.')}</Alert>
+        {isLoading ? <DataLoading label={`Loading ${headingTitle.toLowerCase()}`} /> : isError ? (
+          <Alert severity="error">{getErrorMessage(error, `Unable to load ${headingTitle.toLowerCase()}. Please try again.`)}</Alert>
         ) : !data ? (
-          <Alert severity="error">Transfer history is unavailable. Please try again.</Alert>
+          <Alert severity="error">{headingTitle} is unavailable. Please try again.</Alert>
         ) : data.items.length === 0 ? (
           <Box sx={{ py: 4, px: 2, textAlign: 'center', bgcolor: 'background.default', borderRadius: 1 }}>
-            <Typography variant="subtitle2" sx={{ mb: 0.75 }}>No transfers yet</Typography>
+            <Typography variant="subtitle2" sx={{ mb: 0.75 }}>{emptyStateTitle}</Typography>
             <Typography variant="body2" color="text.secondary">Your sent and received transfers will appear here.</Typography>
           </Box>
         ) : (

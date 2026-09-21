@@ -1,7 +1,6 @@
 package com.ledgerguard.reconciliation.infrastructure;
 
 import com.ledgerguard.reconciliation.domain.ReconciliationRun;
-import com.ledgerguard.reconciliation.domain.ReconciliationRunStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;

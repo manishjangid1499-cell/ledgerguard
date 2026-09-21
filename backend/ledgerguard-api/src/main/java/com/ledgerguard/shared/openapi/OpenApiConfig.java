@@ -3,7 +3,6 @@ package com.ledgerguard.shared.openapi;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
-import io.swagger.v3.oas.models.PathItem;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
@@ -78,46 +77,55 @@ public class OpenApiConfig {
         if (operation == null) return;
 
         // 1. Public Authentication Endpoints
-        if (path.equals("/api/auth/register") || path.equals("/api/auth/login")) {
+        if (method.equals("POST") && (path.equals("/api/auth/register") || path.equals("/api/auth/login"))) {
             operation.setSecurity(Collections.emptyList());
             operation.addExtension("x-auth-type", "PUBLIC");
             operation.setDescription((operation.getDescription() != null ? operation.getDescription() + "\n\n" : "")
                     + "**Access**: Public (Unauthenticated). Permitted registration roles: `CUSTOMER`, `MERCHANT` (`OPS` forbidden).");
         }
         // 2. Refresh Cookie Endpoints
-        else if (path.equals("/api/auth/refresh") || path.equals("/api/auth/logout")) {
+        else if (method.equals("POST") && (path.equals("/api/auth/refresh") || path.equals("/api/auth/logout"))) {
             operation.setSecurity(List.of(new SecurityRequirement().addList(REFRESH_COOKIE_AUTH)));
             operation.addExtension("x-auth-type", "REFRESH_COOKIE");
             operation.setDescription((operation.getDescription() != null ? operation.getDescription() + "\n\n" : "")
                     + "**Access**: Authenticated via `ledgerguard_refresh_token` HttpOnly cookie.");
         }
         // 3. Authenticated User Profile
-        else if (path.equals("/api/auth/me")) {
+        else if (method.equals("GET") && path.equals("/api/auth/me")) {
             operation.setSecurity(List.of(new SecurityRequirement().addList(BEARER_AUTH)));
             operation.addExtension("x-auth-type", "BEARER_JWT");
             operation.setDescription((operation.getDescription() != null ? operation.getDescription() + "\n\n" : "")
                     + "**Access**: Authenticated (Any valid JWT Bearer token).");
         }
-        // 4. Customer / Merchant Endpoints
-        else if (path.startsWith("/api/transfers") || path.equals("/api/wallets/me") || path.equals("/api/payouts")) {
-            operation.setSecurity(List.of(new SecurityRequirement().addList(BEARER_AUTH)));
-            operation.addExtension("x-required-roles", List.of("CUSTOMER", "MERCHANT"));
-            operation.setDescription((operation.getDescription() != null ? operation.getDescription() + "\n\n" : "")
-                    + "**Required Roles**: `ROLE_CUSTOMER` or `ROLE_MERCHANT` (Bearer JWT). `OPS` is forbidden.");
-        }
-        // 5. Customer-Only Endpoints
-        else if (path.equals("/api/payments") || path.equals("/api/funding")) {
+        // 4. Customer-Only Endpoints
+        else if (
+                (method.equals("POST") && path.equals("/api/transfers"))
+                || (method.equals("POST") && path.equals("/api/payments"))
+                || path.startsWith("/api/funding")
+        ) {
             operation.setSecurity(List.of(new SecurityRequirement().addList(BEARER_AUTH)));
             operation.addExtension("x-required-roles", List.of("CUSTOMER"));
             operation.setDescription((operation.getDescription() != null ? operation.getDescription() + "\n\n" : "")
                     + "**Required Roles**: `ROLE_CUSTOMER` (Bearer JWT). `MERCHANT` and `OPS` are forbidden.");
         }
-        // 6. Merchant-Only Endpoints
-        else if (path.equals("/api/payments/{paymentId}/refund")) {
+        // 5. Merchant-Only Endpoints
+        else if (method.equals("POST") && path.equals("/api/payments/{paymentId}/refund")) {
             operation.setSecurity(List.of(new SecurityRequirement().addList(BEARER_AUTH)));
             operation.addExtension("x-required-roles", List.of("MERCHANT"));
             operation.setDescription((operation.getDescription() != null ? operation.getDescription() + "\n\n" : "")
                     + "**Required Roles**: `ROLE_MERCHANT` (Bearer JWT). `CUSTOMER` and `OPS` are forbidden.");
+        }
+        // 6. Customer + Merchant Endpoints
+        else if (
+                (method.equals("GET") && path.equals("/api/wallets/me"))
+                || (method.equals("GET") && (path.equals("/api/transfers") || path.equals("/api/transfers/{transferId}")))
+                || (method.equals("GET") && (path.equals("/api/payments") || path.equals("/api/payments/{paymentId}")))
+                || path.startsWith("/api/payouts")
+        ) {
+            operation.setSecurity(List.of(new SecurityRequirement().addList(BEARER_AUTH)));
+            operation.addExtension("x-required-roles", List.of("CUSTOMER", "MERCHANT"));
+            operation.setDescription((operation.getDescription() != null ? operation.getDescription() + "\n\n" : "")
+                    + "**Required Roles**: `ROLE_CUSTOMER` or `ROLE_MERCHANT` (Bearer JWT). `OPS` is forbidden.");
         }
         // 7. Operations / Reconciliation Endpoints
         else if (path.startsWith("/api/reconciliation")) {
@@ -127,7 +135,7 @@ public class OpenApiConfig {
                     + "**Required Roles**: `ROLE_OPS` (Bearer JWT). Customers and Merchants are strictly forbidden.");
         }
         // 8. PSP Provider Webhook Ingress
-        else if (path.equals("/api/provider/webhooks")) {
+        else if (method.equals("POST") && path.equals("/api/provider/webhooks")) {
             operation.setSecurity(List.of(
                     new SecurityRequirement()
                             .addList(PSP_WEBHOOK_SIGNATURE)

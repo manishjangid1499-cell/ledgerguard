@@ -285,21 +285,21 @@ WHERE table_schema = 'public'
   );"
 run_check "Schema Completeness (20 Tables)" "$SCHEMA_CHECK_SQL" "20" || exit 1
 
-# B. Flyway History: Exact set {1..17} all success=true, count=17, no versions > 17
+# B. Flyway History: Exact set {1..18} all success=true, count=18, no versions > 18
 FLYWAY_SET_SQL="
-WITH expected AS (SELECT generate_series(1, 17)::text AS v),
+WITH expected AS (SELECT generate_series(1, 18)::text AS v),
      actual AS (SELECT version FROM flyway_schema_history WHERE success = true AND version ~ '^[0-9]+$')
 SELECT count(*) FROM (
     SELECT v FROM expected EXCEPT SELECT version FROM actual
     UNION ALL
-    SELECT version FROM actual WHERE version::int > 17
+    SELECT version FROM actual WHERE version::int > 18
 ) diff;"
 FLYWAY_COUNT_SQL="SELECT count(*) FROM flyway_schema_history WHERE success = true AND version ~ '^[0-9]+$';"
 FLYWAY_MAX_SQL="SELECT max(version::int) FROM flyway_schema_history WHERE type = 'SQL' AND version ~ '^[0-9]+$';"
 
-run_check "Flyway Exact Set {1..17} Success" "$FLYWAY_SET_SQL" "0" || exit 1
-run_check "Flyway Total Migration Count = 17" "$FLYWAY_COUNT_SQL" "17" || exit 1
-run_check "Flyway Max Numeric Version = 17" "$FLYWAY_MAX_SQL" "17" || exit 1
+run_check "Flyway Exact Set {1..18} Success" "$FLYWAY_SET_SQL" "0" || exit 1
+run_check "Flyway Total Migration Count = 18" "$FLYWAY_COUNT_SQL" "18" || exit 1
+run_check "Flyway Max Numeric Version = 18" "$FLYWAY_MAX_SQL" "18" || exit 1
 
 # C. POSTED Journal Structure: >=2 entries, >=1 debit, >=1 credit, balanced sum
 JOURNAL_STRUCTURE_SQL="

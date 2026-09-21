@@ -32,14 +32,10 @@ export const PublicLayout = () => {
                 <Button component={RouterLink} to="/app" variant="contained" size="small">Dashboard</Button>
               ) : (
                 <>
-                  {pathname !== '/login' && (
-                    <Button component={RouterLink} to="/login" variant={isLanding ? 'text' : 'outlined'}
-                      size="small" sx={{ whiteSpace: 'nowrap', minWidth: 0, px: { xs: 1, sm: 2 } }}>Sign in</Button>
-                  )}
-                  {pathname !== '/register' && (
-                    <Button component={RouterLink} to="/register" variant="contained" size="small"
-                      sx={{ whiteSpace: 'nowrap', px: { xs: 1.25, sm: 2 } }}>Create account</Button>
-                  )}
+                  <Button component={RouterLink} to="/login" variant={isLanding ? 'text' : 'outlined'}
+                    size="small" sx={{ whiteSpace: 'nowrap', minWidth: 0, px: { xs: 1, sm: 2 } }}>Sign in</Button>
+                  <Button component={RouterLink} to="/register" variant="contained" size="small"
+                    sx={{ whiteSpace: 'nowrap', px: { xs: 1.25, sm: 2 } }}>Create account</Button>
                 </>
               )}
             </Stack>

@@ -53,8 +53,8 @@ export const LoginForm: React.FC = () => {
   };
 
   return (
-    <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate aria-busy={isSubmitting} sx={{ mt: 1 }}>
-      <Stack spacing={2.5}>
+    <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate aria-busy={isSubmitting} sx={{ mt: 0.5 }}>
+      <Stack spacing={2}>
         {serverError && (
           <Alert severity="error" onClose={() => setServerError(null)}>
             {serverError}
@@ -63,10 +63,10 @@ export const LoginForm: React.FC = () => {
 
         <TextField
           {...register('email', {
-            required: 'Email is required',
+            required: 'Email is required.',
             pattern: {
               value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-              message: 'Enter a valid email address',
+              message: 'Enter a valid email address.',
             },
           })}
           id="email"
@@ -83,8 +83,8 @@ export const LoginForm: React.FC = () => {
 
         <TextField
           {...register('password', {
-            required: 'Password is required',
-            validate: (value) => value.trim().length > 0 || 'Password is required',
+            required: 'Password is required.',
+            validate: (value) => value.trim().length > 0 || 'Password is required.',
           })}
           id="password"
           label="Password"
@@ -106,8 +106,9 @@ export const LoginForm: React.FC = () => {
                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                     onClick={() => setShowPassword((prev) => !prev)}
                     edge="end"
+                    size="small"
                   >
-                    {showPassword ? <VisibilityOff /> : <Visibility />}
+                    {showPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
                   </IconButton>
                 </InputAdornment>
               ),
@@ -121,7 +122,7 @@ export const LoginForm: React.FC = () => {
           variant="contained"
           size="large"
           disabled={isSubmitting}
-          sx={{ py: 1.3 }}
+          sx={{ py: 1.2 }}
           startIcon={isSubmitting ? <CircularProgress size={18} color="inherit" aria-hidden="true" /> : undefined}
         >
           {isSubmitting ? 'Signing in…' : 'Sign in'}

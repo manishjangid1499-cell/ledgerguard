@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { PublicLayout } from '../../shared/layout/PublicLayout';
+import { AuthLayout } from '../../auth/components/AuthLayout';
 import { AppLayout } from '../../shared/layout/AppLayout';
 import { LandingPage } from '../../shared/pages/LandingPage';
 import { LoginPage } from '../../auth/pages/LoginPage';
@@ -32,7 +33,7 @@ export const AppRouter: React.FC = () => {
 
         {/* Public-Only Auth Routes (redirects authenticated users to /app) */}
         <Route element={<PublicOnlyRoute />}>
-          <Route element={<PublicLayout />}>
+          <Route element={<AuthLayout />}>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
           </Route>

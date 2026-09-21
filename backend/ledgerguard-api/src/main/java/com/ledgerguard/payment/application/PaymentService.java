@@ -40,7 +40,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Authoritative application service for orchestrating internal merchant payments.
+ * Authoritative application service for orchestrating atomic merchant payments.
  * <p>
  * Combines customer identity derivation, merchant account validation, platform fee calculation,
  * idempotency coordination, deterministic snapshot row locking, atomic sufficient-funds validation,

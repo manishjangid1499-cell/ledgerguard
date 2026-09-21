@@ -21,6 +21,7 @@ export const ProfilePage = () => {
         {user && !error && (
           <Box component="dl" sx={{ m: 0 }}>
             {[
+              ['Full name', user.fullName || '—'],
               ['Email address', user.email],
               ['Account type', formatRoleLabel(user.role)],
               ['Account status', <StatusBadge status={user.status} />],

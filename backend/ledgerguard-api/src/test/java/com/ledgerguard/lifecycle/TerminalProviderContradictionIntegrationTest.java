@@ -9,8 +9,6 @@ import com.ledgerguard.funding.infrastructure.FundingOperationRepository;
 import com.ledgerguard.funding.infrastructure.PspOperationResponse;
 import com.ledgerguard.payout.application.PayoutFailureService;
 import com.ledgerguard.payout.application.PayoutSettlementService;
-import com.ledgerguard.payout.domain.Payout;
-import com.ledgerguard.payout.domain.PayoutStatus;
 import com.ledgerguard.payout.infrastructure.PayoutRepository;
 import com.ledgerguard.provider.application.ProviderEventConflictException;
 import org.junit.jupiter.api.BeforeEach;

@@ -7,9 +7,14 @@ export const LoginPage = () => {
   const location = useLocation();
   const successMessage = (location.state as { message?: string } | null)?.message;
   return (
-    <AuthCard title="Sign in to LedgerGuard" description="Enter your credentials to access your account."
-      alternateText="Don't have an account?" alternateLabel="Create account" alternateRoute="/register">
-      {successMessage && <Alert severity="success" sx={{ mb: 2.5 }}>{successMessage}</Alert>}
+    <AuthCard
+      title="Sign in"
+      description="Access your LedgerGuard account."
+      alternateText="New to LedgerGuard?"
+      alternateLabel="Create account"
+      alternateRoute="/register"
+    >
+      {successMessage && <Alert severity="success" sx={{ mb: 2 }}>{successMessage}</Alert>}
       <LoginForm />
     </AuthCard>
   );

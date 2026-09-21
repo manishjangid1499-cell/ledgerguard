@@ -3,7 +3,6 @@ package com.ledgerguard.reconciliation.application;
 import com.ledgerguard.reconciliation.api.SnapshotRepairResponse;
 import com.ledgerguard.reconciliation.domain.ReconciliationCase;
 import com.ledgerguard.reconciliation.domain.ReconciliationCaseStatus;
-import com.ledgerguard.reconciliation.domain.ReconciliationClassification;
 import com.ledgerguard.reconciliation.domain.ReconciliationConflictException;
 import com.ledgerguard.reconciliation.domain.ReconciliationItem;
 import com.ledgerguard.reconciliation.domain.ReconciliationLevel;

@@ -1,7 +1,6 @@
 package com.ledgerguard.lab.engine;
 
 import com.ledgerguard.lab.guard.EnvironmentGuard;
-import com.ledgerguard.lab.model.ScenarioId;
 import com.ledgerguard.lab.model.ScenarioRunResult;
 import com.ledgerguard.lab.model.ScenarioStatus;
 import com.ledgerguard.lab.model.ScenarioStepEvent;

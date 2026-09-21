@@ -11,7 +11,7 @@
 - **Error Content Type**: `application/problem+json` (RFC 9457 Problem Details)
 - **Authentication**: `Authorization: Bearer <access_token>` header for stateless requests; `ledgerguard_refresh_token` HttpOnly cookie for session rotation.
 - **Idempotency**: All mutating financial endpoints accept an `Idempotency-Key: <UUID>` header (Phase 9+)
-- **Authoritative Endpoint Count**: Exactly 22 REST operations across 9 `@RestController` components.
+- **Authoritative Endpoint Count**: Exactly 28 REST operations across 9 `@RestController` components.
 
 ### 1.1 OpenAPI & Swagger UI Specification (Phase 41)
 
@@ -26,8 +26,8 @@
 | **Public** | None | `POST /api/auth/register`<br>`POST /api/auth/login` | Unauthenticated. Registration allowed for `CUSTOMER` and `MERCHANT` (`OPS` forbidden). |
 | **Refresh Cookie** | `HttpOnly` Cookie (`ledgerguard_refresh_token`) | `POST /api/auth/refresh`<br>`POST /api/auth/logout` | Client holding active, single-use refresh token cookie. |
 | **Bearer JWT** | `Authorization: Bearer <token>` | `GET /api/auth/me` | Any valid authenticated principal. |
-| **Customer / Merchant** | Bearer JWT (`ROLE_CUSTOMER`, `ROLE_MERCHANT`) | `GET /api/wallets/me`<br>`POST /api/transfers`<br>`GET /api/transfers`<br>`GET /api/transfers/{id}`<br>`POST /api/payouts` | Customers and Merchants. `OPS` forbidden. |
-| **Customer Only** | Bearer JWT (`ROLE_CUSTOMER`) | `POST /api/payments`<br>`POST /api/funding` | Customer wallets only. Merchants and `OPS` forbidden. |
+| **Customer / Merchant** | Bearer JWT (`ROLE_CUSTOMER`, `ROLE_MERCHANT`) | `GET /api/wallets/me`<br>`GET /api/transfers`<br>`GET /api/transfers/{id}`<br>`POST /api/payouts`<br>`GET /api/payouts`<br>`GET /api/payouts/{payoutId}`<br>`GET /api/payments`<br>`GET /api/payments/{paymentId}` | Customers and Merchants; financial reads are owner/participant scoped. `OPS` forbidden. |
+| **Customer Only** | Bearer JWT (`ROLE_CUSTOMER`) | `POST /api/transfers`<br>`POST /api/payments`<br>`POST /api/funding`<br>`GET /api/funding`<br>`GET /api/funding/{fundingId}` | Customer wallets only; transfers require a Customer destination and funding reads are owner scoped. Merchants and `OPS` forbidden. |
 | **Merchant Only** | Bearer JWT (`ROLE_MERCHANT`) | `POST /api/payments/{id}/refund` | Merchant account associated with original payment. |
 | **Operations (OPS)** | Bearer JWT (`ROLE_OPS`) | All `/api/reconciliation/**` routes (8 endpoints) | Back-office Operations operators. Customers and Merchants forbidden. |
 | **PSP Provider Callback** | HMAC-SHA256 Signatures | `POST /api/provider/webhooks` | Verified via `X-PSP-Webhook-Signature` and `X-PSP-Webhook-Timestamp` headers. |
@@ -107,16 +107,19 @@ All API error responses use `application/problem+json` and follow the standard R
 - **Request Body**:
   ```json
   {
+    "fullName": "Alice Smith",
     "email": "alice@example.com",
     "password": "SecurePassword123!",
     "role": "CUSTOMER"
   }
   ```
   *(Permitted roles: `CUSTOMER`, `MERCHANT`. `OPS` registration is strictly forbidden).*
+- **Full name**: Required, 2 to 120 characters; leading and trailing whitespace is trimmed. Names that are blank or shorter than 2 characters after trimming return `400 Bad Request`. Names appear in registration, login, refresh, and current-user responses. Existing accounts created before migration V18 may return `fullName: null`.
 - **Response (201 Created)**:
   ```json
   {
     "id": "82185e28-975f-488d-a034-342e13db43c4",
+    "fullName": "Alice Smith",
     "email": "alice@example.com",
     "role": "CUSTOMER",
     "status": "ACTIVE",
@@ -134,7 +137,7 @@ All API error responses use `application/problem+json` and follow the standard R
   }
   ```
 - **Response (200 OK)**:
-  - **Set-Cookie Header**: `ledgerguard_refresh_token=<token>; Path=/api/auth; HttpOnly; SameSite=Strict; Max-Age=604800`
+  - **Set-Cookie Header**: `ledgerguard_refresh_token=<token>; Path=/api/auth; HttpOnly; SameSite=Strict` (session cookie by default, without persistent `Max-Age` or `Expires`; server-side refresh token retains 7-day database maximum validity).
   - **JSON Body**:
     ```json
     {
@@ -143,6 +146,7 @@ All API error responses use `application/problem+json` and follow the standard R
       "expiresIn": 900,
       "user": {
         "id": "82185e28-975f-488d-a034-342e13db43c4",
+        "fullName": "Alice Smith",
         "email": "alice@example.com",
         "role": "CUSTOMER",
         "status": "ACTIVE",
@@ -154,8 +158,9 @@ All API error responses use `application/problem+json` and follow the standard R
 ### 4.3 `POST /api/auth/refresh`
 - **Access**: Public (via `ledgerguard_refresh_token` Cookie)
 - **Response (200 OK)**:
-  - Rotates refresh token cookie with new single-use token.
+  - Rotates refresh token cookie with new single-use session cookie (`Path=/api/auth; HttpOnly; SameSite=Strict`).
   - Returns fresh access token JSON response.
+  - Silent refresh works while a valid browser session cookie exists.
 
 ### 4.4 `POST /api/auth/logout`
 - **Access**: Public / Authenticated (via `ledgerguard_refresh_token` Cookie)
@@ -169,6 +174,7 @@ All API error responses use `application/problem+json` and follow the standard R
   ```json
   {
     "id": "82185e28-975f-488d-a034-342e13db43c4",
+    "fullName": "Alice Smith",
     "email": "alice@example.com",
     "role": "CUSTOMER",
     "status": "ACTIVE",
@@ -178,10 +184,10 @@ All API error responses use `application/problem+json` and follow the standard R
 
 ---
 
-## 5. Transfers Endpoints (`/api/transfers`) â€” Implemented in Phase 10
+## 5. Transfer Endpoints (`/api/transfers`)
 
 ### 5.1 `POST /api/transfers`
-- **Access**: `CUSTOMER`, `MERCHANT` (authenticated; OPS forbidden)
+- **Access**: `CUSTOMER` only; the destination must be another Customer wallet. Merchants retain access to their historical transfer reads.
 - **Headers**:
   - `Authorization: Bearer <access_token>` (required)
   - `Idempotency-Key: <UUID/String>` (required, max 128 chars)
@@ -206,15 +212,16 @@ All API error responses use `application/problem+json` and follow the standard R
   }
   ```
 - **Error Responses**:
-  - `400 Bad Request` (`INVALID_TRANSFER` / `VALIDATION_FAILED`): Missing/blank Idempotency-Key (>128 chars), non-positive amount, self-transfer, closed account, non-user system account target.
+  - `400 Bad Request` (`INVALID_TRANSFER` / `VALIDATION_FAILED`): Missing/blank or oversized Idempotency-Key, non-positive amount, self-transfer, closed account, or system account target.
+  - `400 Bad Request` (`MERCHANT_PAYMENT_REQUIRED`): Destination is a Merchant wallet. Use `POST /api/payments` instead.
   - `401 Unauthorized` (`AUTHENTICATION_REQUIRED`): Missing or invalid Bearer token.
-  - `403 Forbidden` (`ACCESS_DENIED`): Caller with `OPS` role.
+  - `403 Forbidden` (`ACCESS_DENIED`): Caller has the `MERCHANT` or `OPS` role.
   - `404 Not Found` (`RESOURCE_NOT_FOUND`): Nonexistent destination ledger account.
-  - `409 Conflict` (`INSUFFICIENT_FUNDS` / `IDEMPOTENCY_CONFLICT` / `IDEMPOTENCY_OPERATION_IN_PROGRESS`): Source wallet has insufficient funds (`balance < amount`), reusing Idempotency-Key with different payload parameters, or concurrent in-flight request with same key.
+  - `409 Conflict` (`INSUFFICIENT_FUNDS` / `IDEMPOTENCY_CONFLICT` / `IDEMPOTENCY_OPERATION_IN_PROGRESS`): Insufficient available balance, conflicting idempotency payload, or an in-flight request with the same key.
 
 ---
 
-## 6. Financial Read APIs (Implemented in Phase 12)
+## 6. Financial Read APIs
 
 ### 6.1 Get Current User Wallet (`GET /api/wallets/me`)
 - **Access**: `CUSTOMER`, `MERCHANT` (`OPS` returns `403 Forbidden`)
@@ -294,6 +301,40 @@ All API error responses use `application/problem+json` and follow the standard R
   ```
 
 ---
+
+### 6.4 Funding, Payment and Payout Reads
+
+| Method | Endpoint | Ownership |
+| :--- | :--- | :--- |
+| `GET` | `/api/funding?page=0&size=20` | Customer: operations initiated by the authenticated user. |
+| `GET` | `/api/funding/{fundingId}` | Customer: initiating user only. |
+| `GET` | `/api/payouts?page=0&size=20` | Customer/Merchant: operations initiated by the authenticated user. |
+| `GET` | `/api/payouts/{payoutId}` | Customer/Merchant: initiating user only. |
+| `GET` | `/api/payments?page=0&size=20` | Customer: own outgoing payments. Merchant: payments received by a wallet owned by that user. |
+| `GET` | `/api/payments/{paymentId}?refundPage=0&refundSize=20` | Paying Customer or receiving Merchant only. |
+
+All six operations require Bearer authentication, forbid `OPS`, and return `200 OK` when authorized. Missing and unrelated detail IDs both return `404 Not Found` with no resource data. Ownership filtering is performed in database queries.
+
+Lists use `{ items, page, size, totalElements, totalPages }`. Page defaults to `0`, size to `20`; negative pages become `0`, non-positive sizes become `20`, and size is capped at `50`. Non-integer parameters return `400`. Results order by `createdAt DESC, id DESC`. Nested refunds apply the same rules through `refundPage`/`refundSize`. Each domain is paginated independently, not merged into a global timeline.
+
+Funding items/details contain `fundingId`, `amountMinor`, `currency`, `status`, `providerOperationId`, `journalTransactionId`, `createdAt`, and `completedAt`. Payout items/details use `payoutId` instead and additionally include `balanceHoldId`. Provider/journal references and completion time may be `null` until available. Internal recovery metadata and provider credentials are excluded.
+
+Payment list items contain `paymentId`, `customerLedgerAccountId`, `merchantLedgerAccountId`, `grossAmountMinor`, `feeAmountMinor`, `merchantNetAmountMinor`, `currency`, `status`, `journalTransactionId`, `createdAt`, and `completedAt`. Payment detail wraps these fields:
+
+```text
+{
+  payment: <payment list item>,
+  refundedAmountMinor: <sum of all recorded refunds, decimal string>,
+  refundableAmountMinor: <remaining amount for a SUCCEEDED payment, otherwise "0">,
+  refunds: { items: [...], page, size, totalElements, totalPages }
+}
+```
+
+Each refund item contains `refundId`, `refundAmountMinor`, `merchantDebitAmountMinor`, `feeDebitAmountMinor`, `currency`, `journalTransactionId`, and `createdAt`. Records represent posted refunds; there is no invented refund status. Totals cover all refunds regardless of the requested page. The remaining amount is a read-time summary, not a reservation: the existing refund POST remains authoritative for ownership, concurrency, available funds, cumulative cap, and fee allocation. There is no global refund API or separate refund read route.
+
+Every monetary response field is an exact decimal JSON **string** in minor units (paise). GETs only read persisted state: no PSP calls, journal posting, balance/hold/status mutation, idempotency records, or event publication.
+
+Funding/payout states are `CREATED`, `PROCESSING`, `UNKNOWN`, `RECONCILIATION_REQUIRED`, `SUCCEEDED`, and `FAILED`. `UNKNOWN` remains confirmation pending; `RECONCILIATION_REQUIRED` remains pending review. Only `SUCCEEDED` and `FAILED` are terminal. Payment states are `CREATED`, `PROCESSING`, `SUCCEEDED`, and `FAILED`.
 
 ## 7. Merchant Payment Endpoints (`/api/payments`) â€” Implemented in Phase 13
 
@@ -389,22 +430,13 @@ All API error responses use `application/problem+json` and follow the standard R
 | `GET` | `/api/wallets/{walletId}/holds` | Customer / Merchant / Ops | List active and historical balance holds on the wallet. |
 
 ### 9.2 Merchant Payments Read APIs (`/api/payments`)
-| Method | Endpoint | Access | Purpose |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/api/payments/{paymentId}` | Customer / Merchant / Ops | Retrieve payment status, metadata, and refund history. |
-| `GET` | `/api/payments` | Merchant / Ops | List received merchant payments. |
+Implemented in section 6.4: Customer outgoing / Merchant received lists and participant-scoped details with refunds. `OPS` is forbidden.
 
 ### 9.3 External Funding & Deposits (`/api/funding`)
-| Method | Endpoint | Access | Purpose |
-| :--- | :--- | :--- | :--- |
-| `POST` | `/api/funding/initiate` | Customer | Request external wallet top-up via simulated PSP gateway. |
-| `GET` | `/api/funding/{fundingId}` | Customer (Owner) / Ops | Check status of in-flight or settled funding operation. |
+Implemented: `POST /api/funding` (section 12) and Customer-owned list/detail reads (section 6.4). There is no `/initiate` route; `OPS` is forbidden.
 
 ### 9.4 External Payouts & Withdrawals (`/api/payouts`)
-| Method | Endpoint | Access | Purpose |
-| :--- | :--- | :--- | :--- |
-| `POST` | `/api/payouts/initiate` | Customer / Merchant | Initiate withdrawal to external bank account (creates balance hold). |
-| `GET` | `/api/payouts/{payoutId}` | Owner / Ops | Check payout settlement status. |
+Implemented: `POST /api/payouts` (section 13) and Customer/Merchant-owned list/detail reads (section 6.4). There is no `/initiate` route or bank-destination input; `OPS` is forbidden.
 
 ### 9.5 Webhooks & Ingress (`/api/webhooks`)
 | Method | Endpoint | Access | Purpose |
@@ -663,7 +695,7 @@ The returned `status` field reflects the current durable lifecycle state of the 
 
 | `status` | HTTP | Description |
 | :--- | :--- | :--- |
-| `CREATED` | Internal | Durable intent record. Provider POST not yet attempted. (Not returned by API directly.) |
+| `CREATED` | `200 OK` on GET | Durable intent record. Provider POST not yet attempted. Read APIs preserve this state when present. |
 | `PROCESSING` | `202 Accepted` | Provider submission claimed. Outcome pending. Payout hold `ACTIVE`. |
 | `UNKNOWN` | `202 Accepted` | Network outcome in doubt (timeout, ambiguous 5xx). Money may be in flight. Payout hold `ACTIVE`. |
 | `RECONCILIATION_REQUIRED` | `202 Accepted` | Polling exhausted; requires reconciliation. Payout hold `ACTIVE`. |
@@ -674,7 +706,7 @@ The returned `status` field reflects the current durable lifecycle state of the 
 
 - **`UNKNOWN != FAILED`**: `UNKNOWN` does not mean the provider rejected the operation. It means LedgerGuard does not know what the provider did. Treat `UNKNOWN` as pending.
 - **`202 Accepted` for ambiguous outcomes**: A `202` response always means "the request has been durably recorded; outcome may be pending." It is NOT an error.
-- **Polling for resolution**: Clients should use the returned `fundingId` or `payoutId` to query status via future read endpoints (Phase 24+). Retrying a `POST` with the same `Idempotency-Key` on an `UNKNOWN` or `RECONCILIATION_REQUIRED` operation returns the current state without triggering a duplicate provider call.
+- **Polling for resolution**: Use `GET /api/funding/{fundingId}` or `GET /api/payouts/{payoutId}`. The frontend checks non-terminal detail states every 4 seconds while the page is active, stops at `SUCCEEDED`/`FAILED`, and refreshes the authoritative wallet when status changes. Lists are not polled. Retrying a `POST` with the same `Idempotency-Key` on an `UNKNOWN` or `RECONCILIATION_REQUIRED` operation returns the current state without triggering a duplicate provider call.
 - **HTTP 409 on conflicting replay**: If the PSP returns a conflicting replay error (RFC-9457 `urn:ledgerguard:psp:error:conflicting-replay`), LedgerGuard durably transitions the operation to `RECONCILIATION_REQUIRED` and returns `409 Conflict`.
 
 ### V13 Migration Notes

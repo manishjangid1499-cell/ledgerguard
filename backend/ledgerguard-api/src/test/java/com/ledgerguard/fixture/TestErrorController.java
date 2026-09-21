@@ -1,5 +1,6 @@
 package com.ledgerguard.fixture;
 
+import io.swagger.v3.oas.annotations.Hidden;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -16,6 +17,7 @@ import java.util.Map;
  * Test-only REST controller fixture used strictly to test validation, parsing,
  * and error-handling behavior during automated testing.
  */
+@Hidden
 @RestController
 @RequestMapping("/api/test")
 public class TestErrorController {
