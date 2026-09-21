@@ -2,7 +2,6 @@ package com.ledgerguard.psp;
 
 import com.ledgerguard.psp.api.CreateOperationRequest;
 import com.ledgerguard.psp.api.OperationResponse;
-import com.ledgerguard.psp.api.ScenarioRequest;
 import com.ledgerguard.psp.domain.SimulatorScenario;
 import com.ledgerguard.psp.infrastructure.ProviderOperationRepository;
 import com.ledgerguard.psp.infrastructure.ProviderWebhookRepository;
@@ -28,7 +27,6 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;

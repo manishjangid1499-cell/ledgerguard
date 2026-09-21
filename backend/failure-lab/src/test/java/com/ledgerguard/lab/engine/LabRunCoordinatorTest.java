@@ -1,6 +1,5 @@
 package com.ledgerguard.lab.engine;
 
-import com.ledgerguard.lab.FailureLabApplication;
 import com.ledgerguard.lab.api.dto.LabRunView;
 import com.ledgerguard.lab.model.ScenarioId;
 import com.ledgerguard.lab.model.ScenarioRunResult;
@@ -18,7 +17,6 @@ import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;

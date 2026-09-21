@@ -1,7 +1,6 @@
 package com.ledgerguard.ledger.application;
 
 import com.ledgerguard.AbstractIntegrationTest;
-import com.ledgerguard.ledger.domain.AccountStatus;
 import com.ledgerguard.ledger.domain.AccountType;
 import com.ledgerguard.ledger.domain.LedgerAccount;
 import com.ledgerguard.ledger.domain.LedgerBalanceSnapshot;

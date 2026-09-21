@@ -225,7 +225,7 @@ All balances are calculated and stored in **INR** minor units (paise) as signed 
 
 ## 6. Major Platform Capabilities
 
-- **Internal Peer-to-Peer Transfers**: Synchronous money movement between customer/merchant wallets with atomic debit/credit journal creation, deterministic row locking, and idempotency deduplication.
+- **Internal Peer-to-Peer Transfers**: Generic wallet transfer creation is CUSTOMER -> CUSTOMER only. Transfers to merchants are prohibited (use Pay Merchant / `POST /api/payments`). Merchants retain historical transfer read access. Synchronous money movement with atomic debit/credit journal creation, deterministic row locking, and idempotency deduplication.
 - **Merchant Payments**: Commercial checkout transactions (`CUSTOMER` to `MERCHANT`) deducting a 100 bps integer platform fee (`PLATFORM_FEES`) in a balanced 3-leg atomic journal.
 - **Pro-Rata Payment Refunds**: Synchronous full and partial refunds with telescoping pro-rata fee reversal (`original-payment-pro-rata:v1`), cumulative refund cap enforcement, parent payment serialization (`FOR UPDATE`), and original fee account resolution.
 - **External Wallet Funding**: Inbound wallet top-ups via PSP simulator with decoupled non-transactional HTTP calls and confirmed-success double-entry settlement.
@@ -250,7 +250,7 @@ All balances are calculated and stored in **INR** minor units (paise) as signed 
 ## 8. Security Architecture
 
 - **Stateless Authentication**: Short-lived HS256 JWT access tokens (15-minute TTL) verified via Nimbus JOSE/JWT.
-- **Atomic Refresh Token Rotation**: High-entropy opaque refresh tokens stored as SHA-256 hashes in PostgreSQL, delivered via `HttpOnly`, `SameSite=Strict`, `Secure` cookies with 7-day TTL and pessimistic row locking to prevent token reuse races.
+- **Atomic Refresh Token Rotation**: High-entropy opaque refresh tokens stored as SHA-256 hashes in PostgreSQL with a configured maximum lifetime (`expires_at`, default 7 days), delivered via `HttpOnly`, `SameSite=Strict`, `Secure` session-scoped cookies by default (without persistent `Max-Age` or `Expires`), using pessimistic row locking to prevent token reuse races.
 - **Role-Based Access Control (RBAC)**: Strict segregation between `ROLE_CUSTOMER`, `ROLE_MERCHANT`, and `ROLE_OPS` enforced via Spring Security `@PreAuthorize`.
 - **Token-Bucket Rate Limiting**: Bucket4j and Caffeine caching enforce admission quotas after security authorization:
   - Public Auth: 10 req/min per IP
@@ -278,13 +278,13 @@ All balances are calculated and stored in **INR** minor units (paise) as signed 
 The platform maintains an exhaustive test suite running on Java 21 across 5 Maven modules:
 
 ```
-ledgerguard-api:      675 tests (Unit, Service, Controller, Database Trigger Integration)
+ledgerguard-api:      712 tests (Unit, Service, Controller, Database Trigger Integration)
 psp-simulator:         18 tests (External Provider Simulation, Webhook Signatures)
-notification-worker:   22 tests (Idempotent Inbox Consumer, Kafka Listeners)
+notification-worker:   72 tests (Idempotent Inbox Consumer, Kafka Listeners, SMTP Delivery)
 failure-lab:           34 tests (Chaos Scenarios, Adversarial Injection, SQL Oracle)
 e2e-tests:             11 tests (Multi-Service Testcontainers End-to-End Flows)
 -----------------------------------------------------------------------------------------
-WORKSPACE TOTAL:      760 passing tests (0 failures, 0 errors, 0 skipped)
+WORKSPACE TOTAL:      847 passing tests (0 failures, 0 errors, 0 skipped)
 ```
 
 ### 10.2 Money Integrity Failure Lab
@@ -296,7 +296,7 @@ A standalone automated chaos testing engine (`backend/failure-lab`) that deliber
 
 An independent SQL oracle (`FinancialInvariantOracle`) runs after each scenario to verify that total currency is strictly conserved:
 
-$$\sum \text{Final Balances} = \sum \text{Opening Balances} + \sum \text{External Inflows} - \sum \text{External Outflows}$$
+$\sum \text{Final Balances} = \sum \text{Opening Balances} + \sum \text{External Inflows} - \sum \text{External Outflows}$
 
 ---
 
@@ -317,14 +317,14 @@ In Phase 39, LedgerGuard's transaction throughput and database connection pool c
 Comprehensive disaster recovery procedures and automation scripts are established in Phase 40:
 - **Logical Backup Automation (`scripts/backup-db.sh`)**: Generates compressed PostgreSQL custom-format archives (`pg_dump -Fc --no-owner --no-privileges`) with automated SHA-256 sidecar checksums and pre-success table-of-contents validation.
 - **Verified Database Cutover (`scripts/restore-db.sh`)**: Restores into isolated recovery targets, verifies role ownership (`ledgerguard_app`), and runs an automated Mode A financial invariant verification suite before traffic cutover.
-- **Mode A Invariant Verification**: Validates 20 schema tables, Flyway history (V1..V17 frozen), zero-sum double-entry balance, snapshot parity against normal balance rules, trigger enablement, and outbox trace integrity.
+- **Mode A Invariant Verification**: Validates 20 schema tables, Flyway history (V1..V18 frozen), zero-sum double-entry balance, snapshot parity against normal balance rules, trigger enablement, and outbox trace integrity.
 - Detailed operational runbooks, Kafka lag remediation, and incident response checklists are documented in [docs/RUNBOOKS.md](docs/RUNBOOKS.md).
 
 ---
 
 ## 13. API & Swagger Documentation
 
-LedgerGuard exposes **22 authoritative REST endpoints** across 9 controllers, documented with OpenAPI 3.1:
+LedgerGuard exposes **28 authoritative REST endpoints** across 9 controllers, documented with OpenAPI 3.1:
 
 - **Interactive Swagger UI (Runtime)**: [http://localhost:8080/swagger-ui/index.html](http://localhost:8080/swagger-ui/index.html)
 - **Live OpenAPI 3.1 JSON (Runtime)**: [http://localhost:8080/v3/api-docs](http://localhost:8080/v3/api-docs)
@@ -335,18 +335,24 @@ LedgerGuard exposes **22 authoritative REST endpoints** across 9 controllers, do
 | Domain | Method | Route | Authorization / Access |
 | :--- | :--- | :--- | :--- |
 | **Authentication** | `POST` | `/api/auth/register` | Public (Registers `CUSTOMER` or `MERCHANT`) |
-| **Authentication** | `POST` | `/api/auth/login` | Public (Issues JWT + HttpOnly refresh cookie) |
-| **Authentication** | `POST` | `/api/auth/refresh` | Public (HttpOnly `ledgerguard_refresh_token` cookie) |
+| **Authentication** | `POST` | `/api/auth/login` | Public (Issues JWT + HttpOnly session refresh cookie) |
+| **Authentication** | `POST` | `/api/auth/refresh` | Public (HttpOnly `ledgerguard_refresh_token` session cookie rotation) |
 | **Authentication** | `POST` | `/api/auth/logout` | Public (Revokes refresh token in DB + clears cookie) |
 | **Authentication** | `GET` | `/api/auth/me` | Authenticated Bearer JWT |
 | **Wallets** | `GET` | `/api/wallets/me` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` |
-| **Transfers** | `POST` | `/api/transfers` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Idempotent write) |
+| **Transfers** | `POST` | `/api/transfers` | `ROLE_CUSTOMER` (Idempotent transfer to another Customer wallet) |
 | **Transfers** | `GET` | `/api/transfers` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Paginated history) |
 | **Transfers** | `GET` | `/api/transfers/{transferId}` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Transfer detail) |
 | **Payments** | `POST` | `/api/payments` | `ROLE_CUSTOMER` (100 bps platform fee checkout) |
+| **Payments** | `GET` | `/api/payments` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Participant-scoped paginated history) |
+| **Payments** | `GET` | `/api/payments/{paymentId}` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Participant-scoped detail and refund history) |
 | **Refunds** | `POST` | `/api/payments/{paymentId}/refund` | `ROLE_MERCHANT` (Full or partial pro-rata fee refund) |
 | **Funding** | `POST` | `/api/funding` | `ROLE_CUSTOMER` (Inbound top-up via PSP simulator) |
+| **Funding** | `GET` | `/api/funding` | `ROLE_CUSTOMER` (Owner-scoped paginated history) |
+| **Funding** | `GET` | `/api/funding/{fundingId}` | `ROLE_CUSTOMER` (Owner-scoped status and detail) |
 | **Payouts** | `POST` | `/api/payouts` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Pre-reserve hold withdrawal) |
+| **Payouts** | `GET` | `/api/payouts` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Owner-scoped paginated history) |
+| **Payouts** | `GET` | `/api/payouts/{payoutId}` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Owner-scoped status and detail) |
 | **Webhooks** | `POST` | `/api/provider/webhooks` | Public (Verified via HMAC-SHA256 signature headers) |
 | **Reconciliation** | `GET` | `/api/reconciliation/runs` | `ROLE_OPS` (Paginated automated reconciliation runs) |
 | **Reconciliation** | `GET` | `/api/reconciliation/runs/{runId}` | `ROLE_OPS` (Run details and summary metrics) |
@@ -365,7 +371,7 @@ LedgerGuard exposes **22 authoritative REST endpoints** across 9 controllers, do
 - **Application Framework**: Spring Boot 4.1.1 (Spring Framework 7.0.9)
 - **Security & Identity**: Spring Security, Nimbus JOSE/JWT (HS256), BCrypt
 - **API Documentation**: Springdoc OpenAPI 3.1.1 (`springdoc-openapi-starter-webmvc-ui`)
-- **Database & Persistence**: PostgreSQL 17.11, Spring Data JPA / Hibernate, Flyway Migration Engine (V1–V17)
+- **Database & Persistence**: PostgreSQL 17.11, Spring Data JPA / Hibernate, Flyway Migration Engine (V1–V18)
 - **Messaging Spine**: Apache Kafka 4.3.1 (KRaft mode, no ZooKeeper)
 - **Fault Tolerance**: Resilience4j 2.4.0 (CircuitBreaker, Bulkhead, Retry)
 - **Rate Limiting**: Bucket4j 8.19.0, Caffeine 3.x
@@ -397,7 +403,7 @@ docker compose ps
 
 ### 3. Run Backend Verification & Compile
 ```bash
-# Run full reactor test suite (760 tests)
+# Run full reactor test suite (847 tests)
 ./mvnw clean verify     # Windows: .\mvnw.cmd clean verify
 ```
 
@@ -456,7 +462,7 @@ docker compose -f docker-compose.prod.yml down
 | :--- | :--- |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Deep system architecture, domain modularization, and sequence models |
 | [`docs/API.md`](docs/API.md) | Comprehensive API specification, error catalogs, and payload schemas |
-| [`docs/openapi.json`](docs/openapi.json) | Exported OpenAPI 3.1 specification for all 22 REST operations |
+| [`docs/openapi.json`](docs/openapi.json) | Exported OpenAPI 3.1 specification for all 28 REST operations |
 | [`docs/RUNBOOKS.md`](docs/RUNBOOKS.md) | Disaster recovery, point-in-time restore, cutover drills, and operations |
 | [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) | Concurrency contention analysis, pool sizing, and performance reports |
 | [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md) | Authoritative 45-phase development constitution (Phases 0–44) |
@@ -473,8 +479,8 @@ docker compose -f docker-compose.prod.yml down
 
 - **Current State:** **Phase 41 Completed** — Final Project Documentation, Architecture Diagrams & API Docs.
   - Implemented runtime Springdoc OpenAPI 3.1 (`springdoc-openapi-starter-webmvc-ui:3.1.1`) with interactive Swagger UI (`/swagger-ui/index.html`) and live OpenAPI JSON (`/v3/api-docs`).
-  - Exported authoritative 22-operation runtime specification to [`docs/openapi.json`](docs/openapi.json).
+  - Exported authoritative 28-operation runtime specification to [`docs/openapi.json`](docs/openapi.json).
   - Authored embedded GitHub-compatible Mermaid diagrams for End-to-End System Topology, Financial Atomic Posting, and External PSP State Recovery.
   - Rewrote root `README.md` into comprehensive portfolio presentation.
-  - Formally validated test baseline: 760 tests passing across 5 modules (0 failures, 0 errors, 0 skipped).
+  - Formally validated test baseline: 847 tests passing across 5 modules (0 failures, 0 errors, 0 skipped).
 - **Next Phase:** **Phase 42 — Dead-Code, Dependency & Security Cleanup**.

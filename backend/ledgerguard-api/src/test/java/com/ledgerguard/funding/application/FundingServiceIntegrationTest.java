@@ -4,7 +4,6 @@ import com.ledgerguard.AbstractIntegrationTest;
 import com.ledgerguard.funding.domain.FundingOperation;
 import com.ledgerguard.funding.domain.FundingStatus;
 import com.ledgerguard.funding.infrastructure.FundingOperationRepository;
-import com.ledgerguard.funding.infrastructure.PspOperationResponse;
 import com.ledgerguard.hold.application.HoldService;
 import com.ledgerguard.idempotency.domain.IdempotencyConflictException;
 import com.ledgerguard.idempotency.infrastructure.IdempotencyRecordRepository;

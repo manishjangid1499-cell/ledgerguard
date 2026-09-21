@@ -14,7 +14,6 @@ import com.ledgerguard.ledger.domain.LedgerAccount;
 import com.ledgerguard.ledger.domain.Money;
 import com.ledgerguard.ledger.infrastructure.LedgerAccountRepository;
 import com.ledgerguard.reconciliation.application.SnapshotAutoRepairService;
-import com.ledgerguard.reconciliation.domain.ReconciliationLevel;
 import com.ledgerguard.reconciliation.domain.ReconciliationProblemType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -25,8 +24,6 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
-import java.sql.Timestamp;
-import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;

@@ -13,7 +13,6 @@ import com.ledgerguard.ledger.application.LedgerPostingService;
 import com.ledgerguard.ledger.application.PostJournalCommand;
 import com.ledgerguard.ledger.application.PostingLine;
 import com.ledgerguard.ledger.domain.AccountType;
-import com.ledgerguard.ledger.domain.EntryDirection;
 import com.ledgerguard.ledger.domain.LedgerAccount;
 import com.ledgerguard.ledger.domain.Money;
 import com.ledgerguard.ledger.infrastructure.LedgerAccountRepository;

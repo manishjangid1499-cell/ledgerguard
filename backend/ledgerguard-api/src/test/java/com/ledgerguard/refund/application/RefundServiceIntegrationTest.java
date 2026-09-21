@@ -24,7 +24,6 @@ import com.ledgerguard.payment.application.CreatePaymentCommand;
 import com.ledgerguard.payment.application.PaymentResult;
 import com.ledgerguard.payment.application.PaymentService;
 import com.ledgerguard.payment.domain.PaymentDestinationNotFoundException;
-import com.ledgerguard.refund.domain.PaymentNotRefundableException;
 import com.ledgerguard.refund.domain.Refund;
 import com.ledgerguard.refund.domain.RefundLimitExceededException;
 import com.ledgerguard.fixture.PlatformFeeTestHelper;

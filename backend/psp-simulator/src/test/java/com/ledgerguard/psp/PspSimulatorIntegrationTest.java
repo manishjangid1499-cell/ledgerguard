@@ -3,7 +3,6 @@ package com.ledgerguard.psp;
 import com.ledgerguard.psp.api.CreateOperationRequest;
 import com.ledgerguard.psp.api.OperationResponse;
 import com.ledgerguard.psp.api.ScenarioRequest;
-import com.ledgerguard.psp.api.ScenarioResponse;
 import com.ledgerguard.psp.domain.OperationStatus;
 import com.ledgerguard.psp.domain.ProviderWebhook;
 import com.ledgerguard.psp.domain.SimulatorScenario;

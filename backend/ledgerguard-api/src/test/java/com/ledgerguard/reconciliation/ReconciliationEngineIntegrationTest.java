@@ -5,7 +5,6 @@ import com.ledgerguard.funding.infrastructure.PspClient;
 import com.ledgerguard.funding.infrastructure.PspOperationResponse;
 import com.ledgerguard.reconciliation.application.ReconciliationEngine;
 import com.ledgerguard.reconciliation.application.ScheduledReconciliationJob;
-import com.ledgerguard.reconciliation.domain.ReconciliationClassification;
 import com.ledgerguard.reconciliation.domain.ReconciliationLevel;
 import com.ledgerguard.reconciliation.domain.ReconciliationProblemType;
 import com.ledgerguard.reconciliation.domain.ReconciliationRun;

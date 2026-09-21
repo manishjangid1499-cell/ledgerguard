@@ -1,8 +1,6 @@
 package com.ledgerguard.funding.api;
 
 import com.ledgerguard.AbstractIntegrationTest;
-import com.ledgerguard.funding.domain.FundingOperation;
-import com.ledgerguard.funding.domain.FundingStatus;
 import com.ledgerguard.funding.infrastructure.FundingOperationRepository;
 import com.ledgerguard.identity.domain.User;
 import com.ledgerguard.identity.domain.UserRepository;
@@ -11,7 +9,6 @@ import com.ledgerguard.identity.domain.UserStatus;
 import com.ledgerguard.ledger.domain.AccountStatus;
 import com.ledgerguard.ledger.domain.AccountType;
 import com.ledgerguard.ledger.domain.LedgerAccount;
-import com.ledgerguard.ledger.domain.LedgerBalanceSnapshot;
 import com.ledgerguard.ledger.infrastructure.LedgerAccountRepository;
 import com.ledgerguard.ledger.infrastructure.LedgerBalanceSnapshotRepository;
 import com.ledgerguard.shared.security.JwtTokenService;

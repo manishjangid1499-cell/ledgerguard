@@ -101,6 +101,16 @@ services:
     depends_on:
       - prometheus
 
+  mailpit:
+    image: axllent/mailpit:v1.22
+    container_name: ledgerguard-mailpit
+    restart: unless-stopped
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+    networks:
+      - ledgerguard-network
+
 volumes:
   ledgerguard-postgres-data:
     name: ledgerguard-postgres-data

@@ -8,14 +8,10 @@ import com.ledgerguard.identity.domain.UserStatus;
 import com.ledgerguard.reconciliation.api.ReconciliationCaseResponse;
 import com.ledgerguard.reconciliation.application.ReconciliationCaseManagementService;
 import com.ledgerguard.reconciliation.application.ReconciliationCaseQueryService;
-import com.ledgerguard.reconciliation.domain.ReconciliationCase;
-import com.ledgerguard.reconciliation.domain.ReconciliationCaseStatus;
 import com.ledgerguard.reconciliation.domain.ReconciliationClassification;
 import com.ledgerguard.reconciliation.domain.ReconciliationConflictException;
-import com.ledgerguard.reconciliation.domain.ReconciliationItem;
 import com.ledgerguard.reconciliation.domain.ReconciliationLevel;
 import com.ledgerguard.reconciliation.domain.ReconciliationProblemType;
-import com.ledgerguard.reconciliation.domain.ReconciliationResolutionAction;
 import com.ledgerguard.reconciliation.domain.ReconciliationValidationException;
 import com.ledgerguard.reconciliation.infrastructure.ReconciliationCaseRepository;
 import com.ledgerguard.reconciliation.infrastructure.ReconciliationItemRepository;
@@ -25,8 +21,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import java.math.BigDecimal;
-import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;

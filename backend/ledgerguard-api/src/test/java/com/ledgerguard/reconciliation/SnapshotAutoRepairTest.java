@@ -20,7 +20,6 @@ import com.ledgerguard.reconciliation.application.SnapshotConsistencyChecker;
 import com.ledgerguard.reconciliation.domain.ReconciliationCase;
 import com.ledgerguard.reconciliation.domain.ReconciliationCaseStatus;
 import com.ledgerguard.reconciliation.domain.ReconciliationConflictException;
-import com.ledgerguard.reconciliation.domain.ReconciliationItem;
 import com.ledgerguard.reconciliation.domain.ReconciliationLevel;
 import com.ledgerguard.reconciliation.domain.ReconciliationProblemType;
 import com.ledgerguard.reconciliation.domain.ReconciliationResolutionAction;
@@ -32,8 +31,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import java.math.BigDecimal;
-import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 

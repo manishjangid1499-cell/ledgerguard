@@ -13,6 +13,7 @@ export interface LoginCredentials {
 }
 
 export interface RegisterPayload {
+  fullName: string;
   email: string;
   password: string;
   role: 'CUSTOMER' | 'MERCHANT';

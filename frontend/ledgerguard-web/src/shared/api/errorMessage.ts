@@ -7,6 +7,7 @@ const messages: Record<string, string> = {
   VALIDATION_FAILED: 'Review the highlighted fields and try again.',
   INSUFFICIENT_FUNDS: 'Your available balance is too low for this transfer.',
   INVALID_TRANSFER: 'This transfer cannot be made. Check the recipient wallet and amount.',
+  MERCHANT_PAYMENT_REQUIRED: 'This wallet belongs to a Merchant. Use Pay merchant instead.',
   IDEMPOTENCY_CONFLICT: 'This request conflicts with an earlier transfer. Check your transfer history before continuing.',
   IDEMPOTENCY_OPERATION_IN_PROGRESS: 'This transfer is still being processed. Check your transfer history for confirmation.',
   RATE_LIMIT_EXCEEDED: 'Too many requests. Wait a moment before trying again.',
