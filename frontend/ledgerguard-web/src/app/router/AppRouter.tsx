@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { PublicLayout } from '../../shared/layout/PublicLayout';
 import { AuthLayout } from '../../auth/components/AuthLayout';
 import { AppLayout } from '../../shared/layout/AppLayout';
@@ -43,6 +43,7 @@ export const AppRouter: React.FC = () => {
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
             <Route path="/app" element={<AppHomePage />} />
+            <Route path="/app/dashboard" element={<Navigate to="/app" replace />} />
             <Route path="/app/transfers/:transferId" element={<TransferDetailPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route element={<FinancialRoute />}>

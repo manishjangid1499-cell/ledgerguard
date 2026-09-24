@@ -10,10 +10,13 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -39,8 +42,17 @@ class OutboxPublisherTracingIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private PlatformTransactionManager transactionManager;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @Value("${ledgerguard.kafka.domain-events-topic:ledgerguard.domain-events.v1}")
     private String domainEventsTopic;
+
+    @BeforeEach
+    @AfterEach
+    void cleanOutboxEvents() {
+        jdbcTemplate.execute("TRUNCATE TABLE outbox_events CASCADE");
+    }
 
     private KafkaConsumer<String, String> createTestConsumer() {
         var props = new java.util.Properties();

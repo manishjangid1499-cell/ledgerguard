@@ -14,7 +14,11 @@ export const LoginPage = () => {
       alternateLabel="Create account"
       alternateRoute="/register"
     >
-      {successMessage && <Alert severity="success" sx={{ mb: 2 }}>{successMessage}</Alert>}
+      {successMessage && (
+        <Alert severity="success" sx={{ mb: 2.5, borderRadius: '10px', fontSize: '0.875rem' }}>
+          {successMessage}
+        </Alert>
+      )}
       <LoginForm />
     </AuthCard>
   );

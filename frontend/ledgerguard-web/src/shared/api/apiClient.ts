@@ -4,7 +4,7 @@ import { AuthResponse } from '../../auth/types/auth.types';
 import { ApiError } from '../types/api.types';
 import { parseProblemDetail } from './problemDetail';
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080').replace(/\/+$/, '');
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
 
 const AUTH_EXCLUSIONS = [
   '/api/auth/login',
@@ -36,7 +36,6 @@ export async function executeSingleFlightRefresh(): Promise<AuthResponse | null>
         method: 'POST',
         headers: {
           Accept: 'application/json',
-          'Content-Type': 'application/json',
         },
         credentials: 'include',
       });

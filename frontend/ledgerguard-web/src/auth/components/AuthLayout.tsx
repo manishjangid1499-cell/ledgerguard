@@ -1,112 +1,77 @@
 import React from 'react';
-import { Box, Stack, Typography } from '@mui/material';
-import { Link as RouterLink, Outlet } from 'react-router-dom';
-import CheckCircleOutlinedIcon from '@mui/icons-material/CheckCircleOutlined';
-import { BrandLogo } from '../../shared/components/BrandLogo';
+import { Box, keyframes } from '@mui/material';
+import { Outlet } from 'react-router-dom';
+import { AuthBackground } from './AuthBackground';
 
-const trustPoints = [
-  'Traceable balances',
-  'Protected repeat requests',
-  'Controlled settlement',
-];
+const haloPulse = keyframes`
+  0% {
+    transform: translate(-50%, -50%) scale(0.98);
+    opacity: 0.8;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.02);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(0.98);
+    opacity: 0.8;
+  }
+`;
 
 export const AuthLayout: React.FC = () => {
   return (
-    <Box sx={{ minHeight: '100dvh', display: 'flex', width: '100%' }}>
+    <Box sx={{ minHeight: '100dvh', position: 'relative', width: '100%', overflowX: 'hidden' }}>
       {/* Skip Link for Accessibility */}
       <a className="skip-link" href="#auth-main">Skip to authentication form</a>
 
-      {/* Desktop Left Brand Panel (Hidden below md / 900px) */}
-      <Box
-        component="aside"
-        aria-label="Brand Overview"
-        sx={{
-          display: { xs: 'none', md: 'flex' },
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          width: { md: '40%', lg: '38%' },
-          minWidth: 360,
-          background: 'radial-gradient(ellipse at 20% 15%, #163e65 0%, #0a1f33 55%, #051321 100%)',
-          bgcolor: '#08192b',
-          p: { md: 5, lg: 6 },
-          color: '#ffffff',
-          position: 'relative',
-          overflow: 'hidden',
-          borderRight: '1px solid',
-          borderColor: 'rgba(255, 255, 255, 0.08)',
-        }}
-      >
-        {/* Top: Brand Logo */}
-        <Box>
-          <RouterLink to="/" aria-label="LedgerGuard home" style={{ textDecoration: 'none', display: 'inline-flex' }}>
-            <BrandLogo size="medium" contrast="light" subtitle={false} />
-          </RouterLink>
-        </Box>
+      {/* Atmospheric Ambient Canvas */}
+      <AuthBackground />
 
-        {/* Middle: Brand Headline & Trust Points */}
-        <Box sx={{ my: 'auto', py: 4, maxWidth: 390 }}>
-          <Typography
-            variant="h4"
-            component="h2"
-            sx={{
-              color: '#ffffff',
-              fontWeight: 700,
-              lineHeight: 1.22,
-              letterSpacing: '-0.025em',
-              mb: 2,
-              fontSize: { md: '1.75rem', lg: '2rem' },
-            }}
-          >
-            Financial operations with a clear record.
-          </Typography>
-          <Typography
-            variant="body1"
-            sx={{
-              color: 'rgba(255, 255, 255, 0.72)',
-              lineHeight: 1.65,
-              mb: 4,
-              fontSize: '0.9375rem',
-            }}
-          >
-            Move money through a platform designed to preserve traceable financial outcomes.
-          </Typography>
-
-          <Stack spacing={2}>
-            {trustPoints.map((point) => (
-              <Stack key={point} direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
-                <CheckCircleOutlinedIcon sx={{ fontSize: 18, color: '#26a69a', flexShrink: 0 }} />
-                <Typography
-                  variant="body2"
-                  sx={{ color: 'rgba(255, 255, 255, 0.9)', fontWeight: 500, fontSize: '0.875rem' }}
-                >
-                  {point}
-                </Typography>
-              </Stack>
-            ))}
-          </Stack>
-        </Box>
-
-      </Box>
-
-      {/* Right Auth Area (Full width on mobile, 60-62% on desktop) */}
+      {/* Centered Auth Stage */}
       <Box
         component="main"
         id="auth-main"
         tabIndex={-1}
         sx={{
-          flex: 1,
+          position: 'relative',
+          zIndex: 1,
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'center',
           alignItems: 'center',
-          bgcolor: 'background.paper',
           minHeight: '100dvh',
           p: { xs: 2.5, sm: 4, md: 5 },
-          overflowY: 'auto',
           outline: 'none',
         }}
       >
-        <Outlet />
+        {/* Subtle Card Halo (Soft depth & light diffusion behind central form) */}
+        <Box
+          aria-hidden="true"
+          sx={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: { xs: '90%', sm: 520, md: 560 },
+            height: { xs: '85%', sm: 620, md: 680 },
+            maxWidth: 580,
+            maxHeight: 740,
+            borderRadius: '28px',
+            background:
+              'radial-gradient(ellipse at center, rgba(0, 121, 107, 0.05) 0%, rgba(15, 41, 66, 0.025) 50%, rgba(248, 250, 252, 0) 72%)',
+            filter: 'blur(36px)',
+            pointerEvents: 'none',
+            zIndex: 0,
+            animation: `${haloPulse} 16s ease-in-out infinite alternate`,
+            '@media (prefers-reduced-motion: reduce)': {
+              animation: 'none !important',
+            },
+          }}
+        />
+
+        <Box sx={{ position: 'relative', zIndex: 1, width: '100%', display: 'flex', justifyContent: 'center' }}>
+          <Outlet />
+        </Box>
       </Box>
     </Box>
   );
