@@ -5,6 +5,8 @@ import com.ledgerguard.outbox.domain.OutboxEvent;
 import com.ledgerguard.outbox.domain.OutboxStatus;
 import com.ledgerguard.outbox.infrastructure.OutboxEventRepository;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,6 +36,12 @@ class OutboxPublisherFailureTest extends AbstractIntegrationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @BeforeEach
+    @AfterEach
+    void cleanOutboxEvents() {
+        jdbcTemplate.execute("TRUNCATE TABLE outbox_events CASCADE");
+    }
 
     @Test
     @DisplayName("Kafka send failure throws OutboxPublishException and rolls back database transaction leaving event PENDING")

@@ -9,6 +9,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,6 +61,11 @@ class OutboxPublisherIntegrationTest extends AbstractIntegrationTest {
 
     @Value("${ledgerguard.kafka.domain-events-topic:ledgerguard.domain-events.v1}")
     private String domainEventsTopic;
+
+    @BeforeEach
+    void cleanOutboxEvents() {
+        jdbcTemplate.execute("TRUNCATE TABLE outbox_events CASCADE");
+    }
 
     private KafkaConsumer<String, String> createTestConsumer() {
         var props = new java.util.Properties();
