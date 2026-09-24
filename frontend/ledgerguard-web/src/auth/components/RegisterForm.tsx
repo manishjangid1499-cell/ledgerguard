@@ -10,7 +10,6 @@ import {
   IconButton,
   Stack,
   FormControl,
-  FormLabel,
   RadioGroup,
   FormControlLabel,
   Radio,
@@ -19,6 +18,8 @@ import {
 } from '@mui/material';
 import Visibility from '@mui/icons-material/Visibility';
 import VisibilityOff from '@mui/icons-material/VisibilityOff';
+import PersonOutlinedIcon from '@mui/icons-material/PersonOutlined';
+import StorefrontOutlinedIcon from '@mui/icons-material/StorefrontOutlined';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { RegisterPayload } from '../types/auth.types';
@@ -109,178 +110,378 @@ export const RegisterForm: React.FC = () => {
 
   return (
     <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate aria-busy={isSubmitting} sx={{ mt: 0.5 }}>
-      <Stack spacing={2}>
+      <Stack spacing={1.5}>
         {serverError && (
-          <Alert severity="error" onClose={() => setServerError(null)}>
+          <Alert severity="error" onClose={() => setServerError(null)} sx={{ borderRadius: '10px', fontSize: '0.875rem' }}>
             {serverError}
           </Alert>
         )}
 
-        <TextField
-          {...register('fullName', {
-            required: 'Full name is required.',
-            validate: (val) => {
-              const trimmed = val.trim();
-              if (!trimmed) return 'Full name is required.';
-              if (trimmed.length < 2 || trimmed.length > 120) {
-                return 'Full name must be between 2 and 120 characters.';
-              }
-              return true;
-            },
-          })}
-          id="fullName"
-          label="Full name"
-          type="text"
-          autoComplete="name"
-          required
-          autoFocus
-          fullWidth
-          error={Boolean(errors.fullName)}
-          helperText={errors.fullName?.message}
-          disabled={isSubmitting}
-        />
+        <Box sx={{ textAlign: 'left' }}>
+          <Typography
+            component="label"
+            htmlFor="fullName"
+            sx={{
+              display: 'block',
+              fontSize: '0.8125rem',
+              fontWeight: 600,
+              color: 'text.primary',
+              mb: 0.5,
+            }}
+          >
+            Full name <Box component="span" sx={{ color: 'error.main' }}>*</Box>
+          </Typography>
+          <TextField
+            {...register('fullName', {
+              required: 'Full name is required.',
+              validate: (val) => {
+                const trimmed = val.trim();
+                if (!trimmed) return 'Full name is required.';
+                if (trimmed.length < 2 || trimmed.length > 120) {
+                  return 'Full name must be between 2 and 120 characters.';
+                }
+                return true;
+              },
+            })}
+            id="fullName"
+            type="text"
+            autoComplete="name"
+            hiddenLabel
+            autoFocus
+            fullWidth
+            error={Boolean(errors.fullName)}
+            helperText={errors.fullName?.message}
+            disabled={isSubmitting}
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                borderRadius: '10px',
+                bgcolor: '#ffffff',
+              },
+            }}
+          />
+        </Box>
 
-        <TextField
-          {...register('email', {
-            required: 'Email is required.',
-            pattern: {
-              value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-              message: 'Enter a valid email address.',
-            },
-          })}
-          id="email"
-          label="Email address"
-          type="email"
-          autoComplete="email"
-          required
-          fullWidth
-          error={Boolean(errors.email)}
-          helperText={errors.email?.message}
-          disabled={isSubmitting}
-        />
+        <Box sx={{ textAlign: 'left' }}>
+          <Typography
+            component="label"
+            htmlFor="email"
+            sx={{
+              display: 'block',
+              fontSize: '0.8125rem',
+              fontWeight: 600,
+              color: 'text.primary',
+              mb: 0.5,
+            }}
+          >
+            Email address <Box component="span" sx={{ color: 'error.main' }}>*</Box>
+          </Typography>
+          <TextField
+            {...register('email', {
+              required: 'Email is required.',
+              pattern: {
+                value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+                message: 'Enter a valid email address.',
+              },
+            })}
+            id="email"
+            type="email"
+            autoComplete="email"
+            hiddenLabel
+            fullWidth
+            error={Boolean(errors.email)}
+            helperText={errors.email?.message}
+            disabled={isSubmitting}
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                borderRadius: '10px',
+                bgcolor: '#ffffff',
+              },
+            }}
+          />
+        </Box>
 
-        <TextField
-          {...register('password', {
-            required: 'Password is required.',
-            minLength: {
-              value: 12,
-              message: 'Use at least 12 characters.',
-            },
-            validate: (val) => {
-              if (!val.trim()) return 'Password is required.';
-              const byteLength = new TextEncoder().encode(val).length;
-              if (byteLength > 72) {
-                return 'Password is too long.';
-              }
-              return true;
-            },
-          })}
-          id="password"
-          label="Password"
-          type={showPassword ? 'text' : 'password'}
-          autoComplete="new-password"
-          required
-          fullWidth
-          error={Boolean(errors.password)}
-          helperText={errors.password?.message || 'Use at least 12 characters.'}
-          disabled={isSubmitting}
-          slotProps={{
-            input: {
-              endAdornment: (
-                <InputAdornment position="end">
-                  <IconButton
-                    type="button"
-                    disabled={isSubmitting}
-                    aria-pressed={showPassword}
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
-                    onClick={() => setShowPassword((prev) => !prev)}
-                    edge="end"
-                    size="small"
-                  >
-                    {showPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
-                  </IconButton>
-                </InputAdornment>
-              ),
-            },
-          }}
-        />
+        <Box sx={{ textAlign: 'left' }}>
+          <Typography
+            component="label"
+            htmlFor="password"
+            sx={{
+              display: 'block',
+              fontSize: '0.8125rem',
+              fontWeight: 600,
+              color: 'text.primary',
+              mb: 0.5,
+            }}
+          >
+            Password <Box component="span" sx={{ color: 'error.main' }}>*</Box>
+          </Typography>
+          <TextField
+            {...register('password', {
+              required: 'Password is required.',
+              minLength: {
+                value: 12,
+                message: 'Use at least 12 characters.',
+              },
+              validate: (val) => {
+                if (!val.trim()) return 'Password is required.';
+                const byteLength = new TextEncoder().encode(val).length;
+                if (byteLength > 72) {
+                  return 'Password is too long.';
+                }
+                return true;
+              },
+            })}
+            id="password"
+            type={showPassword ? 'text' : 'password'}
+            autoComplete="new-password"
+            hiddenLabel
+            fullWidth
+            error={Boolean(errors.password)}
+            helperText={errors.password?.message}
+            disabled={isSubmitting}
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                borderRadius: '10px',
+                bgcolor: '#ffffff',
+              },
+            }}
+            slotProps={{
+              input: {
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      type="button"
+                      disabled={isSubmitting}
+                      aria-pressed={showPassword}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      edge="end"
+                      size="small"
+                    >
+                      {showPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              },
+            }}
+          />
+        </Box>
 
-        <TextField
-          {...register('confirmPassword', {
-            required: 'Confirm password is required.',
-            validate: (val) => val === watch('password') || 'Passwords do not match.',
-          })}
-          id="confirmPassword"
-          label="Confirm password"
-          type={showConfirmPassword ? 'text' : 'password'}
-          autoComplete="new-password"
-          required
-          fullWidth
-          error={Boolean(errors.confirmPassword)}
-          helperText={errors.confirmPassword?.message}
-          disabled={isSubmitting}
-          slotProps={{
-            input: {
-              endAdornment: (
-                <InputAdornment position="end">
-                  <IconButton
-                    type="button"
-                    disabled={isSubmitting}
-                    aria-pressed={showConfirmPassword}
-                    aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
-                    onClick={() => setShowConfirmPassword((prev) => !prev)}
-                    edge="end"
-                    size="small"
-                  >
-                    {showConfirmPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
-                  </IconButton>
-                </InputAdornment>
-              ),
-            },
-          }}
-        />
+        <Box sx={{ textAlign: 'left' }}>
+          <Typography
+            component="label"
+            htmlFor="confirmPassword"
+            sx={{
+              display: 'block',
+              fontSize: '0.8125rem',
+              fontWeight: 600,
+              color: 'text.primary',
+              mb: 0.5,
+            }}
+          >
+            Confirm password <Box component="span" sx={{ color: 'error.main' }}>*</Box>
+          </Typography>
+          <TextField
+            {...register('confirmPassword', {
+              required: 'Confirm password is required.',
+              validate: (val) => val === watch('password') || 'Passwords do not match.',
+            })}
+            id="confirmPassword"
+            type={showConfirmPassword ? 'text' : 'password'}
+            autoComplete="new-password"
+            hiddenLabel
+            fullWidth
+            error={Boolean(errors.confirmPassword)}
+            helperText={errors.confirmPassword?.message}
+            disabled={isSubmitting}
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                borderRadius: '10px',
+                bgcolor: '#ffffff',
+              },
+            }}
+            slotProps={{
+              input: {
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      type="button"
+                      disabled={isSubmitting}
+                      aria-pressed={showConfirmPassword}
+                      aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                      onClick={() => setShowConfirmPassword((prev) => !prev)}
+                      edge="end"
+                      size="small"
+                    >
+                      {showConfirmPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              },
+            }}
+          />
+        </Box>
 
         <FormControl component="fieldset" error={Boolean(errors.role)} disabled={isSubmitting} fullWidth>
-          <FormLabel component="legend" sx={{ fontSize: '0.8125rem', fontWeight: 600, color: 'text.primary', mb: 0.5 }}>
+          <Typography
+            component="legend"
+            sx={{
+              fontSize: '0.8125rem',
+              fontWeight: 600,
+              color: 'text.primary',
+              mb: 0.5,
+              textAlign: 'left',
+              display: 'block',
+            }}
+          >
             Account type
-          </FormLabel>
+          </Typography>
           <Controller
             name="role"
             control={control}
             rules={{ required: 'Choose Customer or Merchant.' }}
             render={({ field }) => (
-              <RadioGroup {...field} aria-label="Account type" aria-describedby={errors.role ? 'role-error' : undefined} sx={{ gap: 1 }}>
-                {[
-                  { value: 'CUSTOMER', title: 'Customer', description: 'Send money and manage your wallet.' },
-                  { value: 'MERCHANT', title: 'Merchant', description: 'Accept payments and manage your wallet.' },
-                ].map((option) => (
-                  <FormControlLabel
-                    key={option.value}
-                    value={option.value}
-                    control={<Radio size="small" sx={{ p: 0.75 }} />}
-                    sx={{
-                      m: 0,
-                      py: 0.75,
-                      px: 1.25,
-                      border: '1px solid',
-                      borderRadius: 1.5,
-                      borderColor: field.value === option.value ? 'secondary.main' : 'divider',
-                      bgcolor: field.value === option.value ? 'rgba(0, 121, 107, 0.04)' : 'background.paper',
-                      transition: 'border-color 0.15s ease, background-color 0.15s ease',
-                      alignItems: 'center',
-                    }}
-                    label={
-                      <Box sx={{ ml: 0.25 }}>
-                        <Typography component="span" variant="body2" sx={{ display: 'block', fontWeight: 600, lineHeight: 1.25 }}>
-                          {option.title}
-                        </Typography>
-                        <Typography component="span" variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.3 }}>
-                          {option.description}
-                        </Typography>
-                      </Box>
-                    }
-                  />
-                ))}
+              <RadioGroup
+                {...field}
+                aria-label="Account type"
+                aria-describedby={errors.role ? 'role-error' : undefined}
+              >
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: 1.25,
+                  }}
+                >
+                  {[
+                    {
+                      value: 'CUSTOMER',
+                      title: 'Customer',
+                      subtitle: 'Personal',
+                      icon: PersonOutlinedIcon,
+                    },
+                    {
+                      value: 'MERCHANT',
+                      title: 'Merchant',
+                      subtitle: 'Business',
+                      icon: StorefrontOutlinedIcon,
+                    },
+                  ].map((option) => {
+                    const isSelected = field.value === option.value;
+                    const IconComponent = option.icon;
+                    return (
+                      <FormControlLabel
+                        key={option.value}
+                        value={option.value}
+                        control={
+                          <Radio
+                            size="small"
+                            sx={{
+                              position: 'absolute',
+                              opacity: 0,
+                              width: 0,
+                              height: 0,
+                              pointerEvents: 'none',
+                            }}
+                          />
+                        }
+                        sx={{
+                          m: 0,
+                          py: 1,
+                          px: 1.25,
+                          minHeight: 48,
+                          borderRadius: '10px',
+                          border: '1.5px solid',
+                          borderColor: isSelected ? 'secondary.main' : 'rgba(15, 41, 66, 0.12)',
+                          bgcolor: isSelected ? 'rgba(0, 121, 107, 0.04)' : '#ffffff',
+                          boxShadow: isSelected
+                            ? '0 0 0 1px #00796b, 0 1px 3px rgba(0, 121, 107, 0.06)'
+                            : 'none',
+                          transition: 'all 0.15s ease',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'flex-start',
+                          '&:hover': {
+                            borderColor: isSelected ? 'secondary.main' : '#94a3b8',
+                            bgcolor: isSelected ? 'rgba(0, 121, 107, 0.06)' : 'rgba(15, 41, 66, 0.02)',
+                          },
+                        }}
+                        label={
+                          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', width: '100%' }}>
+                            <Box
+                              sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: 28,
+                                height: 28,
+                                borderRadius: '6px',
+                                bgcolor: isSelected
+                                  ? 'rgba(0, 121, 107, 0.12)'
+                                  : 'rgba(15, 41, 66, 0.05)',
+                                color: isSelected ? 'secondary.main' : 'text.secondary',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <IconComponent sx={{ fontSize: 17 }} />
+                            </Box>
+                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                              <Typography
+                                component="span"
+                                variant="body2"
+                                sx={{
+                                  display: 'block',
+                                  fontWeight: 600,
+                                  lineHeight: 1.2,
+                                  color: isSelected ? 'primary.main' : 'text.primary',
+                                  fontSize: '0.8125rem',
+                                }}
+                              >
+                                {option.title}
+                              </Typography>
+                              <Typography
+                                component="span"
+                                variant="caption"
+                                sx={{
+                                  display: 'block',
+                                  color: 'text.secondary',
+                                  lineHeight: 1.2,
+                                  fontSize: '0.6875rem',
+                                }}
+                              >
+                                {option.subtitle}
+                              </Typography>
+                            </Box>
+                            <Box
+                              sx={{
+                                width: 14,
+                                height: 14,
+                                borderRadius: '50%',
+                                border: '1.5px solid',
+                                borderColor: isSelected ? 'secondary.main' : 'rgba(15, 41, 66, 0.25)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                              }}
+                            >
+                              {isSelected && (
+                                <Box
+                                  sx={{
+                                    width: 6,
+                                    height: 6,
+                                    borderRadius: '50%',
+                                    bgcolor: 'secondary.main',
+                                  }}
+                                />
+                              )}
+                            </Box>
+                          </Stack>
+                        }
+                      />
+                    );
+                  })}
+                </Box>
               </RadioGroup>
             )}
           />
@@ -293,7 +494,19 @@ export const RegisterForm: React.FC = () => {
           variant="contained"
           size="large"
           disabled={isSubmitting}
-          sx={{ py: 1.2 }}
+          sx={{
+            py: 1.4,
+            minHeight: 48,
+            borderRadius: '10px',
+            fontWeight: 600,
+            fontSize: '0.9375rem',
+            bgcolor: 'primary.main',
+            boxShadow: '0 1px 2px 0 rgba(15, 41, 66, 0.08)',
+            '&:hover': {
+              bgcolor: '#163e65',
+              boxShadow: '0 4px 12px 0 rgba(15, 41, 66, 0.15)',
+            },
+          }}
           startIcon={isSubmitting ? <CircularProgress size={18} color="inherit" aria-hidden="true" /> : undefined}
         >
           {isSubmitting ? 'Creating account…' : 'Create account'}
