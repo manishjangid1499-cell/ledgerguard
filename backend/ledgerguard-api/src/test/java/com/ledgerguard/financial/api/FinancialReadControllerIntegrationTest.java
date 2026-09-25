@@ -38,7 +38,7 @@ import java.time.Instant;
 import java.util.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.*;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -165,7 +165,9 @@ class FinancialReadControllerIntegrationTest extends AbstractIntegrationTest {
         var before = financialState();
         for (User participant : List.of(customer, merchant)) {
             read(participant, "/api/payments").andExpect(status().isOk()).andExpect(jsonPath("$.totalElements", is(1)))
-                    .andExpect(jsonPath("$.items[0].paymentId", is(own.toString())));
+                    .andExpect(jsonPath("$.items[0].paymentId", is(own.toString())))
+                    .andExpect(jsonPath("$.items[0].refundedAmountMinor", is("3000")))
+                    .andExpect(jsonPath("$.items[0].refundStatus", is("PARTIALLY_REFUNDED")));
             read(participant, "/api/payments/" + own + "?refundSize=1").andExpect(status().isOk())
                     .andExpect(jsonPath("$.payment.grossAmountMinor", is("10000")))
                     .andExpect(jsonPath("$.refundedAmountMinor", is("3000")))
@@ -228,6 +230,156 @@ class FinancialReadControllerIntegrationTest extends AbstractIntegrationTest {
         read(customer, "/api/" + domain).andExpect(status().isOk()).andExpect(jsonPath("$.items.length()", is(0)));
         read(customer, "/api/" + domain + "/" + UUID.randomUUID()).andExpect(status().isNotFound());
         unchanged(before);
+    }
+
+    @Test
+    void merchantSummaryReturnsAuthoritativeAggregatesAndEnforcesSecurity() throws Exception {
+        mvc.perform(get("/api/payments/summary")).andExpect(status().isUnauthorized());
+        read(customer, "/api/payments/summary").andExpect(status().isForbidden());
+        read(ops, "/api/payments/summary").andExpect(status().isForbidden());
+
+        read(merchant, "/api/payments/summary").andExpect(status().isOk())
+                .andExpect(jsonPath("$.grossReceivedMinor", is("0")))
+                .andExpect(jsonPath("$.platformFeesMinor", is("0")))
+                .andExpect(jsonPath("$.netReceivedMinor", is("0")))
+                .andExpect(jsonPath("$.refundedAmountMinor", is("0")))
+                .andExpect(jsonPath("$.pendingPayoutsCount", is(0)))
+                .andExpect(jsonPath("$.pendingPayoutsAmountMinor", is("0")))
+                .andExpect(jsonPath("$.currency", is("INR")));
+
+        UUID p1 = payment(customer, customerWallet, merchantWallet, 10000);
+        refunds.createRefund(new CreateRefundCommand(merchant.getId(), UUID.randomUUID().toString(), p1, Money.inr(2500)));
+        newPayout(merchant, merchantWallet, 1000, Instant.now());
+
+        read(merchant, "/api/payments/summary").andExpect(status().isOk())
+                .andExpect(jsonPath("$.grossReceivedMinor", is("10000")))
+                .andExpect(jsonPath("$.platformFeesMinor", is("100")))
+                .andExpect(jsonPath("$.netReceivedMinor", is("9900")))
+                .andExpect(jsonPath("$.refundedAmountMinor", is("2500")))
+                .andExpect(jsonPath("$.pendingPayoutsCount", is(1)))
+                .andExpect(jsonPath("$.pendingPayoutsAmountMinor", is("1000")))
+                .andExpect(jsonPath("$.currency", is("INR")));
+
+        read(otherMerchant, "/api/payments/summary").andExpect(status().isOk())
+                .andExpect(jsonPath("$.grossReceivedMinor", is("0")))
+                .andExpect(jsonPath("$.refundedAmountMinor", is("0")))
+                .andExpect(jsonPath("$.pendingPayoutsCount", is(0)));
+
+        // Full refund boundary test
+        refunds.createRefund(new CreateRefundCommand(merchant.getId(), UUID.randomUUID().toString(), p1, Money.inr(7500)));
+        read(merchant, "/api/payments/summary").andExpect(status().isOk())
+                .andExpect(jsonPath("$.grossReceivedMinor", is("10000")))
+                .andExpect(jsonPath("$.refundedAmountMinor", is("10000")))
+                .andExpect(jsonPath("$.netReceivedMinor", is("9900")));
+
+        read(merchant, "/api/payments?paymentId=" + p1).andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].refundStatus", is("FULLY_REFUNDED")));
+    }
+
+    @Test
+    void paymentFilteringAndSortingWorksAuthoritatively() throws Exception {
+        UUID p1 = payment(customer, customerWallet, merchantWallet, 10000);
+        UUID p2 = payment(customer, customerWallet, merchantWallet, 20000);
+
+        // Exact paymentId lookup: page 0 returns owned matching item
+        read(merchant, "/api/payments?paymentId=" + p1 + "&page=0&size=20").andExpect(status().isOk())
+                .andExpect(jsonPath("$.page", is(0)))
+                .andExpect(jsonPath("$.size", is(20)))
+                .andExpect(jsonPath("$.totalElements", is(1)))
+                .andExpect(jsonPath("$.items", hasSize(1)))
+                .andExpect(jsonPath("$.items[0].paymentId", is(p1.toString())));
+
+        // Exact paymentId lookup: page 1 returns empty page preserving requested page and validated size
+        read(merchant, "/api/payments?paymentId=" + p1 + "&page=1&size=20").andExpect(status().isOk())
+                .andExpect(jsonPath("$.page", is(1)))
+                .andExpect(jsonPath("$.size", is(20)))
+                .andExpect(jsonPath("$.totalElements", is(1)))
+                .andExpect(jsonPath("$.items", hasSize(0)));
+
+        // Exact paymentId lookup: non-existent UUID returns empty page
+        read(merchant, "/api/payments?paymentId=" + UUID.randomUUID()).andExpect(status().isOk())
+                .andExpect(jsonPath("$.page", is(0)))
+                .andExpect(jsonPath("$.totalElements", is(0)))
+                .andExpect(jsonPath("$.items", hasSize(0)));
+
+        // Exact paymentId lookup: another merchant's payment ID is isolated (returns empty page)
+        read(otherMerchant, "/api/payments?paymentId=" + p1).andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements", is(0)))
+                .andExpect(jsonPath("$.items", hasSize(0)));
+
+        // Exact paymentId with matching status
+        read(merchant, "/api/payments?paymentId=" + p1 + "&status=SUCCEEDED").andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements", is(1)))
+                .andExpect(jsonPath("$.items[0].paymentId", is(p1.toString())));
+
+        // Exact paymentId with nonmatching status
+        read(merchant, "/api/payments?paymentId=" + p1 + "&status=FAILED").andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements", is(0)))
+                .andExpect(jsonPath("$.items", hasSize(0)));
+
+        // Pagination boundary behaviour: negative page bounds to 0, size 0 defaults to 20, size > 50 bounds to 50
+        read(merchant, "/api/payments?page=-1").andExpect(status().isOk())
+                .andExpect(jsonPath("$.page", is(0)));
+        read(merchant, "/api/payments?paymentId=" + p1 + "&page=-1").andExpect(status().isOk())
+                .andExpect(jsonPath("$.page", is(0)))
+                .andExpect(jsonPath("$.items", hasSize(1)));
+
+        read(merchant, "/api/payments?size=0").andExpect(status().isOk())
+                .andExpect(jsonPath("$.size", is(20)));
+        read(merchant, "/api/payments?paymentId=" + p1 + "&size=0").andExpect(status().isOk())
+                .andExpect(jsonPath("$.size", is(20)))
+                .andExpect(jsonPath("$.items", hasSize(1)));
+
+        read(merchant, "/api/payments?size=51").andExpect(status().isOk())
+                .andExpect(jsonPath("$.size", is(50)));
+        read(merchant, "/api/payments?paymentId=" + p1 + "&size=51").andExpect(status().isOk())
+                .andExpect(jsonPath("$.size", is(50)))
+                .andExpect(jsonPath("$.items", hasSize(1)));
+
+        // Status-filtered listing
+        read(merchant, "/api/payments?status=SUCCEEDED").andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements", is(2)));
+        read(merchant, "/api/payments?status=FAILED").andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements", is(0)));
+
+        // Sort ordering
+        read(merchant, "/api/payments?sort=oldest").andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].paymentId", is(p1.toString())))
+                .andExpect(jsonPath("$.items[1].paymentId", is(p2.toString())));
+        read(merchant, "/api/payments?sort=newest").andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].paymentId", is(p2.toString())))
+                .andExpect(jsonPath("$.items[1].paymentId", is(p1.toString())));
+
+        // Invalid sort parameter
+        read(merchant, "/api/payments?sort=invalid_sort").andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode", is("INVALID_PAYMENT")));
+
+        // Hardened type mismatch handling: malformed payment status
+        read(merchant, "/api/payments?status=UNKNOWN_STATUS").andExpect(status().isBadRequest())
+                .andExpect(header().string("Content-Type", is("application/problem+json")))
+                .andExpect(jsonPath("$.status", is(400)))
+                .andExpect(jsonPath("$.title", is("Validation failed")))
+                .andExpect(jsonPath("$.errorCode", is("VALIDATION_FAILED")))
+                .andExpect(jsonPath("$.detail", is("Invalid value for parameter: status")))
+                .andExpect(jsonPath("$.detail", not(containsString("UNKNOWN_STATUS"))));
+
+        // Hardened type mismatch handling: malformed payment UUID
+        read(merchant, "/api/payments?paymentId=not-a-valid-uuid").andExpect(status().isBadRequest())
+                .andExpect(header().string("Content-Type", is("application/problem+json")))
+                .andExpect(jsonPath("$.status", is(400)))
+                .andExpect(jsonPath("$.title", is("Validation failed")))
+                .andExpect(jsonPath("$.errorCode", is("VALIDATION_FAILED")))
+                .andExpect(jsonPath("$.detail", is("Invalid value for parameter: paymentId")))
+                .andExpect(jsonPath("$.detail", not(containsString("not-a-valid-uuid"))));
+
+        // Hardened type mismatch handling: unrelated path variable UUID
+        read(merchant, "/api/payments/not-a-valid-uuid").andExpect(status().isBadRequest())
+                .andExpect(header().string("Content-Type", is("application/problem+json")))
+                .andExpect(jsonPath("$.status", is(400)))
+                .andExpect(jsonPath("$.title", is("Validation failed")))
+                .andExpect(jsonPath("$.errorCode", is("VALIDATION_FAILED")))
+                .andExpect(jsonPath("$.detail", is("Invalid value for parameter: paymentId")))
+                .andExpect(jsonPath("$.detail", not(containsString("not-a-valid-uuid"))));
     }
 
     private ResultActions read(User user, String path) throws Exception {

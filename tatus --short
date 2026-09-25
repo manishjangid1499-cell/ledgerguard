@@ -1,0 +1,45 @@
+warning: in the working copy of 'backend/ledgerguard-api/src/main/java/com/ledgerguard/payment/api/PaymentController.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ledgerguard-api/src/main/java/com/ledgerguard/payment/api/PaymentSummaryResponse.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ledgerguard-api/src/main/java/com/ledgerguard/payment/application/PaymentQueryService.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ledgerguard-api/src/main/java/com/ledgerguard/payment/infrastructure/PaymentRepository.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ledgerguard-api/src/main/java/com/ledgerguard/payout/infrastructure/PayoutRepository.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ledgerguard-api/src/main/java/com/ledgerguard/refund/infrastructure/RefundRepository.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ledgerguard-api/src/main/java/com/ledgerguard/shared/api/QueryPagination.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ledgerguard-api/src/test/java/com/ledgerguard/financial/api/FinancialReadControllerIntegrationTest.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/openapi.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/ledgerguard-web/src/financial/api.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/ledgerguard-web/src/financial/components/FinancialHistory.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/ledgerguard-web/src/financial/pages/ActivityPage.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/ledgerguard-web/src/financial/pages/PaymentDetailPage.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/ledgerguard-web/src/financial/pages/ProviderOperationPage.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/ledgerguard-web/src/financial/types.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/ledgerguard-web/src/shared/components/StatusBadge.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/ledgerguard-web/src/shared/layout/AppLayout.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/ledgerguard-web/src/shared/pages/AppHomePage.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/ledgerguard-web/src/shared/pages/ProfilePage.tsx', LF will be replaced by CRLF the next time Git touches it
+ .../ledgerguard/payment/api/PaymentController.java |   25 [32m+[m[31m-[m
+ .../payment/api/PaymentSummaryResponse.java        |   22 [32m+[m[31m-[m
+ .../payment/application/PaymentQueryService.java   |  114 [32m+[m[31m-[m
+ .../payment/infrastructure/PaymentRepository.java  |   21 [32m+[m
+ .../payout/infrastructure/PayoutRepository.java    |    7 [32m+[m
+ .../refund/infrastructure/RefundRepository.java    |    9 [32m+[m
+ .../ledgerguard/shared/api/QueryPagination.java    |   14 [32m+[m[31m-[m
+ .../shared/error/GlobalExceptionHandler.java       |   24 [32m+[m
+ .../ledgerguard/shared/openapi/OpenApiConfig.java  |    5 [32m+[m[31m-[m
+ .../FinancialReadControllerIntegrationTest.java    |  156 [32m+[m[31m-[m
+ docs/API.md                                        |   24 [32m+[m[31m-[m
+ docs/openapi.json                                  | 3651 [32m+++++++++++[m[31m---------[m
+ frontend/ledgerguard-web/package-lock.json         | 1032 [32m+++++[m[31m-[m
+ frontend/ledgerguard-web/package.json              |    8 [32m+[m[31m-[m
+ frontend/ledgerguard-web/src/financial/api.ts      |   17 [32m+[m[31m-[m
+ .../src/financial/components/FinancialHistory.tsx  |  463 [32m++[m[31m-[m
+ .../src/financial/pages/ActivityPage.tsx           |  164 [32m+[m[31m-[m
+ .../src/financial/pages/PaymentDetailPage.tsx      |  395 [32m++[m[31m-[m
+ .../src/financial/pages/ProviderOperationPage.tsx  |   13 [32m+[m
+ frontend/ledgerguard-web/src/financial/types.ts    |   21 [32m+[m
+ .../src/shared/components/StatusBadge.tsx          |   17 [32m+[m[31m-[m
+ .../src/shared/layout/AppLayout.tsx                |   51 [32m+[m[31m-[m
+ .../src/shared/pages/AppHomePage.tsx               |   66 [32m+[m[31m-[m
+ .../src/shared/pages/ProfilePage.tsx               |   73 [32m+[m[31m-[m
+ frontend/ledgerguard-web/tsconfig.json             |    3 [32m+[m[31m-[m
+ 25 files changed, 4499 insertions(+), 1896 deletions(-)

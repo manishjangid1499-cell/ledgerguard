@@ -45,4 +45,11 @@ public interface PayoutRepository extends JpaRepository<Payout, UUID> {
             @Param("now") Instant now,
             @Param("maxAttempts") int maxAttempts,
             @Param("batchSize") int batchSize);
+
+    @Query("SELECT COUNT(p), COALESCE(SUM(p.amountMinor), 0L) FROM Payout p WHERE p.initiatedByUserId = :userId " +
+            "AND p.status IN (com.ledgerguard.payout.domain.PayoutStatus.CREATED, " +
+            "com.ledgerguard.payout.domain.PayoutStatus.PROCESSING, " +
+            "com.ledgerguard.payout.domain.PayoutStatus.UNKNOWN, " +
+            "com.ledgerguard.payout.domain.PayoutStatus.RECONCILIATION_REQUIRED)")
+    List<Object[]> getPendingPayoutSummaryByUserId(@Param("userId") UUID userId);
 }

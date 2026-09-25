@@ -11,7 +11,7 @@
 - **Error Content Type**: `application/problem+json` (RFC 9457 Problem Details)
 - **Authentication**: `Authorization: Bearer <access_token>` header for stateless requests; `ledgerguard_refresh_token` HttpOnly cookie for session rotation.
 - **Idempotency**: All mutating financial endpoints accept an `Idempotency-Key: <UUID>` header (Phase 9+)
-- **Authoritative Endpoint Count**: Exactly 28 REST operations across 9 `@RestController` components.
+- **Authoritative Endpoint Count**: Exactly 29 REST operations across 9 `@RestController` components.
 
 ### 1.1 OpenAPI & Swagger UI Specification (Phase 41)
 
@@ -28,7 +28,7 @@
 | **Bearer JWT** | `Authorization: Bearer <token>` | `GET /api/auth/me` | Any valid authenticated principal. |
 | **Customer / Merchant** | Bearer JWT (`ROLE_CUSTOMER`, `ROLE_MERCHANT`) | `GET /api/wallets/me`<br>`GET /api/transfers`<br>`GET /api/transfers/{id}`<br>`POST /api/payouts`<br>`GET /api/payouts`<br>`GET /api/payouts/{payoutId}`<br>`GET /api/payments`<br>`GET /api/payments/{paymentId}` | Customers and Merchants; financial reads are owner/participant scoped. `OPS` forbidden. |
 | **Customer Only** | Bearer JWT (`ROLE_CUSTOMER`) | `POST /api/transfers`<br>`POST /api/payments`<br>`POST /api/funding`<br>`GET /api/funding`<br>`GET /api/funding/{fundingId}` | Customer wallets only; transfers require a Customer destination and funding reads are owner scoped. Merchants and `OPS` forbidden. |
-| **Merchant Only** | Bearer JWT (`ROLE_MERCHANT`) | `POST /api/payments/{id}/refund` | Merchant account associated with original payment. |
+| **Merchant Only** | Bearer JWT (`ROLE_MERCHANT`) | `POST /api/payments/{id}/refund`<br>`GET /api/payments/summary` | Merchant account associated with original payment / merchant dashboard summary. |
 | **Operations (OPS)** | Bearer JWT (`ROLE_OPS`) | All `/api/reconciliation/**` routes (8 endpoints) | Back-office Operations operators. Customers and Merchants forbidden. |
 | **PSP Provider Callback** | HMAC-SHA256 Signatures | `POST /api/provider/webhooks` | Verified via `X-PSP-Webhook-Signature` and `X-PSP-Webhook-Timestamp` headers. |
 
@@ -319,7 +319,7 @@ Lists use `{ items, page, size, totalElements, totalPages }`. Page defaults to `
 
 Funding items/details contain `fundingId`, `amountMinor`, `currency`, `status`, `providerOperationId`, `journalTransactionId`, `createdAt`, and `completedAt`. Payout items/details use `payoutId` instead and additionally include `balanceHoldId`. Provider/journal references and completion time may be `null` until available. Internal recovery metadata and provider credentials are excluded.
 
-Payment list items contain `paymentId`, `customerLedgerAccountId`, `merchantLedgerAccountId`, `grossAmountMinor`, `feeAmountMinor`, `merchantNetAmountMinor`, `currency`, `status`, `journalTransactionId`, `createdAt`, and `completedAt`. Payment detail wraps these fields:
+Payment list items contain `paymentId`, `customerLedgerAccountId`, `merchantLedgerAccountId`, `grossAmountMinor`, `feeAmountMinor`, `merchantNetAmountMinor`, `currency`, `status`, `journalTransactionId`, `createdAt`, `completedAt`, `refundedAmountMinor`, and `refundStatus` (`NOT_REFUNDED`, `PARTIALLY_REFUNDED`, `FULLY_REFUNDED`). Supports optional server-side query filters: `paymentId` (exact UUID), `status` (`PaymentStatus`), and `sort` (`newest` or `oldest`). Payment detail wraps these fields:
 
 ```text
 {
@@ -376,6 +376,24 @@ Funding/payout states are `CREATED`, `PROCESSING`, `UNKNOWN`, `RECONCILIATION_RE
     - Merchant Wallet: `CREDIT merchantNetAmountMinor`
     - Platform Fee Account: `CREDIT feeAmountMinor` (omitted when `feeAmountMinor == 0`).
   - Total Debits == Total Credits.
+
+### 7.2 `GET /api/payments/summary`
+- **Access**: Authenticated `MERCHANT` only (`CUSTOMER` and `OPS` return 403 Forbidden).
+- **Headers**:
+  - `Authorization: Bearer <merchant_jwt>`
+- **Response (200 OK)**:
+  ```json
+  {
+    "grossReceivedMinor": "10000",
+    "platformFeesMinor": "100",
+    "netReceivedMinor": "9900",
+    "refundedAmountMinor": "2500",
+    "pendingPayoutsCount": 1,
+    "pendingPayoutsAmountMinor": "1000",
+    "currency": "INR"
+  }
+  ```
+- **Description**: Returns all-time authoritative database aggregate metrics across received payments, platform fees, refunds, and pending payouts scoped to the authenticated merchant's owned wallet. Zero floating-point arithmetic; all monetary values are exact minor unit strings.
 
 ---
 

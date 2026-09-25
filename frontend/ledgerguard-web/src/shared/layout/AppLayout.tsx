@@ -1,5 +1,5 @@
 import { Suspense, useState } from 'react';
-import { AppBar, Box, Button, Chip, Container, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Stack, Toolbar, Typography } from '@mui/material';
+import { AppBar, Box, Button, Chip, Container, Divider, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Stack, Toolbar, Typography } from '@mui/material';
 import { Link as RouterLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
@@ -23,8 +23,12 @@ export const AppLayout = () => {
 
   const links = [
     { to: '/app', label: 'Dashboard', icon: DashboardOutlinedIcon, active: pathname === '/app' },
-    ...(user?.role === 'CUSTOMER' || user?.role === 'MERCHANT' ? [{ to: user?.role === 'MERCHANT' ? '/app/payments' : '/app/activity', label: 'Activity', icon: ReceiptLongOutlinedIcon,
-      active: ['/app/activity', '/app/funding', '/app/payments', '/app/payouts', '/app/transfers/'].some(path => pathname.startsWith(path)) }] : []),
+    ...(user?.role === 'CUSTOMER' || user?.role === 'MERCHANT' ? [{
+      to: user?.role === 'MERCHANT' ? '/app/activity?type=payments' : '/app/activity',
+      label: 'Activity',
+      icon: ReceiptLongOutlinedIcon,
+      active: ['/app/activity', '/app/funding', '/app/payments', '/app/payouts', '/app/transfers/'].some(path => pathname.startsWith(path)),
+    }] : []),
     { to: '/profile', label: 'Profile', icon: PersonOutlineIcon, active: pathname === '/profile' },
     ...(user?.role === 'OPS' ? [{ to: '/app/failure-lab', label: 'Failure Lab', icon: ScienceOutlinedIcon, active: pathname.startsWith('/app/failure-lab') }] : []),
   ];
@@ -61,14 +65,39 @@ export const AppLayout = () => {
                 onClick={event => setAnchor(event.currentTarget)}>
                 <AccountCircleIcon />
               </IconButton>
-              <Menu id="account-menu" anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}
-                transformOrigin={{ horizontal: 'right', vertical: 'top' }} anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-                slotProps={{ list: { 'aria-labelledby': 'account-menu-button' }, paper: { sx: { minWidth: 200, maxWidth: 'calc(100vw - 32px)' } } }}>
-                {links.map(({ to, label, icon: Icon, active }) => (
-                  <MenuItem key={to} component={RouterLink} to={to} selected={active} onClick={() => setAnchor(null)}>
-                    <ListItemIcon><Icon fontSize="small" /></ListItemIcon><ListItemText>{label}</ListItemText>
-                  </MenuItem>
-                ))}
+              <Menu
+                id="account-menu"
+                anchorEl={anchor}
+                open={Boolean(anchor)}
+                onClose={() => setAnchor(null)}
+                transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+                anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+                slotProps={{
+                  list: { 'aria-labelledby': 'account-menu-button', sx: { py: 0.5 } },
+                  paper: { sx: { minWidth: 220, maxWidth: 'calc(100vw - 32px)' } },
+                }}
+              >
+                {user && (
+                  <Box sx={{ px: 2, py: 1.5, outline: 'none' }} tabIndex={-1}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600 }} noWrap>
+                      {user.fullName?.trim() || user.email}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                      {formatRoleLabel(user.role)}
+                    </Typography>
+                    {user.fullName?.trim() && (
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }} noWrap>
+                        {user.email}
+                      </Typography>
+                    )}
+                  </Box>
+                )}
+                <Divider />
+                <MenuItem component={RouterLink} to="/profile" selected={pathname === '/profile'} onClick={() => setAnchor(null)}>
+                  <ListItemIcon><PersonOutlineIcon fontSize="small" /></ListItemIcon>
+                  <ListItemText>Profile</ListItemText>
+                </MenuItem>
+                <Divider />
                 <MenuItem
                   disabled={isSigningOut}
                   onClick={async () => {

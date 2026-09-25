@@ -1,62 +1,134 @@
-import { useEffect } from 'react';
-import { Box, Button, Card, CardContent, Container, Stack, Tab, Tabs, Typography } from '@mui/material';
-import { Link as RouterLink, useNavigate } from 'react-router-dom';
+import { Box, Button, Container, Stack, Tab, Tabs, Typography } from '@mui/material';
+import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/hooks/useAuth';
 import { RecentTransfersTable } from '../../transfer/components/RecentTransfersTable';
 import { FinancialHistory } from '../components/FinancialHistory';
 import { FinancialForm } from '../components/FinancialForm';
-import { FinancialDomain, Funding, Payout, Payment, Posted } from '../types';
+import { WithdrawalSection } from '../components/WithdrawalSection';
+import { FinancialDomain, Funding, Payment, Posted } from '../types';
 import { financialApi } from '../api';
 
-export const ActivityPage = ({ domain }: { domain?: FinancialDomain }) => {
+export const ActivityPage = ({ domain: routeDomain }: { domain?: FinancialDomain }) => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const customer = user?.role === 'CUSTOMER';
-  const merchant = user?.role === 'MERCHANT';
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isCustomer = user?.role === 'CUSTOMER';
+  const isMerchant = user?.role === 'MERCHANT';
 
-  const effectiveDomain: FinancialDomain | undefined =
-    merchant && (!domain || (domain as string) === 'transfers') ? 'payments' : domain;
+  // Determine active tab from route prop or search params
+  const queryType = searchParams.get('type');
+  let activeTab: string;
 
-  useEffect(() => {
-    if (merchant && (!domain || (domain as string) === 'transfers')) {
-      navigate('/app/payments', { replace: true });
+  if (routeDomain) {
+    activeTab = routeDomain;
+  } else if (queryType) {
+    if (isMerchant) {
+      activeTab = queryType === 'payouts' ? 'payouts' : 'payments';
+    } else {
+      activeTab = ['transfers', 'payments', 'funding', 'payouts'].includes(queryType) ? queryType : 'transfers';
     }
-  }, [merchant, domain, navigate]);
+  } else {
+    activeTab = isMerchant ? 'payments' : 'transfers';
+  }
+
+  const handleTabChange = (_: React.SyntheticEvent, newValue: string) => {
+    // Navigate using query parameters on /app/activity to keep URLs stable and persistent
+    setSearchParams({ type: newValue });
+  };
 
   const tabs = [
-    ...(customer ? [{ value: 'transfers', title: 'Transfers', to: '/app/activity' }] : []),
-    { value: 'payments', title: merchant ? 'Customer payments' : 'Payments', to: '/app/payments' },
-    ...(customer ? [{ value: 'funding', title: 'Funding', to: '/app/funding' }] : []),
-    { value: 'payouts', title: 'Payouts', to: '/app/payouts' },
+    ...(isCustomer ? [{ value: 'transfers', label: 'Transfers' }] : []),
+    { value: 'payments', label: isMerchant ? 'Customer payments' : 'Payments' },
+    ...(isCustomer ? [{ value: 'funding', label: 'Funding' }] : []),
+    { value: 'payouts', label: 'Payouts' },
   ];
-  const create = effectiveDomain === 'payouts' || (customer && (effectiveDomain === 'funding' || effectiveDomain === 'payments'));
-  const label = effectiveDomain === 'funding' ? 'Add money' : effectiveDomain === 'payments' ? 'Pay merchant' : 'Withdraw';
-  return <Container maxWidth="lg">
-    <Typography component="h1" variant="h4" color="primary.main" sx={{ fontSize: { xs: '1.75rem', md: '2rem' }, mb: 1 }}>Activity</Typography>
-    <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>Review each financial workflow and its recorded outcome.</Typography>
-    <Tabs value={effectiveDomain || 'transfers'} aria-label="Financial activity" variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile sx={{ mb: 3, borderBottom: '1px solid', borderColor: 'divider' }}>
-      {tabs.map(tab => <Tab component={RouterLink} to={tab.to} key={tab.value} value={tab.value} label={tab.title} />)}
-    </Tabs>
-    <Stack spacing={3}>
-      {create && effectiveDomain && <Card sx={{ maxWidth: 620 }}><CardContent sx={{ p: { xs: 2.5, sm: 3 } }}>
-        <Typography component="h2" variant="h6" sx={{ mb: 1 }}>{label}</Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3, lineHeight: 1.7 }}>
-          {effectiveDomain === 'funding' ? 'Request external funding for your wallet. Funds become available after confirmed settlement.'
-            : effectiveDomain === 'payments' ? 'Pay a Merchant using their LedgerGuard merchant wallet ID.'
-            : 'Create an external payout request. Funds are reserved while provider confirmation is pending.'}
+
+  return (
+    <Container maxWidth="lg">
+      <Box sx={{ mb: 3 }}>
+        <Typography component="h1" variant="h4" color="primary.main" sx={{ fontSize: { xs: '1.75rem', md: '2rem' }, fontWeight: 700, mb: 0.75 }}>
+          Financial activity
         </Typography>
-        {effectiveDomain === 'payments' ? <FinancialForm<Posted<Payment>> key={effectiveDomain} domain={effectiveDomain} label={label} merchant
-          submit={(payload, key) => financialApi.payMerchant(payload, key)}
-          onSuccess={result => navigate(`/app/payments/${result.paymentId}`)} /> :
-          <FinancialForm<Posted<Funding | Payout>> key={effectiveDomain} domain={effectiveDomain} label={label}
-            submit={(payload, key) => effectiveDomain === 'funding' ? financialApi.addMoney({ amountMinor: String(payload.amountMinor) }, key)
-              : financialApi.withdraw({ amountMinor: String(payload.amountMinor) }, key)}
-            onSuccess={result => navigate(`/app/${effectiveDomain}/${'fundingId' in result ? result.fundingId : result.payoutId}`)} />}
-      </CardContent></Card>}
-      {effectiveDomain ? <FinancialHistory key={effectiveDomain} domain={effectiveDomain} merchant={merchant} /> : <>
-        {customer && <Box><Button component={RouterLink} to="/app" variant="outlined">Send money</Button></Box>}
-        <RecentTransfersTable />
-      </>}
-    </Stack>
-  </Container>;
+        <Typography variant="body2" color="text.secondary">
+          Review customer payments, refunds and payout activity.
+        </Typography>
+      </Box>
+
+      <Tabs
+        value={activeTab}
+        onChange={handleTabChange}
+        aria-label="Financial activity tabs"
+        variant="scrollable"
+        scrollButtons="auto"
+        allowScrollButtonsMobile
+        sx={{ mb: 3, borderBottom: '1px solid', borderColor: 'divider' }}
+      >
+        {tabs.map(tab => (
+          <Tab
+            key={tab.value}
+            value={tab.value}
+            label={tab.label}
+            sx={{ fontWeight: 600 }}
+          />
+        ))}
+      </Tabs>
+
+      <Stack spacing={3}>
+        {/* Merchant Payouts View: Balanced 2-column withdrawal form + history */}
+        {isMerchant && activeTab === 'payouts' && (
+          <>
+            <WithdrawalSection />
+            <FinancialHistory domain="payouts" merchant={true} />
+          </>
+        )}
+
+        {/* Merchant Payments View: Customer payments list with filters, refund visibility */}
+        {isMerchant && activeTab === 'payments' && (
+          <FinancialHistory domain="payments" merchant={true} />
+        )}
+
+        {/* Customer Views */}
+        {isCustomer && activeTab === 'transfers' && (
+          <>
+            <Box><Button component={RouterLink} to="/app" variant="outlined">Send money</Button></Box>
+            <RecentTransfersTable />
+          </>
+        )}
+
+        {isCustomer && activeTab === 'payments' && (
+          <>
+            <FinancialForm<Posted<Payment>>
+              key="customer-payments"
+              domain="payments"
+              label="Pay merchant"
+              merchant
+              submit={(payload, key) => financialApi.payMerchant(payload, key)}
+              onSuccess={result => navigate(`/app/payments/${result.paymentId}`)}
+            />
+            <FinancialHistory domain="payments" merchant={false} />
+          </>
+        )}
+
+        {isCustomer && activeTab === 'funding' && (
+          <>
+            <FinancialForm<Posted<Funding>>
+              key="customer-funding"
+              domain="funding"
+              label="Add money"
+              submit={(payload, key) => financialApi.addMoney({ amountMinor: String(payload.amountMinor) }, key)}
+              onSuccess={result => navigate(`/app/funding/${result.fundingId}`)}
+            />
+            <FinancialHistory domain="funding" merchant={false} />
+          </>
+        )}
+
+        {isCustomer && activeTab === 'payouts' && (
+          <>
+            <WithdrawalSection onWithdrawalSuccess={result => navigate(`/app/payouts/${result.payoutId}`)} />
+            <FinancialHistory domain="payouts" merchant={false} />
+          </>
+        )}
+      </Stack>
+    </Container>
+  );
 };

@@ -34,9 +34,22 @@ export const ProviderOperationPage = ({ domain }: { domain: ProviderDomain }) =>
             <Alert severity={operation.status === 'FAILED' ? 'error' : operation.status === 'SUCCEEDED' ? 'success' : 'info'} sx={{ mt: 3 }}>
               {providerMessage(domain, operation.status)}
             </Alert>
+            {domain === 'payouts' && (
+              <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
+                <strong>Simulation rail:</strong> LedgerGuard simulates payment rail settlement. Payouts hold funds in your wallet immediately upon creation. Confirmed settlement consumes the hold; failed payouts release the hold back to your available balance.
+              </Alert>
+            )}
             {!query.isError && needsConfirmation(operation.status) && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>Status checks every 4 seconds while this page is active.</Typography>}
             <RecordFields fields={[
               { label: domain === 'funding' ? 'Funding ID' : 'Payout ID', value: operationId, copy: true },
+              ...(domain === 'payouts' ? [{
+                label: 'Hold status',
+                value: operation.status === 'SUCCEEDED'
+                  ? 'Consumed (Settled)'
+                  : operation.status === 'FAILED'
+                  ? 'Released (Available balance restored)'
+                  : 'Active (Funds held in wallet)'
+              }] : []),
               { label: 'Requested', value: formatDateTime(operation.createdAt) },
               ...(operation.completedAt ? [{ label: 'Completed', value: formatDateTime(operation.completedAt) }] : []),
               { label: 'Provider reference', value: operation.providerOperationId, copy: true },

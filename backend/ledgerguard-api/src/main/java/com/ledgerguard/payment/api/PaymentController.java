@@ -1,16 +1,14 @@
 package com.ledgerguard.payment.api;
 
-import com.ledgerguard.ledger.domain.Money;
 import com.ledgerguard.identity.domain.UserRole;
-import com.ledgerguard.payment.application.PaymentQueryService;
-import com.ledgerguard.shared.api.PagedResponse;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestParam;
+import com.ledgerguard.ledger.domain.Money;
 import com.ledgerguard.payment.application.CreatePaymentCommand;
+import com.ledgerguard.payment.application.PaymentQueryService;
 import com.ledgerguard.payment.application.PaymentResult;
 import com.ledgerguard.payment.application.PaymentService;
+import com.ledgerguard.payment.domain.PaymentStatus;
 import com.ledgerguard.payment.domain.PaymentValidationException;
+import com.ledgerguard.shared.api.PagedResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -18,10 +16,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
@@ -45,10 +46,20 @@ public class PaymentController {
     @PreAuthorize("hasAnyRole('CUSTOMER', 'MERCHANT')")
     public PagedResponse<PaymentSummaryResponse> list(
             @AuthenticationPrincipal Jwt jwt,
+            @RequestParam(name = "paymentId", required = false) UUID paymentId,
+            @RequestParam(name = "status", required = false) PaymentStatus status,
+            @RequestParam(name = "sort", defaultValue = "newest") String sort,
             @RequestParam(name = "page", defaultValue = "0") int page,
             @RequestParam(name = "size", defaultValue = "20") int size) {
         return queryService.list(UUID.fromString(jwt.getSubject()),
-                UserRole.valueOf(jwt.getClaimAsString("role")), page, size);
+                UserRole.valueOf(jwt.getClaimAsString("role")), paymentId, status, sort, page, size);
+    }
+
+    @GetMapping(value = "/summary", produces = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize("hasRole('MERCHANT')")
+    public ResponseEntity<MerchantSummaryResponse> summary(@AuthenticationPrincipal Jwt jwt) {
+        UUID userId = UUID.fromString(jwt.getSubject());
+        return ResponseEntity.ok(queryService.getMerchantSummary(userId));
     }
 
     @GetMapping(value = "/{paymentId}", produces = MediaType.APPLICATION_JSON_VALUE)

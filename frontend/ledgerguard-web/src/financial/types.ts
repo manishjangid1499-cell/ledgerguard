@@ -1,5 +1,6 @@
 export type ProviderStatus = 'CREATED' | 'PROCESSING' | 'UNKNOWN' | 'RECONCILIATION_REQUIRED' | 'SUCCEEDED' | 'FAILED';
 export type PaymentStatus = 'CREATED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED';
+export type RefundStatus = 'NOT_REFUNDED' | 'PARTIALLY_REFUNDED' | 'FULLY_REFUNDED';
 export type ProviderDomain = 'funding' | 'payouts';
 export type FinancialDomain = ProviderDomain | 'payments';
 export interface Page<T> { items: T[]; page: number; size: number; totalElements: number; totalPages: number }
@@ -15,6 +16,8 @@ export interface Payment {
   grossAmountMinor: string; feeAmountMinor: string; merchantNetAmountMinor: string;
   currency: string; status: PaymentStatus; journalTransactionId: string | null;
   createdAt: string; completedAt: string | null;
+  refundedAmountMinor?: string;
+  refundStatus?: RefundStatus;
 }
 export interface Refund {
   refundId: string; refundAmountMinor: string; merchantDebitAmountMinor: string; feeDebitAmountMinor: string;
@@ -25,3 +28,21 @@ export interface PaymentDetail {
 }
 export type Posted<T> = T & { replayed: boolean };
 export interface PaymentRequest { merchantLedgerAccountId: string; amountMinor: number }
+
+export interface MerchantSummary {
+  grossReceivedMinor: string;
+  platformFeesMinor: string;
+  netReceivedMinor: string;
+  refundedAmountMinor: string;
+  pendingPayoutsCount: number;
+  pendingPayoutsAmountMinor: string;
+  currency: string;
+}
+
+export interface PaymentFilters {
+  paymentId?: string;
+  status?: PaymentStatus;
+  sort?: 'newest' | 'oldest';
+  page?: number;
+  size?: number;
+}

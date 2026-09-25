@@ -109,7 +109,10 @@ public class OpenApiConfig {
                     + "**Required Roles**: `ROLE_CUSTOMER` (Bearer JWT). `MERCHANT` and `OPS` are forbidden.");
         }
         // 5. Merchant-Only Endpoints
-        else if (method.equals("POST") && path.equals("/api/payments/{paymentId}/refund")) {
+        else if (
+                (method.equals("POST") && path.equals("/api/payments/{paymentId}/refund"))
+                || (method.equals("GET") && path.equals("/api/payments/summary"))
+        ) {
             operation.setSecurity(List.of(new SecurityRequirement().addList(BEARER_AUTH)));
             operation.addExtension("x-required-roles", List.of("MERCHANT"));
             operation.setDescription((operation.getDescription() != null ? operation.getDescription() + "\n\n" : "")
