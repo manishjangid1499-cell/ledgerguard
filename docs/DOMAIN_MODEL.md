@@ -62,7 +62,7 @@ This document formalizes the domain concepts, state models, and fundamental inva
   - **Settlement Double-Entry**: Posts exactly 2 balanced journal entries:
     $$\text{DEBIT } \text{PSP\_CLEARING} \quad (\text{amountMinor}), \quad \text{CREDIT } \text{CUSTOMER} \quad (\text{amountMinor})$$
   - **Database Constraints & Trigger**: Direct inserts must be `PROCESSING` and reference an active INR `CUSTOMER` account owned by the initiator. Transitions to `SUCCEEDED` require non-null `provider_operation_id`, `completed_at`, and a valid `POSTED` settlement journal. Completed funding operations are immutable and cannot be updated or deleted.
-- **Payout (`payouts`)**: An outflow of funds from a `CUSTOMER_WALLET` or `MERCHANT_WALLET` to an external bank account (Wallet $\to$ PSP Clearing), secured with balance holds during transit.
+- **Payout (`payouts`)**: An outflow of funds from a `CUSTOMER_WALLET` or `MERCHANT_WALLET` via simulated payout provider clearing (Wallet $\to$ PSP Clearing), secured with balance holds during transit.
 
 ---
 

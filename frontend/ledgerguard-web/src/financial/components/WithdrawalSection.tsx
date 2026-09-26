@@ -20,19 +20,23 @@ import {
 } from '@mui/material';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link as RouterLink } from 'react-router-dom';
+import { useAuth } from '../../auth/hooks/useAuth';
 import { walletApi } from '../../wallet/api/walletApi';
 import { financialApi } from '../api';
 import { Payout, Posted } from '../types';
 import { formatMinorUnitsToInr, parseInrToMinorUnits } from '../../shared/utils/money';
+import { financialError, isUnconfirmed } from '../feedback';
 import { getErrorMessage } from '../../shared/api/errorMessage';
 
 export const WithdrawalSection = ({ onWithdrawalSuccess }: { onWithdrawalSuccess?: (payout: Posted<Payout>) => void }) => {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [amountStr, setAmountStr] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitUnconfirmed, setIsSubmitUnconfirmed] = useState(false);
   const [successPayout, setSuccessPayout] = useState<Posted<Payout> | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState<string>(() => crypto.randomUUID());
 
@@ -43,6 +47,7 @@ export const WithdrawalSection = ({ onWithdrawalSuccess }: { onWithdrawalSuccess
   });
 
   const availableMinor = wallet ? BigInt(wallet.availableBalanceMinor) : 0n;
+  const isWalletInactive = Boolean(wallet && wallet.status && wallet.status !== 'ACTIVE');
 
   // Validate parsed amount
   const parsed = parseInrToMinorUnits(amountStr);
@@ -68,6 +73,11 @@ export const WithdrawalSection = ({ onWithdrawalSuccess }: { onWithdrawalSuccess
     e.preventDefault();
     setValidationError(null);
     setSubmitError(null);
+
+    if (isWalletInactive) {
+      setValidationError(`Your wallet status is ${wallet?.status}. Withdrawals are unavailable while your wallet is not active.`);
+      return;
+    }
 
     if (!amountStr.trim()) {
       setValidationError('Please enter an amount to withdraw.');
@@ -108,7 +118,13 @@ export const WithdrawalSection = ({ onWithdrawalSuccess }: { onWithdrawalSuccess
       }
     } catch (err: unknown) {
       setConfirmOpen(false);
-      setSubmitError(getErrorMessage(err, 'Withdrawal request could not be processed. Review your activity before retrying.'));
+      const unconfirmed = isUnconfirmed(err);
+      setIsSubmitUnconfirmed(unconfirmed);
+      if (unconfirmed) {
+        setSubmitError('The withdrawal outcome could not be confirmed. Check your Activity or refresh your wallet before retrying.');
+      } else {
+        setSubmitError(financialError(err, 'Withdrawal request could not be processed. Review your activity before retrying.'));
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -132,7 +148,7 @@ export const WithdrawalSection = ({ onWithdrawalSuccess }: { onWithdrawalSuccess
       )}
 
       {submitError && (
-        <Alert severity="error" onClose={() => setSubmitError(null)} sx={{ mb: 3 }}>
+        <Alert severity={isSubmitUnconfirmed ? 'warning' : 'error'} onClose={() => setSubmitError(null)} sx={{ mb: 3 }}>
           {submitError}
         </Alert>
       )}
@@ -146,8 +162,16 @@ export const WithdrawalSection = ({ onWithdrawalSuccess }: { onWithdrawalSuccess
                 Withdraw funds
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 3, lineHeight: 1.6 }}>
-                Move money from your merchant balance through the simulated payout provider. The requested amount remains on hold until the provider confirms the result.
+                {user?.role === 'MERCHANT'
+                  ? 'Move money from your merchant balance through LedgerGuard’s simulated payout provider. The requested amount remains on hold until the provider confirms the result.'
+                  : 'Move money from your wallet balance through LedgerGuard’s simulated payout provider. The requested amount remains on hold until the provider confirms the result.'}
               </Typography>
+
+              {isWalletInactive && (
+                <Alert severity="warning" sx={{ mb: 2.5 }}>
+                  Your wallet status is {wallet?.status}. Withdrawals are unavailable while your wallet is not active.
+                </Alert>
+              )}
 
               <Box component="form" noValidate onSubmit={handleInitiateClick}>
                 <Stack spacing={2.5}>
@@ -157,7 +181,7 @@ export const WithdrawalSection = ({ onWithdrawalSuccess }: { onWithdrawalSuccess
                     required
                     fullWidth
                     value={amountStr}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || isWalletInactive}
                     error={Boolean(validationError || exceedsAvailable)}
                     helperText={
                       validationError ||
@@ -181,7 +205,7 @@ export const WithdrawalSection = ({ onWithdrawalSuccess }: { onWithdrawalSuccess
                   <Button
                     type="submit"
                     variant="contained"
-                    disabled={isSubmitting || !amountStr || exceedsAvailable || isWalletLoading}
+                    disabled={isSubmitting || !amountStr || exceedsAvailable || isWalletLoading || isWalletInactive}
                     sx={{ alignSelf: { xs: 'stretch', sm: 'flex-start' }, fontWeight: 600, px: 3 }}
                   >
                     {isSubmitting ? 'Processing…' : 'Withdraw funds'}

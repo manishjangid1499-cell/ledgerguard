@@ -174,7 +174,7 @@ Each phase must satisfy its definition of done before advancing to the next.
 ---
 
 ### Phase 21: External Payouts (Withdrawals)
-- **Purpose**: Implement wallet withdrawals to external bank accounts using balance holds, payout lifecycles, and failure recovery.
+- **Purpose**: Implement wallet withdrawals via simulated payout provider clearing using balance holds, payout lifecycles, and failure recovery.
 - **Deliverables**: `PayoutService`, `PayoutController` (`POST /api/payouts`), Flyway migration for `payouts`, balance hold integration during in-flight payouts.
 - **Validation**: Tests verifying that funds are held during payout processing, released on PSP failure, and consumed on PSP success.
 - **Git Commit Message**: `feat(payout): implement external payout processing with balance hold protection`

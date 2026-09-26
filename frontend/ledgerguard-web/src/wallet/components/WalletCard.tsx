@@ -11,25 +11,25 @@ import { getErrorMessage } from '../../shared/api/errorMessage';
 import { ApiError } from '../../shared/types/api.types';
 import { AmountDisplay } from '../../shared/components/AmountDisplay';
 
-export const WalletCard = () => {
+export const WalletCard = ({ compact = false }: { compact?: boolean } = {}) => {
   const queryClient = useQueryClient();
   const { data: wallet, isLoading, isError, error, isFetching } = useQuery({
     queryKey: ['wallet'], queryFn: walletApi.getMyWallet, staleTime: 30_000,
   });
   const refresh = () => { void queryClient.invalidateQueries({ queryKey: ['wallet'] }); };
   return (
-    <Card sx={{ height: '100%', minHeight: 390 }}>
+    <Card sx={{ height: '100%', minHeight: compact ? undefined : 390 }}>
       <CardContent sx={{ p: { xs: 2.5, sm: 3 } }}>
         <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
             <AccountBalanceWalletOutlinedIcon color="secondary" />
-            <Typography component="h2" variant="h6">Wallet balance</Typography>
+            <Typography component="h2" variant="h6">{compact ? 'Current wallet' : 'Wallet balance'}</Typography>
           </Stack>
           <Tooltip title="Refresh balance">
             <span><IconButton aria-label="Refresh wallet balance" onClick={refresh} disabled={isFetching}><RefreshIcon fontSize="small" /></IconButton></span>
           </Tooltip>
         </Stack>
-        {isLoading ? <DataLoading label="Loading wallet balance" minHeight={270} /> : isError || !wallet ? (
+        {isLoading ? <DataLoading label="Loading wallet balance" minHeight={compact ? 180 : 270} /> : isError || !wallet ? (
           <Alert severity="error">
             {error instanceof ApiError && error.status === 404 ? 'No wallet is available for this account.' :
               getErrorMessage(error, 'Unable to load your wallet balance. Please try again.')}
@@ -47,14 +47,18 @@ export const WalletCard = () => {
                 </Stack>
               ))}
             </Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-              {wallet.accountType === 'MERCHANT' ? 'Merchant wallet ID' : 'Wallet ID · Share to receive transfers'}
-            </Typography>
-            {wallet.accountType === 'MERCHANT' && <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Share this ID with a Customer to receive a LedgerGuard payment.</Typography>}
-            <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', bgcolor: 'background.default', pl: 1.5, py: 0.5, borderRadius: 1 }}>
-              <Typography variant="body2" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', fontFamily: 'monospace', fontSize: '0.8rem' }}>{wallet.ledgerAccountId}</Typography>
-              <CopyButton value={wallet.ledgerAccountId} label="wallet ID" />
-            </Stack>
+            {!compact && (
+              <>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                  {wallet.accountType === 'MERCHANT' ? 'Merchant wallet ID' : 'Wallet ID · Share to receive transfers'}
+                </Typography>
+                {wallet.accountType === 'MERCHANT' && <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Share this ID with a Customer to receive a LedgerGuard payment.</Typography>}
+                <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', bgcolor: 'background.default', pl: 1.5, py: 0.5, borderRadius: 1 }}>
+                  <Typography variant="body2" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', fontFamily: 'monospace', fontSize: '0.8rem' }}>{wallet.ledgerAccountId}</Typography>
+                  <CopyButton value={wallet.ledgerAccountId} label="wallet ID" />
+                </Stack>
+              </>
+            )}
           </>
         )}
       </CardContent>

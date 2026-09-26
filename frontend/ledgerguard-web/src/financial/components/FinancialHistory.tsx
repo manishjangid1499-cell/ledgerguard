@@ -131,11 +131,20 @@ export const FinancialHistory = ({ domain, merchant = false }: { domain: Financi
     staleTime: 15_000,
   });
 
-  const title = domain === 'payments' ? (merchant ? 'Customer payments' : 'Merchant payments') : domain === 'funding' ? 'Funding history' : 'Payout history';
-  const subtitle = domain === 'payments' && merchant ? 'Payments customers make to your business using Pay merchant.' : undefined;
-  const empty = domain === 'payments' ? (merchant ? 'No customer payments found.' : 'No payments found.') : domain === 'funding' ? 'No funding activity yet.' : 'No payouts yet.';
-  const data = query.data;
+  const title = domain === 'payments'
+    ? (merchant ? 'Customer payments' : 'Merchant payments')
+    : domain === 'funding'
+    ? 'Funding history'
+    : (merchant ? 'Payout history' : 'Withdrawal history');
 
+  const subtitle = domain === 'payments' && merchant ? 'Payments customers make to your business using Pay merchant.' : undefined;
+  const empty = domain === 'payments'
+    ? (merchant ? 'No customer payments found.' : 'No payments found.')
+    : domain === 'funding'
+    ? 'No funding activity yet.'
+    : (merchant ? 'No payouts yet.' : 'No withdrawals yet.');
+
+  const data = query.data;
   const hasActiveFilters = Boolean(debouncedSearch || statusFilter || sortOrder !== 'newest');
 
   const handleClearFilters = () => {
@@ -285,7 +294,7 @@ export const FinancialHistory = ({ domain, merchant = false }: { domain: Financi
                     </Typography>
                     <StatusBadge status={row.status} />
                   </Stack>
-                  {isPayments && (
+                  {isPayments && merchant && (
                     <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                       Fee {formatMinorUnitsToInr(row.fee)} · Net {formatMinorUnitsToInr(row.net)}
                     </Typography>
@@ -313,17 +322,19 @@ export const FinancialHistory = ({ domain, merchant = false }: { domain: Financi
 
             {/* Desktop Table */}
             <TableContainer tabIndex={0} role="region" aria-label={`${title}, scroll horizontally for more columns`} sx={{ display: { xs: 'none', md: 'block' } }}>
-              <Table aria-label={title} sx={{ minWidth: isPayments ? 960 : 700 }}>
+              <Table aria-label={title} sx={{ minWidth: isPayments ? (merchant ? 960 : 760) : 700 }}>
                 <TableHead>
                   <TableRow>
-                    <TableCell>{isPayments ? 'Payment ID' : domain === 'payouts' ? 'Payout ID' : 'Funding ID'}</TableCell>
-                    <TableCell align="right">{isPayments ? 'Gross' : 'Amount'}</TableCell>
-                    {isPayments && (
+                    <TableCell>{isPayments ? 'Payment ID' : domain === 'payouts' ? (merchant ? 'Payout ID' : 'Withdrawal ID') : 'Funding ID'}</TableCell>
+                    <TableCell align="right">{isPayments ? (merchant ? 'Gross' : 'Amount paid') : 'Amount'}</TableCell>
+                    {isPayments && merchant && (
                       <>
                         <TableCell align="right">Platform fee</TableCell>
                         <TableCell align="right">Merchant net</TableCell>
-                        <TableCell>Refunded</TableCell>
                       </>
+                    )}
+                    {isPayments && (
+                      <TableCell>Refunded</TableCell>
                     )}
                     <TableCell>Status</TableCell>
                     <TableCell>{domain === 'payouts' ? 'Requested' : 'Date'}</TableCell>
@@ -347,7 +358,7 @@ export const FinancialHistory = ({ domain, merchant = false }: { domain: Financi
                       <TableCell align="right" sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
                         {formatMinorUnitsToInr(row.amount)}
                       </TableCell>
-                      {isPayments && (
+                      {isPayments && merchant && (
                         <>
                           <TableCell align="right" sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
                             {formatMinorUnitsToInr(row.fee)}
@@ -355,16 +366,18 @@ export const FinancialHistory = ({ domain, merchant = false }: { domain: Financi
                           <TableCell align="right" sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: 'secondary.main' }}>
                             {formatMinorUnitsToInr(row.net)}
                           </TableCell>
-                          <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                            {row.refundStatus === 'FULLY_REFUNDED' ? (
-                              <Chip size="small" label="Fully refunded" color="warning" variant="outlined" sx={{ fontWeight: 600 }} />
-                            ) : row.refundStatus === 'PARTIALLY_REFUNDED' ? (
-                              <Chip size="small" label={`${formatMinorUnitsToInr(row.refundedAmountMinor ?? '0')} refunded`} color="warning" sx={{ fontWeight: 600 }} />
-                            ) : (
-                              <Typography variant="caption" color="text.secondary">Not refunded</Typography>
-                            )}
-                          </TableCell>
                         </>
+                      )}
+                      {isPayments && (
+                        <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                          {row.refundStatus === 'FULLY_REFUNDED' ? (
+                            <Chip size="small" label="Fully refunded" color="warning" variant="outlined" sx={{ fontWeight: 600 }} />
+                          ) : row.refundStatus === 'PARTIALLY_REFUNDED' ? (
+                            <Chip size="small" label={`${formatMinorUnitsToInr(row.refundedAmountMinor ?? '0')} refunded`} color="warning" sx={{ fontWeight: 600 }} />
+                          ) : (
+                            <Typography variant="caption" color="text.secondary">Not refunded</Typography>
+                          )}
+                        </TableCell>
                       )}
                       <TableCell>
                         <StatusBadge status={row.status} />

@@ -1,33 +1,33 @@
 import React, { useState, useRef } from 'react';
 import {
-  Card,
-  CardContent,
-  Typography,
-  TextField,
-  Button,
-  Stack,
   Alert,
   AlertTitle,
-  CircularProgress,
   Box,
-  InputAdornment,
+  Button,
+  Card,
+  CardContent,
+  CircularProgress,
   Collapse,
   Dialog,
-  DialogTitle,
+  DialogActions,
   DialogContent,
   DialogContentText,
-  DialogActions,
+  DialogTitle,
+  InputAdornment,
+  Stack,
+  TextField,
+  Typography,
 } from '@mui/material';
-import SendIcon from '@mui/icons-material/Send';
-import ReplayIcon from '@mui/icons-material/Replay';
+import PaymentsIcon from '@mui/icons-material/Payments';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ReplayIcon from '@mui/icons-material/Replay';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link as RouterLink } from 'react-router-dom';
-import { transferApi } from '../api/transferApi';
+import { financialApi } from '../api';
 import { walletApi } from '../../wallet/api/walletApi';
 import { formatMinorUnitsToInr, parseInrToMinorUnits } from '../../shared/utils/money';
-import { TransferResponse } from '../types/transfer.types';
-import { transferFeedback } from '../utils/transferFeedback';
+import { financialError, isUnconfirmed } from '../feedback';
+import { Payment, Posted } from '../types';
 
 function generateUUID(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -40,16 +40,20 @@ function generateUUID(): string {
   });
 }
 
-export const TransferForm: React.FC = () => {
+export interface CustomerPaymentFormProps {
+  onSuccess?: (payment: Posted<Payment>) => void;
+}
+
+export const CustomerPaymentForm: React.FC<CustomerPaymentFormProps> = ({ onSuccess }) => {
   const queryClient = useQueryClient();
 
-  const [destinationId, setDestinationId] = useState('');
-  const [amountInr, setAmountInr] = useState('');
-  const [clientError, setClientError] = useState<{ field: 'destination' | 'amount'; message: string } | null>(null);
-  const [lastSuccess, setLastSuccess] = useState<TransferResponse | null>(null);
+  const [merchantId, setMerchantId] = useState('');
+  const [amountStr, setAmountStr] = useState('');
+  const [clientError, setClientError] = useState<{ field: 'merchant' | 'amount'; message: string } | null>(null);
+  const [lastSuccess, setLastSuccess] = useState<Posted<Payment> | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const submitting = useRef(false);
-  const destinationInput = useRef<HTMLInputElement>(null);
+  const merchantInput = useRef<HTMLInputElement>(null);
   const amountInput = useRef<HTMLInputElement>(null);
 
   const { data: wallet } = useQuery({
@@ -61,123 +65,133 @@ export const TransferForm: React.FC = () => {
   const availableMinor = wallet ? BigInt(wallet.availableBalanceMinor) : 0n;
   const isWalletInactive = Boolean(wallet && wallet.status && wallet.status !== 'ACTIVE');
 
-  // Logical retry idempotency tracking
   const idempotencyRef = useRef<{
     key: string;
-    boundDestination: string;
+    boundMerchant: string;
     boundAmount: string;
   }>({
     key: generateUUID(),
-    boundDestination: '',
+    boundMerchant: '',
     boundAmount: '',
   });
 
-  const handleDestinationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMerchantChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value.trim();
-    setDestinationId(val);
+    setMerchantId(val);
     setClientError(null);
     setLastSuccess(null);
+    paymentMutation.reset();
 
-    transferMutation.reset();
-
-    if (val !== idempotencyRef.current.boundDestination) {
+    if (val !== idempotencyRef.current.boundMerchant) {
       idempotencyRef.current = {
         key: generateUUID(),
-        boundDestination: val,
-        boundAmount: amountInr.trim(),
+        boundMerchant: val,
+        boundAmount: amountStr.trim(),
       };
     }
   };
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
-    setAmountInr(val);
+    setAmountStr(val);
     setClientError(null);
     setLastSuccess(null);
-    transferMutation.reset();
+    paymentMutation.reset();
 
     if (val.trim() !== idempotencyRef.current.boundAmount) {
       idempotencyRef.current = {
         key: generateUUID(),
-        boundDestination: destinationId.trim(),
+        boundMerchant: merchantId.trim(),
         boundAmount: val.trim(),
       };
     }
   };
 
-  const transferMutation = useMutation({
+  const paymentMutation = useMutation({
     mutationFn: async ({
-      destId,
+      merchantAccountId,
       minorUnits,
       key,
     }: {
-      destId: string;
+      merchantAccountId: string;
       minorUnits: number;
       key: string;
     }) => {
-      return transferApi.createTransfer(
+      return financialApi.payMerchant(
         {
-          destinationLedgerAccountId: destId,
+          merchantLedgerAccountId: merchantAccountId,
           amountMinor: minorUnits,
         },
         key
       );
     },
-    retry: false, // Strict: no automatic blind HTTP retries for financial writes
     onSuccess: (data) => {
+      submitting.current = false;
       setLastSuccess(data);
-      setDestinationId('');
-      setAmountInr('');
+      setMerchantId('');
+      setAmountStr('');
+      setClientError(null);
       setConfirmOpen(false);
-      // Prepare a fresh key for next new logical transfer
+
       idempotencyRef.current = {
         key: generateUUID(),
-        boundDestination: '',
+        boundMerchant: '',
         boundAmount: '',
       };
-      // Invalidate queries so balance and transfer history update from authoritative server state
+
       void queryClient.invalidateQueries({ queryKey: ['wallet'] });
-      void queryClient.invalidateQueries({ queryKey: ['transfers'] });
+      void queryClient.invalidateQueries({ queryKey: ['payments'] });
+      void queryClient.invalidateQueries({ queryKey: ['payments', 'recent'] });
+
+      if (onSuccess) {
+        onSuccess(data);
+      }
     },
     onError: () => {
+      submitting.current = false;
       setConfirmOpen(false);
     },
-    onSettled: () => { submitting.current = false; },
   });
 
-  const parsed = parseInrToMinorUnits(amountInr);
+  const parsed = parseInrToMinorUnits(amountStr);
   const requestedMinor = parsed.ok && parsed.minorUnits !== undefined ? BigInt(parsed.minorUnits) : 0n;
   const isAmountValid = parsed.ok && requestedMinor > 0n;
   const exceedsAvailable = wallet && isAmountValid && requestedMinor > availableMinor;
-  const remainingAfterTransfer = exceedsAvailable ? 0n : (wallet ? availableMinor - requestedMinor : 0n);
+  const remainingAfterPayment = exceedsAvailable ? 0n : (wallet ? availableMinor - requestedMinor : 0n);
 
   const handleInitiateClick = (e: React.FormEvent) => {
     e.preventDefault();
-    if (submitting.current) return;
     setClientError(null);
     setLastSuccess(null);
+    paymentMutation.reset();
 
     if (isWalletInactive) {
-      setClientError({ field: 'amount', message: `Your wallet status is ${wallet?.status}. Transfers are unavailable while your wallet is not active.` });
+      setClientError({ field: 'amount', message: `Your wallet status is ${wallet?.status}. Payments are unavailable while your wallet is not active.` });
       return;
     }
 
-    const dest = destinationId.trim();
-    if (!dest) {
-      setClientError({ field: 'destination', message: 'Recipient wallet ID is required.' });
-      destinationInput.current?.focus();
+    const mId = merchantId.trim();
+    if (!mId) {
+      setClientError({ field: 'merchant', message: 'Merchant payment ID is required.' });
+      merchantInput.current?.focus();
       return;
     }
 
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(dest)) {
-      setClientError({ field: 'destination', message: 'Enter a valid 36-character wallet ID.' });
-      destinationInput.current?.focus();
+    if (!uuidRegex.test(mId)) {
+      setClientError({ field: 'merchant', message: 'Enter a valid 36-character merchant payment ID.' });
+      merchantInput.current?.focus();
+      return;
+    }
+
+    if (!amountStr.trim()) {
+      setClientError({ field: 'amount', message: 'Payment amount is required.' });
+      amountInput.current?.focus();
       return;
     }
 
     if (!parsed.ok || parsed.minorUnits === undefined || parsed.minorUnits <= 0) {
-      setClientError({ field: 'amount', message: parsed.error || 'Enter a valid amount.' });
+      setClientError({ field: 'amount', message: parsed.error || 'Enter a positive amount with up to 2 decimal places.' });
       amountInput.current?.focus();
       return;
     }
@@ -194,36 +208,36 @@ export const TransferForm: React.FC = () => {
     setConfirmOpen(true);
   };
 
-  const handleConfirmTransfer = () => {
+  const handleConfirmPayment = () => {
     if (submitting.current || !parsed.ok || parsed.minorUnits === undefined) return;
 
-    const dest = destinationId.trim();
-    idempotencyRef.current.boundDestination = dest;
-    idempotencyRef.current.boundAmount = amountInr.trim();
+    const mId = merchantId.trim();
+    idempotencyRef.current.boundMerchant = mId;
+    idempotencyRef.current.boundAmount = amountStr.trim();
 
     submitting.current = true;
-    transferMutation.mutate({
-      destId: dest,
+    paymentMutation.mutate({
+      merchantAccountId: mId,
       minorUnits: parsed.minorUnits,
       key: idempotencyRef.current.key,
     });
   };
 
-  const feedback = transferMutation.isError ? transferFeedback(transferMutation.error) : null;
+  const isUnconfirmedError = isUnconfirmed(paymentMutation.error);
 
   return (
-    <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, height: '100%' }}>
+    <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
       <CardContent sx={{ p: { xs: 2.5, sm: 3 } }}>
         <Typography variant="h6" component="h2" sx={{ fontWeight: 700, mb: 0.5 }}>
-          Send money
+          Pay merchant
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
-          Send INR to another Customer wallet.
+          Send a payment to a business using their merchant payment ID.
         </Typography>
 
         {isWalletInactive && (
           <Alert severity="warning" sx={{ mb: 2.5 }}>
-            Your wallet status is {wallet?.status}. Transfers are unavailable while your wallet is not active.
+            Your wallet status is {wallet?.status}. Payments are unavailable while your wallet is not active.
           </Alert>
         )}
 
@@ -235,72 +249,63 @@ export const TransferForm: React.FC = () => {
               sx={{ mb: 2.5 }}
               onClose={() => setLastSuccess(null)}
               action={
-                <Button component={RouterLink} to={`/app/transfers/${lastSuccess.transferId}`} color="inherit" size="small">
+                <Button component={RouterLink} to={`/app/payments/${lastSuccess.paymentId}`} color="inherit" size="small">
                   View details
                 </Button>
               }
             >
               <AlertTitle sx={{ fontWeight: 700 }}>
-                {lastSuccess.replayed ? 'Transfer already completed' : 'Transfer completed'}
+                {lastSuccess.replayed ? 'Payment already completed' : 'Payment completed'}
               </AlertTitle>
-              {lastSuccess.replayed && 'Your original transfer is confirmed. No additional funds were moved. '}
-              Transfer ID: <code style={{ wordBreak: 'break-all' }}>{lastSuccess.transferId}</code> · Status: Completed
+              {lastSuccess.replayed && 'Your original payment is confirmed. No additional funds were moved. '}
+              Payment ID: <code style={{ wordBreak: 'break-all' }}>{lastSuccess.paymentId}</code> · Status: Completed
             </Alert>
           )}
         </Collapse>
 
-        <Collapse in={transferMutation.isError}>
-          {feedback && (
+        <Collapse in={paymentMutation.isError}>
+          {paymentMutation.isError && (
             <Alert
-              severity={feedback.severity}
+              severity={isUnconfirmedError ? 'warning' : 'error'}
               sx={{ mb: 2.5 }}
               action={
-                feedback.payMerchantLink ? (
-                  <Button
-                    color="inherit"
-                    size="small"
-                    component={RouterLink}
-                    to="/app/payments"
-                  >
-                    Pay merchant
-                  </Button>
-                ) : feedback.canRetry ? (
-                  <Button
-                    color="inherit"
-                    size="small"
-                    startIcon={<ReplayIcon />}
-                    onClick={handleConfirmTransfer}
-                    disabled={transferMutation.isPending}
-                  >
-                    Retry
-                  </Button>
-                ) : undefined
+                <Button
+                  color="inherit"
+                  size="small"
+                  startIcon={<ReplayIcon />}
+                  onClick={handleConfirmPayment}
+                  disabled={paymentMutation.isPending}
+                >
+                  Retry
+                </Button>
               }
             >
               <AlertTitle sx={{ fontWeight: 700 }}>
-                {feedback.title}
+                {isUnconfirmedError ? 'Payment outcome unconfirmed' : 'Payment could not be completed'}
               </AlertTitle>
-              {feedback.message}
+              {isUnconfirmedError
+                ? 'The payment outcome could not be confirmed. Check your Activity or refresh your wallet before retrying.'
+                : financialError(paymentMutation.error, 'The payment could not be processed. Review the details and try again.')}
             </Alert>
           )}
         </Collapse>
 
-        <Box component="form" onSubmit={handleInitiateClick} noValidate aria-busy={transferMutation.isPending}>
+        <Box component="form" onSubmit={handleInitiateClick} noValidate aria-busy={paymentMutation.isPending}>
           <Stack spacing={2.5}>
             <TextField
-              id="transfer-destination"
-              inputRef={destinationInput}
-              label="Recipient wallet ID"
-              error={clientError?.field === 'destination'}
-              value={destinationId}
-              onChange={handleDestinationChange}
+              id="payment-merchant-id"
+              inputRef={merchantInput}
+              label="Merchant payment ID"
+              error={clientError?.field === 'merchant'}
+              value={merchantId}
+              onChange={handleMerchantChange}
               fullWidth
               required
-              disabled={transferMutation.isPending || isWalletInactive}
+              disabled={paymentMutation.isPending || isWalletInactive}
               helperText={
-                clientError?.field === 'destination'
+                clientError?.field === 'merchant'
                   ? clientError.message
-                  : 'Enter the customer wallet ID that should receive these funds.'
+                  : 'Ask the merchant for the payment ID shown on their dashboard.'
               }
               slotProps={{
                 input: {
@@ -309,17 +314,23 @@ export const TransferForm: React.FC = () => {
               }}
             />
 
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography variant="caption" color="text.secondary">
+                Available: <strong>{formatMinorUnitsToInr(wallet?.availableBalanceMinor ?? '0')}</strong>
+              </Typography>
+            </Box>
+
             <TextField
-              id="transfer-amount"
+              id="payment-amount"
               inputRef={amountInput}
               label="Amount (INR)"
               error={clientError?.field === 'amount'}
-              placeholder="e.g. 100.00"
-              value={amountInr}
+              placeholder="e.g. 250.00"
+              value={amountStr}
               onChange={handleAmountChange}
               fullWidth
               required
-              disabled={transferMutation.isPending || isWalletInactive}
+              disabled={paymentMutation.isPending || isWalletInactive}
               helperText={clientError?.field === 'amount' ? clientError.message : 'Enter a positive amount with up to 2 decimal places.'}
               slotProps={{
                 htmlInput: { inputMode: 'decimal' },
@@ -335,49 +346,49 @@ export const TransferForm: React.FC = () => {
                 type="submit"
                 variant="contained"
                 size="large"
-                disabled={transferMutation.isPending || !destinationId.trim() || !amountInr.trim() || isWalletInactive}
+                disabled={paymentMutation.isPending || !merchantId.trim() || !amountStr.trim() || isWalletInactive}
                 startIcon={
-                  transferMutation.isPending ? (
+                  paymentMutation.isPending ? (
                     <CircularProgress size={20} color="inherit" aria-hidden="true" />
                   ) : (
-                    <SendIcon />
+                    <PaymentsIcon />
                   )
                 }
                 sx={{ px: 4, py: 1.2, fontWeight: 700, width: { xs: '100%', sm: 'auto' } }}
               >
-                {transferMutation.isPending ? 'Sending money…' : 'Send money'}
+                {paymentMutation.isPending ? 'Processing payment…' : 'Pay merchant'}
               </Button>
             </Box>
           </Stack>
         </Box>
       </CardContent>
 
-      {/* Transfer Confirmation Dialog */}
+      {/* Confirmation Dialog */}
       <Dialog
         open={confirmOpen}
-        onClose={() => { if (!transferMutation.isPending) setConfirmOpen(false); }}
-        aria-labelledby="confirm-transfer-dialog-title"
-        aria-describedby="confirm-transfer-dialog-description"
+        onClose={() => { if (!paymentMutation.isPending) setConfirmOpen(false); }}
+        aria-labelledby="confirm-payment-dialog-title"
+        aria-describedby="confirm-payment-dialog-description"
       >
-        <DialogTitle id="confirm-transfer-dialog-title" sx={{ fontWeight: 700 }}>
-          {`Send ${isAmountValid ? formatMinorUnitsToInr(String(requestedMinor)) : ''}?`}
+        <DialogTitle id="confirm-payment-dialog-title" sx={{ fontWeight: 700 }}>
+          {`Pay ${isAmountValid ? formatMinorUnitsToInr(String(requestedMinor)) : ''} to this merchant?`}
         </DialogTitle>
         <DialogContent>
-          <DialogContentText id="confirm-transfer-dialog-description" sx={{ color: 'text.secondary', mb: 2 }}>
-            A completed transfer cannot be automatically reversed.
+          <DialogContentText id="confirm-payment-dialog-description" sx={{ color: 'text.secondary', mb: 2 }}>
+            Completed payments cannot be manually reversed by the customer. Eligible refunds are issued at the merchant&apos;s discretion.
           </DialogContentText>
           <Box sx={{ p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
             <Stack spacing={1}>
               <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
-                <Typography variant="body2" color="text.secondary">Recipient wallet:</Typography>
+                <Typography variant="body2" color="text.secondary">Merchant payment ID:</Typography>
                 <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
-                  {destinationId.length >= 12
-                    ? `${destinationId.slice(0, 8)}…${destinationId.slice(-4)}`
-                    : destinationId}
+                  {merchantId.length >= 12
+                    ? `${merchantId.slice(0, 8)}…${merchantId.slice(-4)}`
+                    : merchantId}
                 </Typography>
               </Stack>
               <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
-                <Typography variant="body2" color="text.secondary">Amount to send:</Typography>
+                <Typography variant="body2" color="text.secondary">Payment amount:</Typography>
                 <Typography variant="body2" sx={{ fontWeight: 600, color: 'primary.main' }}>
                   {formatMinorUnitsToInr(String(requestedMinor))}
                 </Typography>
@@ -386,7 +397,7 @@ export const TransferForm: React.FC = () => {
                 <Stack direction="row" sx={{ justifyContent: 'space-between', pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
                   <Typography variant="body2" color="text.secondary">Remaining available balance:</Typography>
                   <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {formatMinorUnitsToInr(String(remainingAfterTransfer))}
+                    {formatMinorUnitsToInr(String(remainingAfterPayment))}
                   </Typography>
                 </Stack>
               )}
@@ -394,17 +405,17 @@ export const TransferForm: React.FC = () => {
           </Box>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <Button onClick={() => setConfirmOpen(false)} disabled={transferMutation.isPending} color="inherit">
+          <Button onClick={() => setConfirmOpen(false)} disabled={paymentMutation.isPending} color="inherit">
             Cancel
           </Button>
           <Button
-            onClick={handleConfirmTransfer}
+            onClick={handleConfirmPayment}
             variant="contained"
             color="primary"
-            disabled={transferMutation.isPending}
-            startIcon={transferMutation.isPending ? <CircularProgress size={16} color="inherit" /> : undefined}
+            disabled={paymentMutation.isPending}
+            startIcon={paymentMutation.isPending ? <CircularProgress size={16} color="inherit" /> : undefined}
           >
-            {transferMutation.isPending ? 'Sending…' : 'Confirm transfer'}
+            {paymentMutation.isPending ? 'Processing…' : 'Confirm payment'}
           </Button>
         </DialogActions>
       </Dialog>

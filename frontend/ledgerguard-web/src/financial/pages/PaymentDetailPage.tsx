@@ -39,6 +39,7 @@ import { getErrorMessage } from '../../shared/api/errorMessage';
 export const PaymentDetailPage = () => {
   const { paymentId = '' } = useParams();
   const { user } = useAuth();
+  const isMerchant = user?.role === 'MERCHANT';
   const queryClient = useQueryClient();
   const [refundPage, setRefundPage] = useState(0);
   const [showRefundForm, setShowRefundForm] = useState(false);
@@ -69,7 +70,7 @@ export const PaymentDetailPage = () => {
     ? BigInt(detail.refundableAmountMinor)
     : 0n;
 
-  const eligible = user?.role === 'MERCHANT' && payment?.status === 'SUCCEEDED' && maxRefundableMinor > 0n;
+  const eligible = isMerchant && payment?.status === 'SUCCEEDED' && maxRefundableMinor > 0n;
 
   // Validation of refund input
   const parsedRefund = parseInrToMinorUnits(refundAmountStr);
@@ -144,8 +145,13 @@ export const PaymentDetailPage = () => {
 
   return (
     <Container maxWidth="lg">
-      <Button component={RouterLink} to="/app/activity?type=payments" startIcon={<ArrowBackIcon />} sx={{ mb: 2 }}>
-        Back to customer payments
+      <Button
+        component={RouterLink}
+        to="/app/activity?type=payments"
+        startIcon={<ArrowBackIcon />}
+        sx={{ mb: 2 }}
+      >
+        {isMerchant ? 'Back to customer payments' : 'Back to payments'}
       </Button>
       <Stack direction="row" useFlexGap spacing={2} sx={{ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', mb: 3 }}>
         <Typography component="h1" variant="h4" color="primary.main" sx={{ fontSize: { xs: '1.75rem', md: '2rem' }, fontWeight: 700 }}>
@@ -171,20 +177,24 @@ export const PaymentDetailPage = () => {
             <Stack spacing={3}>
               <Card>
                 <CardContent sx={{ p: { xs: 2.5, sm: 3 } }}>
-                  <Typography variant="body2" color="text.secondary">Gross payment · {payment.currency}</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {isMerchant ? 'Gross payment' : 'Amount paid'} · {payment.currency}
+                  </Typography>
                   <AmountDisplay amount={payment.grossAmountMinor} />
                   <StatusBadge status={payment.status} />
 
-                  {/* Merchant-friendly financial fields */}
+                  {/* Financial Breakdown */}
                   <Box sx={{ mt: 2.5 }}>
                     <Typography component="h2" variant="subtitle2" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 0.5, fontSize: '0.75rem', mb: 1, fontWeight: 700 }}>
                       Financial breakdown
                     </Typography>
                     <RecordFields fields={[
-                      { label: 'Platform fee', value: formatMinorUnitsToInr(payment.feeAmountMinor) },
-                      { label: 'Merchant net amount', value: formatMinorUnitsToInr(payment.merchantNetAmountMinor) },
-                      { label: 'Total refunded', value: formatMinorUnitsToInr(detail.refundedAmountMinor) },
-                      { label: 'Remaining refundable amount', value: formatMinorUnitsToInr(detail.refundableAmountMinor) },
+                      ...(isMerchant ? [
+                        { label: 'Platform fee', value: formatMinorUnitsToInr(payment.feeAmountMinor) },
+                        { label: 'Merchant net amount', value: formatMinorUnitsToInr(payment.merchantNetAmountMinor) },
+                      ] : []),
+                      { label: isMerchant ? 'Total refunded' : 'Refunded amount', value: formatMinorUnitsToInr(detail.refundedAmountMinor) },
+                      ...(isMerchant ? [{ label: 'Remaining refundable amount', value: formatMinorUnitsToInr(detail.refundableAmountMinor) }] : []),
                       { label: 'Created date', value: formatDateTime(payment.createdAt) },
                       ...(payment.completedAt ? [{ label: 'Completed date', value: formatDateTime(payment.completedAt) }] : []),
                     ]} />
@@ -200,7 +210,7 @@ export const PaymentDetailPage = () => {
                     <RecordFields fields={[
                       { label: 'Payment ID', value: payment.paymentId, copy: true },
                       { label: 'Customer wallet ID', value: payment.customerLedgerAccountId, copy: true },
-                      { label: 'Merchant wallet ID', value: payment.merchantLedgerAccountId, copy: true },
+                      { label: isMerchant ? 'Merchant wallet ID' : 'Merchant payment ID', value: payment.merchantLedgerAccountId, copy: true },
                       ...(payment.journalTransactionId ? [{ label: 'Journal transaction ID', value: payment.journalTransactionId, copy: true }] : []),
                     ]} />
                   </Box>
@@ -222,7 +232,7 @@ export const PaymentDetailPage = () => {
                 </CardContent>
               </Card>
 
-              {/* Refund Form Card */}
+              {/* Refund Form Card for Merchants */}
               {showRefundForm && (
                 <Card sx={{ borderLeft: '4px solid', borderColor: 'warning.main' }}>
                   <CardContent sx={{ p: { xs: 2.5, sm: 3 } }}>
@@ -310,12 +320,14 @@ export const PaymentDetailPage = () => {
                 </Card>
               )}
 
-              {/* Refund History Table */}
-              <RefundHistory refunds={detail.refunds} onPageChange={setRefundPage} />
+              {/* Refund History Table for Merchants or if refunds exist */}
+              {(isMerchant || (detail.refunds && detail.refunds.items.length > 0)) && (
+                <RefundHistory refunds={detail.refunds} onPageChange={setRefundPage} />
+              )}
             </Stack>
           </Grid>
           <Grid size={{ xs: 12, md: 5 }} sx={{ alignSelf: 'flex-start' }}>
-            <WalletCard />
+            <WalletCard compact={true} />
           </Grid>
         </Grid>
       )}

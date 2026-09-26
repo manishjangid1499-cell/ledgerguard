@@ -1,12 +1,14 @@
-import { Box, Button, Container, Stack, Tab, Tabs, Typography } from '@mui/material';
-import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Box, Container, Stack, Tab, Tabs, Typography } from '@mui/material';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/hooks/useAuth';
+import { TransferForm } from '../../transfer/components/TransferForm';
 import { RecentTransfersTable } from '../../transfer/components/RecentTransfersTable';
 import { FinancialHistory } from '../components/FinancialHistory';
-import { FinancialForm } from '../components/FinancialForm';
 import { WithdrawalSection } from '../components/WithdrawalSection';
-import { FinancialDomain, Funding, Payment, Posted } from '../types';
-import { financialApi } from '../api';
+import { CustomerPaymentForm } from '../components/CustomerPaymentForm';
+import { CustomerFundingForm } from '../components/CustomerFundingForm';
+import { FinancialDomain } from '../types';
 
 export const ActivityPage = ({ domain: routeDomain }: { domain?: FinancialDomain }) => {
   const { user } = useAuth();
@@ -20,19 +22,35 @@ export const ActivityPage = ({ domain: routeDomain }: { domain?: FinancialDomain
   let activeTab: string;
 
   if (routeDomain) {
-    activeTab = routeDomain;
+    if (isCustomer && routeDomain === 'payouts') {
+      activeTab = 'withdrawals';
+    } else {
+      activeTab = routeDomain;
+    }
   } else if (queryType) {
     if (isMerchant) {
-      activeTab = queryType === 'payouts' ? 'payouts' : 'payments';
+      activeTab = queryType === 'payouts' || queryType === 'withdrawals' ? 'payouts' : 'payments';
     } else {
-      activeTab = ['transfers', 'payments', 'funding', 'payouts'].includes(queryType) ? queryType : 'transfers';
+      if (queryType === 'payouts') {
+        activeTab = 'withdrawals';
+      } else if (['transfers', 'payments', 'funding', 'withdrawals'].includes(queryType)) {
+        activeTab = queryType;
+      } else {
+        activeTab = 'transfers';
+      }
     }
   } else {
     activeTab = isMerchant ? 'payments' : 'transfers';
   }
 
+  // Canonicalize payouts alias to withdrawals for customer without polluting history
+  useEffect(() => {
+    if (isCustomer && queryType === 'payouts') {
+      setSearchParams({ type: 'withdrawals' }, { replace: true });
+    }
+  }, [isCustomer, queryType, setSearchParams]);
+
   const handleTabChange = (_: React.SyntheticEvent, newValue: string) => {
-    // Navigate using query parameters on /app/activity to keep URLs stable and persistent
     setSearchParams({ type: newValue });
   };
 
@@ -40,17 +58,24 @@ export const ActivityPage = ({ domain: routeDomain }: { domain?: FinancialDomain
     ...(isCustomer ? [{ value: 'transfers', label: 'Transfers' }] : []),
     { value: 'payments', label: isMerchant ? 'Customer payments' : 'Payments' },
     ...(isCustomer ? [{ value: 'funding', label: 'Funding' }] : []),
-    { value: 'payouts', label: 'Payouts' },
+    { value: isCustomer ? 'withdrawals' : 'payouts', label: isCustomer ? 'Withdrawals' : 'Payouts' },
   ];
 
   return (
     <Container maxWidth="lg">
       <Box sx={{ mb: 3 }}>
-        <Typography component="h1" variant="h4" color="primary.main" sx={{ fontSize: { xs: '1.75rem', md: '2rem' }, fontWeight: 700, mb: 0.75 }}>
+        <Typography
+          component="h1"
+          variant="h4"
+          color="primary.main"
+          sx={{ fontSize: { xs: '1.75rem', md: '2rem' }, fontWeight: 700, mb: 0.75 }}
+        >
           Financial activity
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Review customer payments, refunds and payout activity.
+          {isMerchant
+            ? 'Review customer payments, refunds and payout activity.'
+            : 'Review transfers, merchant payments, wallet funding and withdrawals.'}
         </Typography>
       </Box>
 
@@ -77,7 +102,7 @@ export const ActivityPage = ({ domain: routeDomain }: { domain?: FinancialDomain
         {/* Merchant Payouts View: Balanced 2-column withdrawal form + history */}
         {isMerchant && activeTab === 'payouts' && (
           <>
-            <WithdrawalSection />
+            <WithdrawalSection onWithdrawalSuccess={result => navigate(`/app/payouts/${result.payoutId}`)} />
             <FinancialHistory domain="payouts" merchant={true} />
           </>
         )}
@@ -90,39 +115,26 @@ export const ActivityPage = ({ domain: routeDomain }: { domain?: FinancialDomain
         {/* Customer Views */}
         {isCustomer && activeTab === 'transfers' && (
           <>
-            <Box><Button component={RouterLink} to="/app" variant="outlined">Send money</Button></Box>
+            <TransferForm />
             <RecentTransfersTable />
           </>
         )}
 
         {isCustomer && activeTab === 'payments' && (
           <>
-            <FinancialForm<Posted<Payment>>
-              key="customer-payments"
-              domain="payments"
-              label="Pay merchant"
-              merchant
-              submit={(payload, key) => financialApi.payMerchant(payload, key)}
-              onSuccess={result => navigate(`/app/payments/${result.paymentId}`)}
-            />
+            <CustomerPaymentForm onSuccess={result => navigate(`/app/payments/${result.paymentId}`)} />
             <FinancialHistory domain="payments" merchant={false} />
           </>
         )}
 
         {isCustomer && activeTab === 'funding' && (
           <>
-            <FinancialForm<Posted<Funding>>
-              key="customer-funding"
-              domain="funding"
-              label="Add money"
-              submit={(payload, key) => financialApi.addMoney({ amountMinor: String(payload.amountMinor) }, key)}
-              onSuccess={result => navigate(`/app/funding/${result.fundingId}`)}
-            />
+            <CustomerFundingForm onSuccess={result => navigate(`/app/funding/${result.fundingId}`)} />
             <FinancialHistory domain="funding" merchant={false} />
           </>
         )}
 
-        {isCustomer && activeTab === 'payouts' && (
+        {isCustomer && activeTab === 'withdrawals' && (
           <>
             <WithdrawalSection onWithdrawalSuccess={result => navigate(`/app/payouts/${result.payoutId}`)} />
             <FinancialHistory domain="payouts" merchant={false} />

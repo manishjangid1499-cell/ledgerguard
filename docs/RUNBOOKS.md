@@ -460,7 +460,7 @@ All operational reconciliation endpoints require authentication with role `OPS`:
 * **List Investigation Cases:** `GET /api/reconciliation/cases?status=OPEN`
 * **Claim Investigation Case:** `POST /api/reconciliation/cases/{caseId}/claim`
 * **Auto-Repair Drifted Snapshot:** `POST /api/reconciliation/cases/{caseId}/repair-snapshot`
-* **Resolve Case Manually:** `POST /api/reconciliation/cases/{caseId}/resolve` (Body: `{"resolutionNote": "Verified against bank settlement file"}`)
+* **Resolve Case Manually:** `POST /api/reconciliation/cases/{caseId}/resolve` (Body: `{"resolutionNote": "Verified against the simulated provider settlement record"}`)
 
 ---
 
