@@ -4,6 +4,7 @@ import com.ledgerguard.identity.api.dto.AuthResponse;
 import com.ledgerguard.identity.api.dto.LoginRequest;
 import com.ledgerguard.identity.api.dto.RegisterRequest;
 import com.ledgerguard.identity.api.dto.UserSummaryResponse;
+import com.ledgerguard.identity.domain.EmailNormalizer;
 import com.ledgerguard.identity.domain.User;
 import com.ledgerguard.identity.domain.UserRepository;
 import com.ledgerguard.identity.domain.UserRole;
@@ -150,9 +151,6 @@ public class AuthService {
     }
 
     private String normalizeEmail(String email) {
-        if (email == null) {
-            return null;
-        }
-        return email.trim().toLowerCase(Locale.ROOT);
+        return EmailNormalizer.normalize(email);
     }
 }

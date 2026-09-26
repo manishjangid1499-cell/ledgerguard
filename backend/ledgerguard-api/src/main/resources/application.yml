@@ -123,6 +123,12 @@ ledgerguard:
     integrity:
       sample-interval: ${LEDGERGUARD_METRICS_INTEGRITY_SAMPLE_INTERVAL:15s}
       scheduler-enabled: ${LEDGERGUARD_METRICS_INTEGRITY_SCHEDULER_ENABLED:true}
+  bootstrap:
+    ops:
+      enabled: ${LEDGERGUARD_OPS_BOOTSTRAP_ENABLED:false}
+      email: ${LEDGERGUARD_OPS_BOOTSTRAP_EMAIL:}
+      password: ${LEDGERGUARD_OPS_BOOTSTRAP_PASSWORD:}
+      full-name: ${LEDGERGUARD_OPS_BOOTSTRAP_FULL_NAME:Operations Engineer}
 
 server:
   port: 8080

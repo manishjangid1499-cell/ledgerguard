@@ -616,8 +616,23 @@ Verified by `.\mvnw.cmd clean verify` (2026-09-06).
    cd frontend/ledgerguard-web
    npm run dev
    ```
-3. **Log in as Operations Engineer**:
-   Navigate to `http://localhost:5173/login`, authenticate with `ops@ledgerguard.com` / valid password.
+3. **Provision and Log in as Operations Engineer**:
+   > [!IMPORTANT]
+   > **OPS Account Provisioning Policy**:
+   > - **No Public Self-Registration**: Public self-registration (`/api/auth/register`) strictly permits `CUSTOMER` and `MERCHANT` roles only. Attempting to register with role `OPS` is rejected with `403 Forbidden` (`VALIDATION_FAILED`).
+   > - **Local Development & Demo Only**: To enable administrative access for local testing or portfolio demonstration, LedgerGuard provides an explicit, development-only bootstrap (`DevelopmentOpsBootstrap`).
+   > - **Strict Development Profile Required**: The bootstrap component is annotated with `@Profile("dev")` and requires `spring.profiles.active=dev` (e.g. via `-Dspring-boot.run.profiles=dev`). It is completely excluded from other profiles (`test`, `staging`, `prod`, `production`, or no profile).
+   > - **Required Environment Variables**:
+   >   - `LEDGERGUARD_OPS_BOOTSTRAP_ENABLED=true`
+   >   - `LEDGERGUARD_OPS_BOOTSTRAP_EMAIL=ops@ledgerguard.local` (or locally chosen well-formed email)
+   >   - `LEDGERGUARD_OPS_BOOTSTRAP_PASSWORD=[REDACTED]` (locally supplied secret: minimum 12 characters, max 72 UTF-8 bytes)
+   >   - `LEDGERGUARD_OPS_BOOTSTRAP_FULL_NAME="Operations Engineer"` (optional, 2-120 chars)
+   > - **Fail-Fast Startup Validation**: When enabled under `dev`, the application validates all configuration parameters at startup and fails fast with a sanitized `IllegalStateException` if email/password/name is blank/invalid, if password violates policy, if the email belongs to an existing `CUSTOMER` or `MERCHANT` account (no role promotion), or if an existing OPS account is `DISABLED` (no silent reactivation).
+   > - **Startup & Idempotency**: Start `ledgerguard-api` with the above environment variables and profile active. On startup, exactly one `ACTIVE` user with role `OPS` is created without any wallet or ledger accounts. Subsequent restarts are idempotent and preserve existing credentials.
+   > - **Production Isolation**: Production containers run with `SPRING_PROFILES_ACTIVE=prod` and `LEDGERGUARD_OPS_BOOTSTRAP_ENABLED=false`. Production OPS provisioning is intentionally handled as a separate future controlled operational procedure.
+   > - **Cleanup**: Unset or remove bootstrap credentials from process environment after verification.
+
+   Navigate to `http://localhost:5173/login`, authenticate with the configured OPS email (e.g. `ops@ledgerguard.local`) and your locally supplied password (`[REDACTED]`). Upon authentication, you will be directed to `/app` displaying the Operations console and navigation to `/app/failure-lab`.
 4. **Inspect Role-Based Navigation**:
    Verify the "Failure Lab" button (with `ScienceIcon`) is present in the top navigation bar and in the user menu.
 5. **Role Guard Verification**:
