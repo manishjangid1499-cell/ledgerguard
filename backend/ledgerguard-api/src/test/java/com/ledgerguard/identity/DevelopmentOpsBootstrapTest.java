@@ -53,7 +53,7 @@ class DevelopmentOpsBootstrapTest {
     private DevelopmentOpsBootstrap bootstrap;
 
     private static String newValidTestPassword() {
-        return "Aa1!" + UUID.randomUUID();
+        return UUID.randomUUID().toString();
     }
 
     @BeforeEach

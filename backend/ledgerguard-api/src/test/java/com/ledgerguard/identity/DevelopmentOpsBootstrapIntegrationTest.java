@@ -51,7 +51,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class DevelopmentOpsBootstrapIntegrationTest extends AbstractIntegrationTest {
 
     private static final String BOOTSTRAP_OPS_EMAIL = "ops.integration@ledgerguard.local";
-    private static final String BOOTSTRAP_OPS_PASSWORD = "Aa1!" + UUID.randomUUID();
+    private static final String BOOTSTRAP_OPS_PASSWORD =
+            UUID.randomUUID().toString();
     private static final String BOOTSTRAP_OPS_NAME = "Bootstrap Integration Ops";
 
     @DynamicPropertySource
