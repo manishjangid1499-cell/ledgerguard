@@ -133,6 +133,14 @@ public class User {
         return this.status == UserStatus.ACTIVE;
     }
 
+    public void updatePassword(String newPasswordHash) {
+        this.passwordHash = Objects.requireNonNull(newPasswordHash, "passwordHash cannot be null");
+    }
+
+    public void updateFullName(String newFullName) {
+        this.fullName = newFullName;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

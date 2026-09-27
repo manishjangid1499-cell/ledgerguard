@@ -24,6 +24,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
+import com.ledgerguard.reconciliation.application.ReconciliationEngine;
+import com.ledgerguard.reconciliation.domain.ReconciliationTrigger;
+import org.springframework.http.HttpStatus;
+
 /**
  * Operations REST controller exposing reconciliation runs, detected discrepancy items,
  * operational review queues, claim assignment, snapshot auto-repair, and manual resolution.
@@ -38,13 +42,28 @@ public class ReconciliationController {
     private final ReconciliationCaseQueryService queryService;
     private final ReconciliationCaseManagementService managementService;
     private final SnapshotAutoRepairService autoRepairService;
+    private final ReconciliationEngine reconciliationEngine;
 
     public ReconciliationController(ReconciliationCaseQueryService queryService,
                                     ReconciliationCaseManagementService managementService,
-                                    SnapshotAutoRepairService autoRepairService) {
+                                    SnapshotAutoRepairService autoRepairService,
+                                    ReconciliationEngine reconciliationEngine) {
         this.queryService = queryService;
         this.managementService = managementService;
         this.autoRepairService = autoRepairService;
+        this.reconciliationEngine = reconciliationEngine;
+    }
+
+    @PostMapping("/runs")
+    public ResponseEntity<ReconciliationRunSummaryResponse> triggerRun() {
+        UUID runId = reconciliationEngine.run(ReconciliationTrigger.ON_DEMAND);
+        ReconciliationRunSummaryResponse body = queryService.findRunById(runId);
+        java.net.URI location = org.springframework.web.servlet.support.ServletUriComponentsBuilder
+                .fromCurrentRequest()
+                .path("/{runId}")
+                .buildAndExpand(runId)
+                .toUri();
+        return ResponseEntity.created(location).body(body);
     }
 
     @GetMapping("/runs")
@@ -69,16 +88,23 @@ public class ReconciliationController {
         return ResponseEntity.ok(queryService.findItemsByRunId(runId, page, size));
     }
 
+    @GetMapping("/summary")
+    public ResponseEntity<ReconciliationDashboardSummaryResponse> getSummary() {
+        return ResponseEntity.ok(queryService.getSummary());
+    }
+
     @GetMapping("/cases")
     public ResponseEntity<PagedResponse<ReconciliationCaseResponse>> getCases(
             @RequestParam(value = "status", required = false) ReconciliationCaseStatus status,
             @RequestParam(value = "level", required = false) ReconciliationLevel level,
             @RequestParam(value = "classification", required = false) ReconciliationClassification classification,
             @RequestParam(value = "problemType", required = false) ReconciliationProblemType problemType,
+            @RequestParam(value = "runId", required = false) UUID runId,
+            @RequestParam(value = "assigned", required = false) Boolean assigned,
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "size", defaultValue = "20") int size
     ) {
-        return ResponseEntity.ok(queryService.findCases(status, level, classification, problemType, page, size));
+        return ResponseEntity.ok(queryService.findCases(status, level, classification, problemType, runId, assigned, page, size));
     }
 
     @GetMapping("/cases/{caseId}")

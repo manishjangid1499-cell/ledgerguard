@@ -11,7 +11,7 @@
 - **Error Content Type**: `application/problem+json` (RFC 9457 Problem Details)
 - **Authentication**: `Authorization: Bearer <access_token>` header for stateless requests; `ledgerguard_refresh_token` HttpOnly cookie for session rotation.
 - **Idempotency**: All mutating financial endpoints accept an `Idempotency-Key: <UUID>` header (Phase 9+)
-- **Authoritative Endpoint Count**: Exactly 29 REST operations across 9 `@RestController` components.
+- **Authoritative Endpoint Count**: Exactly 31 REST operations across 9 `@RestController` components.
 
 ### 1.1 OpenAPI & Swagger UI Specification (Phase 41)
 
@@ -29,7 +29,7 @@
 | **Customer / Merchant** | Bearer JWT (`ROLE_CUSTOMER`, `ROLE_MERCHANT`) | `GET /api/wallets/me`<br>`GET /api/transfers`<br>`GET /api/transfers/{id}`<br>`POST /api/payouts`<br>`GET /api/payouts`<br>`GET /api/payouts/{payoutId}`<br>`GET /api/payments`<br>`GET /api/payments/{paymentId}` | Customers and Merchants; financial reads are owner/participant scoped. `OPS` forbidden. |
 | **Customer Only** | Bearer JWT (`ROLE_CUSTOMER`) | `POST /api/transfers`<br>`POST /api/payments`<br>`POST /api/funding`<br>`GET /api/funding`<br>`GET /api/funding/{fundingId}` | Customer wallets only; transfers require a Customer destination and funding reads are owner scoped. Merchants and `OPS` forbidden. |
 | **Merchant Only** | Bearer JWT (`ROLE_MERCHANT`) | `POST /api/payments/{id}/refund`<br>`GET /api/payments/summary` | Merchant account associated with original payment / merchant dashboard summary. |
-| **Operations (OPS)** | Bearer JWT (`ROLE_OPS`) | All `/api/reconciliation/**` routes (8 endpoints) | Back-office Operations operators. Customers and Merchants forbidden. |
+| **Operations (OPS)** | Bearer JWT (`ROLE_OPS`) | All `/api/reconciliation/**` routes (10 endpoints) | Back-office Operations operators. Customers and Merchants forbidden. |
 | **PSP Provider Callback** | HMAC-SHA256 Signatures | `POST /api/provider/webhooks` | Verified via `X-PSP-Webhook-Signature` and `X-PSP-Webhook-Timestamp` headers. |
 
 ---
@@ -741,14 +741,16 @@ Protected by `ROLE_OPS`. All list endpoints enforce bounded pagination (`size` c
 
 | Method | Endpoint | Access | Purpose |
 | :--- | :--- | :--- | :--- |
+| `POST` | `/api/reconciliation/runs` | `ROLE_OPS` | Triggers synchronous on-demand reconciliation sweep held under PostgreSQL session-scoped advisory lock (`0x4C475F5245434F4EL` = `5496466677182975822L`). Returns `201 Created` with `ReconciliationRunSummaryResponse` and `Location` header, or `409 Conflict` if another run is in progress. |
 | `GET` | `/api/reconciliation/runs` | `ROLE_OPS` | Paged list of reconciliation runs (`page`, `size`, default sort `startedAt DESC`). |
 | `GET` | `/api/reconciliation/runs/{runId}` | `ROLE_OPS` | Detailed status of a reconciliation run including item counters. |
 | `GET` | `/api/reconciliation/runs/{runId}/items` | `ROLE_OPS` | Paged list of items recorded for a reconciliation run. |
-| `GET` | `/api/reconciliation/cases` | `ROLE_OPS` | Filtered review queue (`status`, `problemType`, `page`, `size`). |
+| `GET` | `/api/reconciliation/summary` | `ROLE_OPS` | Authoritative operational summary metrics: open cases, in-review cases, resolved cases, total cases, total runs, and latest run summary. |
+| `GET` | `/api/reconciliation/cases` | `ROLE_OPS` | Filtered review queue (`status`, `level`, `classification`, `problemType`, `runId`, `assigned`, `page`, `size`). |
 | `GET` | `/api/reconciliation/cases/{caseId}` | `ROLE_OPS` | Detailed view of a case joined with its reconciliation item. |
 | `POST` | `/api/reconciliation/cases/{caseId}/claim` | `ROLE_OPS` | Operator claims an `OPEN` case into `IN_REVIEW`. Idempotent for same operator; 409 Conflict if claimed by another. |
-| `POST` | `/api/reconciliation/cases/{caseId}/repair-snapshot` | `ROLE_OPS` | Auto-repairs `SNAPSHOT_MISMATCH` directly from posted journals. Updates snapshot in place; returns `SNAPSHOT_REPAIRED` or `ALREADY_CONSISTENT`. |
-| `POST` | `/api/reconciliation/cases/{caseId}/resolve` | `ROLE_OPS` | Manually resolves a discrepancy or unresolved case with required investigation note (max 1000 chars). Zero financial mutations. |
+| `POST` | `/api/reconciliation/cases/{caseId}/repair-snapshot` | `ROLE_OPS` | Auto-repairs `SNAPSHOT_MISMATCH` directly from posted journals. Updates snapshot in place; returns `SNAPSHOT_REPAIRED` or `ALREADY_CONSISTENT`. Case-scoped only. |
+| `POST` | `/api/reconciliation/cases/{caseId}/resolve` | `ROLE_OPS` | Manually resolves a discrepancy or unresolved case with required investigation note (max 1000 chars, no control characters). Zero financial mutations. |
 
 ---
 

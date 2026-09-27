@@ -5,10 +5,13 @@ const statusColors: Record<string, 'default' | 'success' | 'error' | 'warning' |
   FROZEN: 'warning', TIMED_OUT: 'warning', FAILED: 'error',
   PENDING: 'info', RUNNING: 'info',
   SUCCEEDED: 'success', PROCESSING: 'info', CREATED: 'info', UNKNOWN: 'warning', RECONCILIATION_REQUIRED: 'warning',
+  OPEN: 'warning', IN_REVIEW: 'info', RESOLVED: 'success',
+  DISCREPANCY: 'error', UNRESOLVED: 'warning',
 };
 
 const statusLabels: Record<string, string> = {
   SUCCEEDED: 'Completed', UNKNOWN: 'Confirmation pending', RECONCILIATION_REQUIRED: 'Pending review',
+  IN_REVIEW: 'In review',
 };
 
 export const StatusBadge = ({ status }: { status?: string }) => {

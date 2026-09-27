@@ -129,6 +129,14 @@ ledgerguard:
       email: ${LEDGERGUARD_OPS_BOOTSTRAP_EMAIL:}
       password: ${LEDGERGUARD_OPS_BOOTSTRAP_PASSWORD:}
       full-name: ${LEDGERGUARD_OPS_BOOTSTRAP_FULL_NAME:Operations Engineer}
+  ops:
+    provision:
+      enabled: ${LEDGERGUARD_OPS_PROVISION_ENABLED:false}
+      email: ${LEDGERGUARD_OPS_PROVISION_EMAIL:}
+      password: ${LEDGERGUARD_OPS_PROVISION_PASSWORD:}
+      full-name: ${LEDGERGUARD_OPS_PROVISION_FULL_NAME:Operations Administrator}
+      exit-on-completion: ${LEDGERGUARD_OPS_PROVISION_EXIT_ON_COMPLETION:true}
+      rotate-password: ${LEDGERGUARD_OPS_PROVISION_ROTATE_PASSWORD:false}
 
 server:
   port: 8080

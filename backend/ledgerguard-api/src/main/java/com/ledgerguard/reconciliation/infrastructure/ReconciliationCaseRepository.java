@@ -26,17 +26,33 @@ public interface ReconciliationCaseRepository extends JpaRepository<Reconciliati
 
     Optional<ReconciliationCase> findByReconciliationItemId(UUID reconciliationItemId);
 
-    @Query("SELECT c, i FROM ReconciliationCase c " +
-           "JOIN ReconciliationItem i ON c.reconciliationItemId = i.id " +
-           "WHERE (:status IS NULL OR c.status = :status) " +
-           "AND (:level IS NULL OR i.level = :level) " +
-           "AND (:classification IS NULL OR i.classification = :classification) " +
-           "AND (:problemType IS NULL OR i.problemType = :problemType)")
+    long countByStatus(ReconciliationCaseStatus status);
+
+    @Query(
+        value = "SELECT c, i FROM ReconciliationCase c " +
+                "JOIN ReconciliationItem i ON c.reconciliationItemId = i.id " +
+                "WHERE (:status IS NULL OR c.status = :status) " +
+                "AND (:level IS NULL OR i.level = :level) " +
+                "AND (:classification IS NULL OR i.classification = :classification) " +
+                "AND (:problemType IS NULL OR i.problemType = :problemType) " +
+                "AND (:runId IS NULL OR i.reconciliationRunId = :runId) " +
+                "AND (:assigned IS NULL OR (:assigned = true AND c.assignedToUserId IS NOT NULL) OR (:assigned = false AND c.assignedToUserId IS NULL))",
+        countQuery = "SELECT count(c) FROM ReconciliationCase c " +
+                "JOIN ReconciliationItem i ON c.reconciliationItemId = i.id " +
+                "WHERE (:status IS NULL OR c.status = :status) " +
+                "AND (:level IS NULL OR i.level = :level) " +
+                "AND (:classification IS NULL OR i.classification = :classification) " +
+                "AND (:problemType IS NULL OR i.problemType = :problemType) " +
+                "AND (:runId IS NULL OR i.reconciliationRunId = :runId) " +
+                "AND (:assigned IS NULL OR (:assigned = true AND c.assignedToUserId IS NOT NULL) OR (:assigned = false AND c.assignedToUserId IS NULL))"
+    )
     Page<Object[]> findCasesWithItemFiltered(
             @Param("status") ReconciliationCaseStatus status,
             @Param("level") ReconciliationLevel level,
             @Param("classification") ReconciliationClassification classification,
             @Param("problemType") ReconciliationProblemType problemType,
+            @Param("runId") UUID runId,
+            @Param("assigned") Boolean assigned,
             Pageable pageable
     );
 }

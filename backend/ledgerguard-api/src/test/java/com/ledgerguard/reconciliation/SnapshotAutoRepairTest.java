@@ -231,6 +231,61 @@ class SnapshotAutoRepairTest extends AbstractIntegrationTest {
                 .hasMessageContaining("claimed by another operator");
     }
 
+    @Test
+    @DisplayName("Snapshot repair authorization matrix: verifies all 5 states (OPEN unassigned, IN_REVIEW own, IN_REVIEW other, RESOLVED, non-SNAPSHOT_MISMATCH)")
+    void snapshotRepairAuthorizationMatrix() {
+        // (a) OPEN unassigned case -> PERMITTED (200 OK)
+        postJournal(customerAccount.getId(), clearingAccount.getId(), 15000L);
+        jdbc.update("UPDATE ledger_balance_snapshots SET balance_minor = 5000 WHERE ledger_account_id = ?", customerAccount.getId());
+        UUID caseA = seedCase(customerAccount.getId(), ReconciliationProblemType.SNAPSHOT_MISMATCH);
+        ReconciliationCase caseAEntity = caseRepository.findById(caseA).orElseThrow();
+        assertThat(caseAEntity.getStatus()).isEqualTo(ReconciliationCaseStatus.OPEN);
+        assertThat(caseAEntity.getAssignedToUserId()).isNull();
+        SnapshotRepairResponse resA = autoRepairService.repairSnapshot(caseA, opsA.getId());
+        assertThat(resA.repairedBalanceMinor()).isEqualTo("15000");
+        assertThat(resA.resolutionAction()).isEqualTo("SNAPSHOT_REPAIRED");
+
+        // (b) IN_REVIEW assigned to current OPS -> PERMITTED (200 OK)
+        postJournal(customerAccount.getId(), clearingAccount.getId(), 10000L);
+        jdbc.update("UPDATE ledger_balance_snapshots SET balance_minor = 8000 WHERE ledger_account_id = ?", customerAccount.getId());
+        UUID caseB = seedCase(customerAccount.getId(), ReconciliationProblemType.SNAPSHOT_MISMATCH);
+        ReconciliationCase caseBEntity = caseRepository.findById(caseB).orElseThrow();
+        caseBEntity.claim(opsA.getId());
+        caseRepository.saveAndFlush(caseBEntity);
+        assertThat(caseBEntity.getStatus()).isEqualTo(ReconciliationCaseStatus.IN_REVIEW);
+        assertThat(caseBEntity.getAssignedToUserId()).isEqualTo(opsA.getId());
+        SnapshotRepairResponse resB = autoRepairService.repairSnapshot(caseB, opsA.getId());
+        assertThat(resB.repairedBalanceMinor()).isEqualTo("25000"); // 15000 + 10000 = 25000
+        assertThat(resB.resolutionAction()).isEqualTo("SNAPSHOT_REPAIRED");
+
+        // (c) IN_REVIEW assigned to another OPS -> REJECTED (409 Conflict)
+        UUID caseC = seedCase(customerAccount.getId(), ReconciliationProblemType.SNAPSHOT_MISMATCH);
+        ReconciliationCase caseCEntity = caseRepository.findById(caseC).orElseThrow();
+        caseCEntity.claim(opsB.getId());
+        caseRepository.saveAndFlush(caseCEntity);
+        assertThat(caseCEntity.getStatus()).isEqualTo(ReconciliationCaseStatus.IN_REVIEW);
+        assertThat(caseCEntity.getAssignedToUserId()).isEqualTo(opsB.getId());
+        assertThatThrownBy(() -> autoRepairService.repairSnapshot(caseC, opsA.getId()))
+                .isInstanceOf(ReconciliationConflictException.class)
+                .hasMessageContaining("claimed by another operator");
+
+        // (d) RESOLVED case (resolved with non-repair action) -> REJECTED (409 Conflict)
+        UUID caseD = seedCase(customerAccount.getId(), ReconciliationProblemType.SNAPSHOT_MISMATCH);
+        ReconciliationCase caseDEntity = caseRepository.findById(caseD).orElseThrow();
+        caseDEntity.resolveManualReview(opsA.getId(), "Externally reconciled");
+        caseRepository.saveAndFlush(caseDEntity);
+        assertThat(caseDEntity.getStatus()).isEqualTo(ReconciliationCaseStatus.RESOLVED);
+        assertThatThrownBy(() -> autoRepairService.repairSnapshot(caseD, opsA.getId()))
+                .isInstanceOf(ReconciliationConflictException.class)
+                .hasMessageContaining("is already resolved with non-repair action");
+
+        // (e) non-SNAPSHOT_MISMATCH case -> REJECTED (409 Conflict)
+        UUID caseE = seedCase(UUID.randomUUID(), ReconciliationProblemType.PROVIDER_STATUS_MISMATCH);
+        assertThatThrownBy(() -> autoRepairService.repairSnapshot(caseE, opsA.getId()))
+                .isInstanceOf(ReconciliationConflictException.class)
+                .hasMessageContaining("not eligible for snapshot auto-repair");
+    }
+
     // ── Helper methods ────────────────────────────────────────────────────────
 
     private void postJournal(UUID customerAccId, UUID clearingAccId, long amountMinor) {

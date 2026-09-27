@@ -940,6 +940,53 @@
         "x-required-roles": [
           "OPS"
         ]
+      },
+      "post": {
+        "tags": [
+          "reconciliation-controller"
+        ],
+        "summary": "Trigger on-demand synchronous reconciliation run",
+        "description": "**Required Roles**: `ROLE_OPS` (Bearer JWT). Customers and Merchants are strictly forbidden.",
+        "operationId": "triggerRun",
+        "responses": {
+          "201": {
+            "description": "Created",
+            "headers": {
+              "Location": {
+                "description": "Relative URI pointing to the newly created reconciliation run resource",
+                "schema": {
+                  "type": "string",
+                  "example": "/api/reconciliation/runs/550e8400-e29b-41d4-a716-446655440000"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconciliationRunSummaryResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict - Reconciliation is already running",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "OPS"
+        ]
       }
     },
     "/api/reconciliation/runs/{runId}": {
@@ -1125,6 +1172,23 @@
               "type": "integer",
               "format": "int32",
               "default": 20
+            }
+          },
+          {
+            "name": "runId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "assigned",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -1386,6 +1450,36 @@
           }
         ],
         "x-auth-type": "BEARER_JWT"
+      }
+    },
+    "/api/reconciliation/summary": {
+      "get": {
+        "tags": [
+          "reconciliation-controller"
+        ],
+        "summary": "Get authoritative reconciliation dashboard summary metrics",
+        "description": "**Required Roles**: `ROLE_OPS` (Bearer JWT). Customers and Merchants are strictly forbidden.",
+        "operationId": "getSummary",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconciliationDashboardSummaryResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "OPS"
+        ]
       }
     }
   },
@@ -2509,6 +2603,34 @@
           "totalPages": {
             "type": "integer",
             "format": "int32"
+          }
+        }
+      },
+      "ReconciliationDashboardSummaryResponse": {
+        "type": "object",
+        "properties": {
+          "openCases": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "inReviewCases": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "resolvedCases": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totalCases": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totalRuns": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "latestRun": {
+            "$ref": "#/components/schemas/ReconciliationRunSummaryResponse"
           }
         }
       }

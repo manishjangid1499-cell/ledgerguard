@@ -311,3 +311,58 @@ Phase 37 establishes a secure-by-default execution perimeter for continuous inte
 ### 4. Supply Chain Maintenance via Dependabot
 - **Version-Update Pull Requests**: Automated weekly checks via `.github/dependabot.yml` without committing private registry secrets or access tokens. This manages routine version updates; GitHub Dependabot vulnerability alerts and automated security updates remain independent repository-level settings.
 - **Ecosystem Isolation**: Scans Maven explicitly across the root parent POM and all five module directories (`/`, `/backend/ledgerguard-api`, `/backend/psp-simulator`, `/backend/notification-worker`, `/backend/failure-lab`, `/backend/e2e-tests`), npm (`/frontend/ledgerguard-web`), GitHub Actions (`/`), and Docker base images across all four service directories independently with bounded PR limits (10 per ecosystem) to avoid denial of review.
+
+---
+
+## 15. Production Operations (OPS) Account Provisioning
+Privileged operator accounts (`ROLE_OPS`) possess administrative authority across continuous reconciliation sweeps, discrepancy triage, case resolution, and derived balance snapshot auto-repairs. Consequently, public self-registration (`POST /api/auth/register`) strictly prohibits registration with `ROLE_OPS` (returning HTTP 400 `VALIDATION_FAILED`).
+
+To enable initial administrative bootstrapping without compromising production security:
+
+1. **Dual-Gated Ephemeral Provisioning Task**:
+   - Implemented via `ProductionOpsProvisioningJob` (`ApplicationRunner`).
+   - Requires BOTH the dedicated Spring profile `ops-provision` (`@Profile("ops-provision")`) AND explicit property `ledgerguard.ops.provision.enabled=true`.
+   - Disabled by default; absent from the Spring ApplicationContext in standard server deployments.
+   - Normal application containers in `docker-compose.prod.yml` start with provisioning disabled (`SPRING_PROFILES_ACTIVE=prod`); zero background threads or listeners are scheduled for provisioning.
+2. **Strict Non-Web Execution Enforced**:
+   - Must run as an ephemeral CLI task with `spring.main.web-application-type=none`.
+   - Fails fast immediately if executed within a servlet or reactive web context (`WebApplicationContext` or web server application context).
+   - Not exposed through any HTTP endpoint, controller, or webhook.
+3. **Explicit Ephemeral Invocation & Process Completion**:
+   - Executed exclusively as a one-off task (e.g., Kubernetes Job or `docker compose run --rm`).
+   - Reads provisioning credentials strictly from process-local environment variables:
+     - `LEDGERGUARD_OPS_PROVISION_EMAIL`
+     - `LEDGERGUARD_OPS_PROVISION_PASSWORD`
+     - `LEDGERGUARD_OPS_PROVISION_FULL_NAME` (optional, defaults to "Operations Administrator")
+   - Automatically closes context and terminates process with exit code `0` on success; exits non-zero (`1`) on any validation or constraint failure.
+4. **Defense-in-Depth Provisioning Constraints**:
+   - **No Plaintext Logging & Secret Retention**: Credentials are never logged or persisted in plaintext. Secret values are retained in memory only for the provisioning process lifetime, and references are released after use. (Because Java `String` values are immutable, JVM memory erasure cannot be guaranteed; operational security relies on ephemeral container execution and purging external deployment secrets immediately after completion).
+   - **BCrypt Hashing**: Passwords are saved strictly as salted BCrypt hashes (`strength = 10`, cost 10). Plaintext is never persisted in PostgreSQL.
+   - **Password Bounds**: Enforces minimum length $\ge 12$ characters and maximum $\le 72$ UTF-8 bytes (BCrypt input boundary).
+   - **Role Elevation Prevention**: The job refuses to promote an existing non-OPS user (`CUSTOMER` or `MERCHANT`) to `OPS` (`UserRole.OPS`), emitting a high-severity security alert and aborting without mutation.
+   - **Zero Financial Footprint**: Operator identities never create financial ledger accounts or wallets (`ledger_accounts`).
+   - **Idempotency & Rotation**: If an active `OPS` account with the specified email already exists, the job performs an idempotent no-op unless password rotation is explicitly requested (`ledgerguard.ops.provision.rotate-password=true`).
+   - **Disabled Account Protection**: If an existing account with the specified email is `DISABLED`, the job rejects modification.
+   - **Post-Provisioning Secret Lifecycle**: The external deployment secret must be deleted or rotated immediately after provisioning.
+
+---
+
+## 16. Money Integrity Failure Lab Build-Time Configuration & Staging Semantics
+
+The frontend operations console includes an optional chaos testing interface (Failure Lab) designed for staging environments and sandbox demo harnesses.
+
+### 1. Build-Time Static Invariant (`VITE_ENABLE_FAILURE_LAB`)
+Vite environment variables prefixed with `VITE_` are compiled into static client-side JavaScript bundles at **build time**:
+- Injecting `VITE_ENABLE_FAILURE_LAB=true` into an already-built Nginx frontend container at runtime **does not** alter the static bundle.
+- The default production build (`docker-compose.prod.yml` and `npm run build`) omits this variable or sets it to `false`, guaranteeing that Failure Lab components and navigation items are completely excluded from the production distribution.
+
+### 2. Staging / Demo Build Procedure
+If an isolated demo or staging environment requires the Failure Lab UI:
+- Rebuild the frontend container with the explicit build argument:
+  ```bash
+  docker build \
+    --build-arg VITE_ENABLE_FAILURE_LAB=true \
+    -t ledgerguard-web:staging \
+    ./frontend/ledgerguard-web
+  ```
+- **Backend Isolation Invariant**: Even if a frontend bundle is compiled with `VITE_ENABLE_FAILURE_LAB=true`, the production backend (`ledgerguard-api` with profile `prod`) does not register or instantiate `com.ledgerguard.lab.*` beans, and calls to `/api/lab/*` return `401 Unauthorized` (unauthenticated) or `404 Not Found` (authenticated). The chaos execution harness requires the separate, loopback-bound `failure-lab` Spring Boot service.

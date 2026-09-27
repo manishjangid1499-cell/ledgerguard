@@ -12,11 +12,13 @@ import { PublicOnlyRoute } from './PublicOnlyRoute';
 import { OpsRoute } from './OpsRoute';
 import { RouteMetadata } from './RouteMetadata';
 import { FinancialRoute } from './FinancialRoute';
+import { isFailureLabEnabled } from '../../shared/config/environment';
 
 const AppHomePage = React.lazy(() => import('../../shared/pages/AppHomePage').then(module => ({ default: module.AppHomePage })));
 const ProfilePage = React.lazy(() => import('../../shared/pages/ProfilePage').then(module => ({ default: module.ProfilePage })));
 const TransferDetailPage = React.lazy(() => import('../../transfer/pages/TransferDetailPage').then(module => ({ default: module.TransferDetailPage })));
 const FailureLabPage = React.lazy(() => import('../../failure-lab/pages/FailureLabPage').then(module => ({ default: module.FailureLabPage })));
+const ReconciliationPage = React.lazy(() => import('../../reconciliation/pages/ReconciliationPage').then(module => ({ default: module.ReconciliationPage })));
 const ActivityPage = React.lazy(() => import('../../financial/pages/ActivityPage').then(module => ({ default: module.ActivityPage })));
 const ProviderOperationPage = React.lazy(() => import('../../financial/pages/ProviderOperationPage').then(module => ({ default: module.ProviderOperationPage })));
 const PaymentDetailPage = React.lazy(() => import('../../financial/pages/PaymentDetailPage').then(module => ({ default: module.PaymentDetailPage })));
@@ -58,7 +60,11 @@ export const AppRouter: React.FC = () => {
               <Route path="/app/funding/:operationId" element={<ProviderOperationPage domain="funding" />} />
             </Route>
             <Route element={<OpsRoute />}>
-              <Route path="/app/failure-lab" element={<FailureLabPage />} />
+              <Route path="/app/reconciliation" element={<ReconciliationPage />} />
+              <Route
+                path="/app/failure-lab"
+                element={isFailureLabEnabled() ? <FailureLabPage /> : <Navigate to="/app" replace />}
+              />
             </Route>
           </Route>
         </Route>

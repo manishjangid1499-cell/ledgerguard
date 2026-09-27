@@ -87,8 +87,19 @@ public class ReconciliationCaseQueryService {
                                                                ReconciliationProblemType problemType,
                                                                Integer page,
                                                                Integer size) {
+        return findCases(status, level, classification, problemType, null, null, page, size);
+    }
+
+    public PagedResponse<ReconciliationCaseResponse> findCases(ReconciliationCaseStatus status,
+                                                               ReconciliationLevel level,
+                                                               ReconciliationClassification classification,
+                                                               ReconciliationProblemType problemType,
+                                                               UUID runId,
+                                                               Boolean assigned,
+                                                               Integer page,
+                                                               Integer size) {
         PageRequest pageRequest = validateAndBuildPageRequest(page, size, Sort.by(Sort.Order.desc("openedAt"), Sort.Order.desc("id")));
-        Page<Object[]> pageResult = caseRepository.findCasesWithItemFiltered(status, level, classification, problemType, pageRequest);
+        Page<Object[]> pageResult = caseRepository.findCasesWithItemFiltered(status, level, classification, problemType, runId, assigned, pageRequest);
 
         List<ReconciliationCaseResponse> items = pageResult.getContent().stream()
                 .map(row -> {
@@ -99,6 +110,21 @@ public class ReconciliationCaseQueryService {
                 .toList();
 
         return new PagedResponse<>(items, pageResult.getNumber(), pageResult.getSize(), pageResult.getTotalElements(), pageResult.getTotalPages());
+    }
+
+    public com.ledgerguard.reconciliation.api.ReconciliationDashboardSummaryResponse getSummary() {
+        long openCases = caseRepository.countByStatus(ReconciliationCaseStatus.OPEN);
+        long inReviewCases = caseRepository.countByStatus(ReconciliationCaseStatus.IN_REVIEW);
+        long resolvedCases = caseRepository.countByStatus(ReconciliationCaseStatus.RESOLVED);
+        long totalCases = caseRepository.count();
+        long totalRuns = runRepository.count();
+        ReconciliationRunSummaryResponse latestRun = runRepository.findFirstByOrderByStartedAtDescIdDesc()
+                .map(this::mapToRunSummary)
+                .orElse(null);
+
+        return new com.ledgerguard.reconciliation.api.ReconciliationDashboardSummaryResponse(
+                openCases, inReviewCases, resolvedCases, totalCases, totalRuns, latestRun
+        );
     }
 
     public ReconciliationCaseResponse findCaseById(UUID caseId) {

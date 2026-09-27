@@ -5,6 +5,7 @@ import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import PersonOutlineIcon from '@mui/icons-material/Person';
+import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import ScienceOutlinedIcon from '@mui/icons-material/ScienceOutlined';
 import LogoutIcon from '@mui/icons-material/Logout';
 import { useAuth } from '../../auth/hooks/useAuth';
@@ -12,6 +13,7 @@ import { BrandLogo } from '../components/BrandLogo';
 import { DataLoading } from '../components/DataLoading';
 import { PageErrorBoundary } from '../components/PageErrorBoundary';
 import { formatRoleLabel } from '../utils/display';
+import { isFailureLabEnabled } from '../config/environment';
 
 export const AppLayout = () => {
   const { user, logout } = useAuth();
@@ -29,8 +31,19 @@ export const AppLayout = () => {
       icon: ReceiptLongOutlinedIcon,
       active: ['/app/activity', '/app/funding', '/app/payments', '/app/payouts', '/app/transfers/'].some(path => pathname.startsWith(path)),
     }] : []),
+    ...(user?.role === 'OPS' ? [{
+      to: '/app/reconciliation',
+      label: 'Reconciliation',
+      icon: FactCheckOutlinedIcon,
+      active: pathname.startsWith('/app/reconciliation'),
+    }] : []),
     { to: '/profile', label: 'Profile', icon: PersonOutlineIcon, active: pathname === '/profile' },
-    ...(user?.role === 'OPS' ? [{ to: '/app/failure-lab', label: 'Failure Lab', icon: ScienceOutlinedIcon, active: pathname.startsWith('/app/failure-lab') }] : []),
+    ...(user?.role === 'OPS' && isFailureLabEnabled() ? [{
+      to: '/app/failure-lab',
+      label: 'Failure Lab',
+      icon: ScienceOutlinedIcon,
+      active: pathname.startsWith('/app/failure-lab'),
+    }] : []),
   ];
 
   const navigation = (

@@ -511,3 +511,122 @@ All operational reconciliation endpoints require authentication with role `OPS`:
 * [ ] Monitor outbox drain to `0` pending events.
 * [ ] Re-enable edge traffic (`nginx-edge`).
 * [ ] Conduct post-incident review.
+
+---
+
+## 9. Production Operations (OPS) Account Provisioning Runbook
+
+### 9.1 Background & Security Constraints
+Public self-registration of `ROLE_OPS` is prohibited by design. In production, initial operator accounts must be bootstrapped out-of-band using the secure `ProductionOpsProvisioningJob` CLI runner.
+
+**Guarantees & Constraints**:
+- **Dual-Gate Activation**: Requires BOTH the dedicated Spring profile `ops-provision` AND explicit property `ledgerguard.ops.provision.enabled=true`.
+- **Non-Web Execution Enforced**: Must execute as an ephemeral CLI task with `spring.main.web-application-type=none`. Fails fast immediately if executed within a servlet or reactive web context.
+- **Process Exit on Completion**: Closes context and terminates with exit code `0` on success; throws exception and exits non-zero (`1`) on any failure.
+- **Production API Protection**: The standard production service (`ledgerguard-api` in `docker-compose.prod.yml`) strictly omits the `ops-provision` profile and defaults `LEDGERGUARD_OPS_PROVISION_ENABLED=false`.
+- **Zero Financial Footprint**: Strictly never provisions a financial ledger account, balance snapshot, or wallet (`ledger_accounts`).
+- **Role Elevation Prevention**: Refuses to convert or elevate an existing `CUSTOMER` or `MERCHANT` account to `OPS` (`UserRole.OPS`), aborting without mutation.
+- **BCrypt Hashing & Plaintext Secrecy**: Passwords are saved strictly as salted BCrypt hashes (`strength = 10`). Credentials are never logged or persisted in plaintext.
+- **Secret Lifetime & Java String Immutability**: Secret values are retained in memory only for the provisioning process lifetime, and references are released after use. Because Java `String` values are immutable, JVM memory erasure cannot be guaranteed; operational security relies on ephemeral container execution and purging external deployment secrets immediately after completion.
+- **Password Bounds**: Password length must be $\ge 12$ characters and $\le 72$ UTF-8 bytes (Bcrypt input limit).
+- **Post-Provisioning Secret Lifecycle**: The external deployment secret must be deleted or rotated immediately after provisioning.
+
+### 9.2 Initial Ephemeral Provisioning Procedure
+
+#### Using Docker Compose in Production:
+Run an ephemeral container with `run --rm`:
+```bash
+docker compose -f docker-compose.prod.yml run --rm \
+  -e SPRING_PROFILES_ACTIVE=prod,ops-provision \
+  -e SPRING_MAIN_WEB_APPLICATION_TYPE=none \
+  -e LEDGERGUARD_OPS_PROVISION_ENABLED=true \
+  -e LEDGERGUARD_OPS_PROVISION_EMAIL="ops.admin@ledgerguard.example.com" \
+  -e LEDGERGUARD_OPS_PROVISION_PASSWORD="${OPS_BOOTSTRAP_SECRET}" \
+  -e LEDGERGUARD_OPS_PROVISION_FULL_NAME="Operations Administrator" \
+  ledgerguard-api
+```
+
+#### Kubernetes / Cloud Ephemeral Job:
+In Kubernetes, run as an ephemeral `Job` with secrets injected from Vault, AWS Secrets Manager, or Kubernetes `Secret`:
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ledgerguard-ops-provision-01
+spec:
+  restartPolicy: Never
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: ops-provisioner
+          image: ledgerguard-api:prod
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "prod,ops-provision"
+            - name: SPRING_MAIN_WEB_APPLICATION_TYPE
+              value: "none"
+            - name: LEDGERGUARD_OPS_PROVISION_ENABLED
+              value: "true"
+            - name: LEDGERGUARD_OPS_PROVISION_FULL_NAME
+              value: "Operations Administrator"
+            - name: LEDGERGUARD_OPS_PROVISION_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: ops-credentials
+                  key: email
+            - name: LEDGERGUARD_OPS_PROVISION_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ops-credentials
+                  key: password
+```
+
+#### Verification:
+1. Check the task logs for the authoritative confirmation line:
+   `[OPS PROVISION] Successfully provisioned production OPS user: id=<UUID>, email=ops.admin@ledgerguard.example.com`
+2. Confirm the account can log in via `/api/auth/login` and access `/api/reconciliation/*`.
+3. Verify that re-running the job is idempotent:
+   `[OPS PROVISION] Matching active production OPS account already exists for ops.admin@ledgerguard.example.com. Idempotent no-op completed.`
+
+### 9.3 Post-Provisioning Secret Removal Procedure
+1. **Unset Shell Secret Variables**: Immediately clear the environment secret in the provisioning operator terminal:
+   ```bash
+   unset OPS_BOOTSTRAP_SECRET
+   history -c
+   ```
+2. **Purge Deployment Job / Pod**: For Kubernetes, delete the completed Job object so pod specs containing secret references are purged from the API server:
+   ```bash
+   kubectl delete job ledgerguard-ops-provision-01
+   ```
+3. **Verify Host Environment**: Ensure no persistent files, scripts, or `.env` files retain `OPS_BOOTSTRAP_SECRET`.
+
+### 9.4 Password Rotation Procedure
+When rotating an existing OPS user's credentials:
+1. **Ephemeral Provisioner with Explicit Rotation**: Run the ephemeral provisioning job with `LEDGERGUARD_OPS_PROVISION_ROTATE_PASSWORD=true`:
+   ```bash
+   docker compose -f docker-compose.prod.yml run --rm \
+     -e SPRING_PROFILES_ACTIVE=prod,ops-provision \
+     -e SPRING_MAIN_WEB_APPLICATION_TYPE=none \
+     -e LEDGERGUARD_OPS_PROVISION_ENABLED=true \
+     -e LEDGERGUARD_OPS_PROVISION_ROTATE_PASSWORD=true \
+     -e LEDGERGUARD_OPS_PROVISION_EMAIL="ops.admin@ledgerguard.example.com" \
+     -e LEDGERGUARD_OPS_PROVISION_PASSWORD="${NEW_OPS_PASSWORD}" \
+     -e LEDGERGUARD_OPS_PROVISION_FULL_NAME="Operations Administrator" \
+     ledgerguard-api
+   ```
+2. **Session Invalidation**: Terminate active refresh tokens for the rotated user:
+   ```sql
+   DELETE FROM refresh_tokens WHERE user_id = (SELECT id FROM users WHERE email = 'ops.admin@ledgerguard.example.com');
+   ```
+
+### 9.5 Emergency Account Recovery Runbook
+If the primary OPS account is locked or disabled (`status = 'DISABLED'`):
+1. **Refusal Guardrail**: Note that `ProductionOpsProvisioningJob` strictly refuses to run against a `DISABLED` account to prevent hijacking.
+2. **Reactivation by Authorized DBA**:
+   With multi-party sign-off, verify user identity and re-enable status in PostgreSQL:
+   ```sql
+   UPDATE users SET status = 'ACTIVE', updated_at = NOW() WHERE email = 'ops.admin@ledgerguard.example.com' AND role = 'OPS';
+   ```
+3. **Provision Alternate Secondary Account**:
+   If the primary identity is permanently compromised, provision a new distinct named operator identity (e.g. `ops.admin2@ledgerguard.example.com`) using the ephemeral procedure in Section 9.2.

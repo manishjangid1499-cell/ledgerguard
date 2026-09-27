@@ -22,4 +22,10 @@ public interface ReconciliationRunRepository extends JpaRepository<Reconciliatio
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT r FROM ReconciliationRun r WHERE r.id = :id")
     Optional<ReconciliationRun> findByIdForUpdate(@Param("id") UUID id);
+
+    boolean existsByStatus(com.ledgerguard.reconciliation.domain.ReconciliationRunStatus status);
+
+    java.util.List<ReconciliationRun> findByStatus(com.ledgerguard.reconciliation.domain.ReconciliationRunStatus status);
+
+    Optional<ReconciliationRun> findFirstByOrderByStartedAtDescIdDesc();
 }
