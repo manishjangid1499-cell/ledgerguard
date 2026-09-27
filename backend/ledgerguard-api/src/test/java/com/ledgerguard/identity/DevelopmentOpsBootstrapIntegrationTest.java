@@ -51,7 +51,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class DevelopmentOpsBootstrapIntegrationTest extends AbstractIntegrationTest {
 
     private static final String BOOTSTRAP_OPS_EMAIL = "ops.integration@ledgerguard.local";
-    private static final String BOOTSTRAP_OPS_PASSWORD = "OpsIntegrationPass1234!";
+    private static final String BOOTSTRAP_OPS_PASSWORD = "Aa1!" + UUID.randomUUID();
     private static final String BOOTSTRAP_OPS_NAME = "Bootstrap Integration Ops";
 
     @DynamicPropertySource
@@ -164,7 +164,7 @@ class DevelopmentOpsBootstrapIntegrationTest extends AbstractIntegrationTest {
     void existingCaseVariantCustomerCannotBePromoted() {
         String customerEmail = "cust.case.variant@ledgerguard.local";
         User customer = new User(UUID.randomUUID(), "Customer User", customerEmail,
-                passwordEncoder.encode("Password123456!"), UserRole.CUSTOMER, UserStatus.ACTIVE);
+                passwordEncoder.encode(BOOTSTRAP_OPS_PASSWORD), UserRole.CUSTOMER, UserStatus.ACTIVE);
         userRepository.save(customer);
 
         String previousEmail = bootstrapProperties.getEmail();
@@ -276,10 +276,10 @@ class DevelopmentOpsBootstrapIntegrationTest extends AbstractIntegrationTest {
                                 {
                                   "fullName": "Malicious Actor",
                                   "email": "malicious.ops@example.com",
-                                  "password": "Password123456!",
+                                  "password": "%s",
                                   "role": "OPS"
                                 }
-                                """))
+                                """.formatted(BOOTSTRAP_OPS_PASSWORD)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errorCode", is("VALIDATION_FAILED")))
                 .andExpect(jsonPath("$.detail", is("Registration with OPS role is not permitted.")));
