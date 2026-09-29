@@ -7,9 +7,6 @@ import com.ledgerguard.funding.domain.FundingOperation;
 import com.ledgerguard.funding.domain.FundingStatus;
 import com.ledgerguard.funding.infrastructure.FundingOperationRepository;
 import com.ledgerguard.funding.infrastructure.PspOperationResponse;
-import com.ledgerguard.payout.application.PayoutFailureService;
-import com.ledgerguard.payout.application.PayoutSettlementService;
-import com.ledgerguard.payout.infrastructure.PayoutRepository;
 import com.ledgerguard.provider.application.ProviderEventConflictException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -18,7 +15,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.sql.Timestamp;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -34,16 +30,7 @@ class TerminalProviderContradictionIntegrationTest extends AbstractIntegrationTe
     private FundingFailureService fundingFailureService;
 
     @Autowired
-    private PayoutSettlementService payoutSettlementService;
-
-    @Autowired
-    private PayoutFailureService payoutFailureService;
-
-    @Autowired
     private FundingOperationRepository fundingOperationRepository;
-
-    @Autowired
-    private PayoutRepository payoutRepository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -102,24 +89,6 @@ class TerminalProviderContradictionIntegrationTest extends AbstractIntegrationTe
                 "UPDATE journal_transactions SET status = 'POSTED', posted_at = ? WHERE id = ?",
                 now, initTxn
         );
-    }
-
-    private UUID createHold(String status) {
-        UUID holdId = UUID.randomUUID();
-        Timestamp now = Timestamp.from(Instant.now());
-        Timestamp expiresAt = Timestamp.from(Instant.now().plus(Duration.ofMinutes(30)));
-        jdbcTemplate.update(
-                "INSERT INTO balance_holds (id, ledger_account_id, amount_minor, currency, status, expires_at, created_at, updated_at, terminal_at) " +
-                        "VALUES (?, ?, 10000, 'INR', 'ACTIVE', ?, ?, ?, NULL)",
-                holdId, customerAccountId, expiresAt, now, now
-        );
-        if (!"ACTIVE".equals(status)) {
-            jdbcTemplate.update(
-                    "UPDATE balance_holds SET status = ?, terminal_at = ? WHERE id = ?",
-                    status, now, holdId
-            );
-        }
-        return holdId;
     }
 
     @Test

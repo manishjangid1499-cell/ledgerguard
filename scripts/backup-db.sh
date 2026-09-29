@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # LedgerGuard PostgreSQL Logical Backup Script
-# Phase 40 Deliverable: scripts/backup-db.sh
 # ==============================================================================
 # Takes a safe logical backup of an authoritative LedgerGuard PostgreSQL database
 # using pg_dump custom format (-Fc) streamed directly from the PostgreSQL container.

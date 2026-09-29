@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Bash script to execute Phase 39 Concurrency & Pool Benchmarks
+# Bash script to execute Concurrency & Pool Benchmarks
 set -euo pipefail
 
 echo "============================================================"
-echo "LEDGERGUARD PHASE 39 CONCURRENCY & POOL BENCHMARK RUNNER"
+echo "LEDGERGUARD CONCURRENCY & POOL BENCHMARK RUNNER"
 echo "============================================================"
 
 # 1. Verify Docker is available
@@ -68,7 +68,7 @@ END_TIME=$(date +%s)
 TOTAL_ELAPSED=$(( END_TIME - START_TIME ))
 
 echo "============================================================"
-echo "PHASE 39 BENCHMARKS COMPLETE"
+echo "CONCURRENCY & POOL BENCHMARKS COMPLETE"
 echo "Total Elapsed Time: ${TOTAL_ELAPSED} seconds"
 echo "Results Directory:  $BENCHMARK_DIR"
 echo "Generated Result Files:"

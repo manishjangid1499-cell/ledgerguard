@@ -488,7 +488,7 @@ docker compose -f docker-compose.prod.yml down
 
 - **Current State:** Post-v1 release candidate with complete Customer, Merchant, and OPS workspaces.
   - Runtime and repository OpenAPI 3.1 specifications contain 31 operations.
-  - Latest full backend verification: 933 passing tests across 5 modules with no failures, errors, or skips.
+  - Latest full backend verification: 934 passing tests across 5 modules with no failures, errors, or skips.
   - Current frontend verification: 99 passing tests, clean lint, and successful production build.
   - GitHub Actions validates backend, frontend tests/lint/build, financial failure scenarios, production images, and CodeQL analysis for Java and TypeScript.
 - **Release readiness:** Application functionality is complete for its portfolio scope. Public deployment still requires operator-owned production secrets, a public hostname, trusted TLS, backups, and post-deployment smoke testing. This project remains a simulated-money educational system and must not process real funds.

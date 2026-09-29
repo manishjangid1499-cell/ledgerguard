@@ -153,13 +153,4 @@ class SnapshotConsistencyCheckerIntegrationTest extends AbstractIntegrationTest 
                 id, ownerId, accountType, "INR", "ACTIVE", now, now);
         return id;
     }
-
-    private UUID ensurePspClearingAccount() {
-        UUID existing = jdbc.query(
-                "SELECT id FROM ledger_accounts WHERE account_type = 'PSP_CLEARING' AND status = 'ACTIVE' LIMIT 1",
-                rs -> rs.next() ? UUID.fromString(rs.getString("id")) : null);
-        if (existing != null) return existing;
-
-        return insertAccount(null, "PSP_CLEARING");
-    }
 }

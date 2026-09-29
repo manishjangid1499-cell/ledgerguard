@@ -109,7 +109,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Gate Status:** \`${{ job.status }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "The Maven job status is authoritative for the complete Phase 38 gate." >> $GITHUB_STEP_SUMMARY
+          echo "The Maven job status determines the financial failure scenario gate verdict." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ -f backend/failure-lab/target/financial-integrity-summary.md ]; then
             cat backend/failure-lab/target/financial-integrity-summary.md >> $GITHUB_STEP_SUMMARY

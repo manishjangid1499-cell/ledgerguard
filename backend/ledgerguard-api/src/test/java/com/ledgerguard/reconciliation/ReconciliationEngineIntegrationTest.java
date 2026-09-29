@@ -196,11 +196,6 @@ class ReconciliationEngineIntegrationTest extends AbstractIntegrationTest {
         assertThat(latestRun.getTriggerSource()).isEqualTo(ReconciliationTrigger.SCHEDULED);
     }
 
-    private long countRows(String table) {
-        Long count = jdbc.queryForObject("SELECT COUNT(*) FROM " + table, Long.class);
-        return count != null ? count : 0;
-    }
-
     private UUID postJournal(UUID debitAcc, UUID creditAcc, long amountMinor) {
         UUID journalId = UUID.randomUUID();
         Timestamp now = Timestamp.from(Instant.now());

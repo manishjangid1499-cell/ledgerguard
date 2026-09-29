@@ -7,13 +7,10 @@ import com.ledgerguard.identity.domain.UserRole;
 import com.ledgerguard.identity.domain.UserStatus;
 import com.ledgerguard.identity.infrastructure.ProductionOpsProvisioningJob;
 import com.ledgerguard.identity.infrastructure.ProductionOpsProvisioningProperties;
-import com.ledgerguard.ledger.infrastructure.LedgerAccountRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-import org.springframework.context.ApplicationContext;
 import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -22,7 +19,6 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.web.context.WebApplicationContext;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -56,9 +52,6 @@ class ProductionOpsProvisioningPostgresIntegrationTest extends AbstractIntegrati
     private PasswordEncoder passwordEncoder;
 
     @Autowired
-    private LedgerAccountRepository ledgerAccountRepository;
-
-    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @Autowired
@@ -66,9 +59,6 @@ class ProductionOpsProvisioningPostgresIntegrationTest extends AbstractIntegrati
 
     @Autowired
     private ProductionOpsProvisioningProperties properties;
-
-    @Autowired
-    private ApplicationContext applicationContext;
 
     @Test
     @DisplayName("Provisions new OPS identity into PostgreSQL with BCrypt hash and no plaintext password")

@@ -2,7 +2,6 @@ package com.ledgerguard.identity;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ledgerguard.AbstractIntegrationTest;
-import com.ledgerguard.identity.api.dto.AuthResponse;
 import com.ledgerguard.identity.api.dto.LoginRequest;
 import com.ledgerguard.identity.api.dto.RegisterRequest;
 import com.ledgerguard.identity.domain.User;

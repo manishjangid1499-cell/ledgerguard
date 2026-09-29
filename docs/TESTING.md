@@ -1,5 +1,7 @@
 # LedgerGuard Testing Strategy & Invariant Verification
 
+> **Current Verification Status**: The repository's verified test suite contains **934 passing backend tests** across 5 modules (`ledgerguard-api`: 799, `psp-simulator`: 18, `notification-worker`: 72, `failure-lab`: 34, `e2e-tests`: 11) with 0 failures, 0 errors, and 0 skips, alongside **99 passing frontend tests** in `ledgerguard-web`. Historical phase-specific counts preserved in sections below reflect point-in-time metrics prior to subsequent feature completions and the secure OPS reconciliation workspace expansion.
+
 ## 1. Testing Philosophy & Invariant Priority
 
 In LedgerGuard, tests are not merely code-coverage metrics; they are executable mathematical proofs that the central invariant holds:
@@ -935,7 +937,7 @@ The test-only `FinancialInvariantReportGenerator` formats authoritative `Scenari
 - **Artifact Upload**: Uses `actions/upload-artifact@v7` uploading `financial-integrity-report.json` and `financial-integrity-summary.md` with `if-no-files-found: error`.
 - **Gating**: `docker-images` updated to require `needs: [backend, frontend, financial-integrity]`, preventing container packaging if any financial invariant fails.
 
-### 5. Regression Invariants Preserved
+### 5. Historical Phase 38 Baseline Invariants (Historical Snapshot)
 - Full reactor test baseline: **760 workspace tests** (675 API, 18 PSP, 22 Notification Worker, 34 Failure Lab, 11 E2E) with 0 failures, 0 errors, 0 skipped.
 - Frontend: `npm ci`, `npm run lint`, `npm run build` pass with 0 errors.
 - Database migrations: V1–V17 frozen, V18 absent.

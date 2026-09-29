@@ -26,7 +26,6 @@ import java.util.UUID;
 
 import com.ledgerguard.reconciliation.application.ReconciliationEngine;
 import com.ledgerguard.reconciliation.domain.ReconciliationTrigger;
-import org.springframework.http.HttpStatus;
 
 /**
  * Operations REST controller exposing reconciliation runs, detected discrepancy items,

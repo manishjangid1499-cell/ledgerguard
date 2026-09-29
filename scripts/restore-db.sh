@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # LedgerGuard PostgreSQL Logical Restore & Financial Validation Script
-# Phase 40 Deliverable: scripts/restore-db.sh
 # ==============================================================================
 # Restores a logical backup archive into an isolated fresh PostgreSQL database
 # and executes mandatory Mode A financial invariant verification before declaring success.

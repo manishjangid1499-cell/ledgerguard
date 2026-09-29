@@ -7,7 +7,6 @@ import com.ledgerguard.reconciliation.domain.ReconciliationTrigger;
 import com.ledgerguard.reconciliation.infrastructure.ReconciliationRunRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;

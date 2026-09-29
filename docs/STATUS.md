@@ -4,7 +4,7 @@
 > historical v1.0.0 phase record. Since that release, the repository has added
 > complete Customer, Merchant, and OPS workspaces, secure OPS provisioning, and
 > expanded reconciliation operations. The current OpenAPI export contains 31
-> operations. The latest full backend verification recorded 933 passing tests;
+> operations. The latest full backend verification recorded 934 passing tests;
 > the current frontend verification records 99 passing tests, clean lint, and a
 > successful production build. Public deployment remains a separate operational
 > step requiring deployment secrets, a hostname, trusted TLS, backups, and smoke

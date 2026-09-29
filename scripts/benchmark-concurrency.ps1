@@ -1,8 +1,8 @@
-# PowerShell script to execute Phase 39 Concurrency & Pool Benchmarks
+# PowerShell script to execute Concurrency & Pool Benchmarks
 $ErrorActionPreference = "Stop"
 
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "LEDGERGUARD PHASE 39 CONCURRENCY & POOL BENCHMARK RUNNER" -ForegroundColor Cyan
+Write-Host "LEDGERGUARD CONCURRENCY & POOL BENCHMARK RUNNER" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 
 # 1. Verify Docker is available
@@ -104,7 +104,7 @@ $totalElapsedSeconds = [math]::Round($stopwatch.Elapsed.TotalSeconds, 2)
 $totalElapsedMinutes = [math]::Round($stopwatch.Elapsed.TotalMinutes, 2)
 
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "PHASE 39 BENCHMARKS COMPLETE" -ForegroundColor Cyan
+Write-Host "CONCURRENCY & POOL BENCHMARKS COMPLETE" -ForegroundColor Cyan
 Write-Host "Total Elapsed Time: $totalElapsedSeconds seconds ($totalElapsedMinutes minutes)" -ForegroundColor Green
 Write-Host "Results Directory:  $benchmarkDir" -ForegroundColor Green
 Write-Host "Generated Result Files:" -ForegroundColor Cyan
