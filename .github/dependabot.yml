@@ -11,46 +11,58 @@ updates:
       - "/backend/e2e-tests"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    groups:
+      backend-dependencies:
+        patterns:
+          - "*"
 
   # Frontend Web Client
   - package-ecosystem: "npm"
     directory: "/frontend/ledgerguard-web"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    groups:
+      frontend-dependencies:
+        patterns:
+          - "*"
 
   # GitHub Actions CI Workflows
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
   # Docker Base Images - Backend API
   - package-ecosystem: "docker"
     directory: "/backend/ledgerguard-api"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
 
   # Docker Base Images - PSP Simulator
   - package-ecosystem: "docker"
     directory: "/backend/psp-simulator"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
 
   # Docker Base Images - Notification Worker
   - package-ecosystem: "docker"
     directory: "/backend/notification-worker"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
 
   # Docker Base Images - Frontend Web
   - package-ecosystem: "docker"
     directory: "/frontend/ledgerguard-web"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5

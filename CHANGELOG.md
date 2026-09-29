@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- Complete role-aware Customer and Merchant workspaces with accessible financial forms, histories, details, and retry-safe idempotency behavior.
+- Secure OPS provisioning and an OPS reconciliation workspace with dashboard summaries, on-demand runs, case filters, claims, resolutions, and case-scoped snapshot repair.
+- Frontend unit and component tests for Customer, Merchant, and OPS workflows.
+
+### Changed
+- Expanded the runtime OpenAPI contract to 31 operations, including payment summaries and reconciliation run/summary operations.
+- Updated CI to execute frontend tests in addition to linting and production builds.
+- Added scheduled and pull-request CodeQL analysis for Java and TypeScript.
+- Grouped routine Dependabot updates and reduced open-update limits to keep the maintenance queue reviewable.
+- Refreshed README architecture diagrams, verification totals, API inventory, and release-readiness guidance.
+- Bound the PSP simulator and observability ports to loopback by default and made production SMTP delivery opt-in.
+
+### Removed
+- Accidental root-level command-output artifact `tatus --short`.
+
 ## [1.0.0] - 2026-09-13
 
 Initial portfolio release of the **LedgerGuard** Payment Integrity & Ledger Platform. This release culminates a 45-phase development lifecycle establishing a production-grade, correctness-first financial engine designed to eliminate double-spending, data drift, distributed ambiguity, and dual-write inconsistencies.

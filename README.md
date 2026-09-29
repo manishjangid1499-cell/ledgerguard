@@ -81,18 +81,18 @@ flowchart TD
     end
 
     Browser -->|HTTPS :443| Nginx
-    Nginx -->|HTTP Reverse Proxy /api/*| API_GW
-    Nginx -->|Static Assets /| Browser
+    Nginx -->|API reverse proxy| API_GW
+    Nginx -->|Static assets| Browser
     API_GW --> Modules
     Modules -->|ACID DB Transactions| Postgres
-    Modules -->|Skip Locked Outbox Publisher| Kafka
-    Modules -->|Outbound REST (Resilience4j)| PspSim
-    PspSim -->|HMAC-SHA256 Webhook /api/provider/webhooks| API_GW
+    Modules -->|Outbox publisher| Kafka
+    Modules -->|Resilient provider call| PspSim
+    PspSim -->|Signed provider webhook| API_GW
     Kafka -->|Async Events| NotifWorker
     NotifWorker -->|Inbox Deduplication| Postgres
     Prometheus -->|Scrape| API_GW
     Grafana -->|Query Datasource| Prometheus
-    FailureLab -.->|Independent Adversarial Verification| Postgres
+    FailureLab -.->|Adversarial verification| Postgres
 ```
 
 ### 4.2 Financial Atomic Posting Flow
@@ -122,10 +122,12 @@ sequenceDiagram
     rect rgb(240, 245, 255)
         note over Lock,DB: Single ACID Database Transaction Boundary (@Transactional)
         API->>Lock: Deterministic Row Locks (SELECT ... FOR UPDATE ORDER BY ledger_account_id ASC)
-        note over Lock: Serializes concurrent access to affected rows;<br/>prevents lost updates and concurrent overspending;<br/>deterministic lock ordering reduces deadlock risk.
+        note over Lock: Serializes access, prevents lost updates and overspending
+        note over Lock: Stable lock ordering reduces deadlock risk
         API->>Ledger: INSERT journal_transactions (status: DRAFT)
         API->>Ledger: INSERT journal_entries (DEBITS and CREDITS)
-        note over Ledger: Immutable journal is authoritative source of truth.<br/>Enforces sum(DEBITS) == sum(CREDITS).
+        note over Ledger: Immutable journal is the source of truth
+        note over Ledger: Every posted journal enforces equal debits and credits
         API->>Ledger: UPDATE journal_transactions SET status = 'POSTED'
         activate TrgBal
         TrgBal-->>Ledger: Enforce >=2 legs, 1 debit, 1 credit, zero-sum balance
@@ -278,14 +280,17 @@ All balances are calculated and stored in **INR** minor units (paise) as signed 
 The platform maintains an exhaustive test suite running on Java 21 across 5 Maven modules:
 
 ```
-ledgerguard-api:      712 tests (Unit, Service, Controller, Database Trigger Integration)
+ledgerguard-api:      798 tests (Unit, Service, Controller, Database Trigger Integration)
 psp-simulator:         18 tests (External Provider Simulation, Webhook Signatures)
 notification-worker:   72 tests (Idempotent Inbox Consumer, Kafka Listeners, SMTP Delivery)
 failure-lab:           34 tests (Chaos Scenarios, Adversarial Injection, SQL Oracle)
 e2e-tests:             11 tests (Multi-Service Testcontainers End-to-End Flows)
 -----------------------------------------------------------------------------------------
-WORKSPACE TOTAL:      847 passing tests (0 failures, 0 errors, 0 skipped)
+WORKSPACE TOTAL:      933 passing tests (0 failures, 0 errors, 0 skipped)
 ```
+
+The React workspace currently adds **99 passing unit and component tests**, and
+CI runs those tests alongside linting and the production build.
 
 ### 10.2 Money Integrity Failure Lab
 A standalone automated chaos testing engine (`backend/failure-lab`) that deliberately injects hostile operating conditions:
@@ -324,7 +329,7 @@ Comprehensive disaster recovery procedures and automation scripts are establishe
 
 ## 13. API & Swagger Documentation
 
-LedgerGuard exposes **28 authoritative REST endpoints** across 9 controllers, documented with OpenAPI 3.1:
+LedgerGuard exposes **31 authoritative REST operations** across 9 controllers, documented with OpenAPI 3.1:
 
 - **Interactive Swagger UI (Runtime)**: [http://localhost:8080/swagger-ui/index.html](http://localhost:8080/swagger-ui/index.html)
 - **Live OpenAPI 3.1 JSON (Runtime)**: [http://localhost:8080/v3/api-docs](http://localhost:8080/v3/api-docs)
@@ -345,6 +350,7 @@ LedgerGuard exposes **28 authoritative REST endpoints** across 9 controllers, do
 | **Transfers** | `GET` | `/api/transfers/{transferId}` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Transfer detail) |
 | **Payments** | `POST` | `/api/payments` | `ROLE_CUSTOMER` (100 bps platform fee checkout) |
 | **Payments** | `GET` | `/api/payments` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Participant-scoped paginated history) |
+| **Payments** | `GET` | `/api/payments/summary` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Role-scoped payment totals) |
 | **Payments** | `GET` | `/api/payments/{paymentId}` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Participant-scoped detail and refund history) |
 | **Refunds** | `POST` | `/api/payments/{paymentId}/refund` | `ROLE_MERCHANT` (Full or partial pro-rata fee refund) |
 | **Funding** | `POST` | `/api/funding` | `ROLE_CUSTOMER` (Inbound top-up via PSP simulator) |
@@ -355,6 +361,8 @@ LedgerGuard exposes **28 authoritative REST endpoints** across 9 controllers, do
 | **Payouts** | `GET` | `/api/payouts/{payoutId}` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Owner-scoped status and detail) |
 | **Webhooks** | `POST` | `/api/provider/webhooks` | Public (Verified via HMAC-SHA256 signature headers) |
 | **Reconciliation** | `GET` | `/api/reconciliation/runs` | `ROLE_OPS` (Paginated automated reconciliation runs) |
+| **Reconciliation** | `POST` | `/api/reconciliation/runs` | `ROLE_OPS` (Starts an on-demand reconciliation run) |
+| **Reconciliation** | `GET` | `/api/reconciliation/summary` | `ROLE_OPS` (Authoritative dashboard totals and latest run) |
 | **Reconciliation** | `GET` | `/api/reconciliation/runs/{runId}` | `ROLE_OPS` (Run details and summary metrics) |
 | **Reconciliation** | `GET` | `/api/reconciliation/runs/{runId}/items` | `ROLE_OPS` (Detected discrepancy items) |
 | **Reconciliation** | `GET` | `/api/reconciliation/cases` | `ROLE_OPS` (Operational review queue) |
@@ -378,7 +386,7 @@ LedgerGuard exposes **28 authoritative REST endpoints** across 9 controllers, do
 - **Observability**: Micrometer, Prometheus 3.2.1, Grafana 11.5.2, OpenTelemetry Tracing
 - **Web Frontend**: React 19, TypeScript 5.7, Vite 8, Material UI 9, TanStack Query, React Hook Form
 - **Edge Proxy**: Nginx 1.27 unprivileged Alpine (TLSv1.2/1.3 termination, rate limiting, static asset caching)
-- **Testing & Quality**: JUnit 5, Testcontainers 1.20, Mockito, ArchUnit, Maven Failsafe
+- **Testing & Quality**: JUnit 5, Testcontainers 2.0.5, Mockito, ArchUnit, Maven Failsafe, Vitest
 
 ---
 
@@ -403,7 +411,7 @@ docker compose ps
 
 ### 3. Run Backend Verification & Compile
 ```bash
-# Run full reactor test suite (847 tests)
+# Run the complete backend reactor verification
 ./mvnw clean verify     # Windows: .\mvnw.cmd clean verify
 ```
 
@@ -418,6 +426,7 @@ docker compose ps
 ```bash
 cd frontend/ledgerguard-web
 npm install
+npm test -- --run
 npm run dev
 # Web application available at: http://localhost:5173
 ```
@@ -447,8 +456,8 @@ docker compose -f docker-compose.prod.yml ps
 # 5. Access points:
 # HTTPS Web Application: https://localhost/
 # API Gateway Endpoint:  https://localhost/api/
-# Prometheus Telemetry:  http://localhost:9090/
-# Grafana Dashboards:    http://localhost:3000/
+# Prometheus Telemetry:  http://127.0.0.1:9090/ (loopback only)
+# Grafana Dashboards:    http://127.0.0.1:3000/ (loopback only)
 
 # 6. Tear down production containers
 docker compose -f docker-compose.prod.yml down
@@ -462,7 +471,7 @@ docker compose -f docker-compose.prod.yml down
 | :--- | :--- |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Deep system architecture, domain modularization, and sequence models |
 | [`docs/API.md`](docs/API.md) | Comprehensive API specification, error catalogs, and payload schemas |
-| [`docs/openapi.json`](docs/openapi.json) | Exported OpenAPI 3.1 specification for all 28 REST operations |
+| [`docs/openapi.json`](docs/openapi.json) | Exported OpenAPI 3.1 specification for all 31 REST operations |
 | [`docs/RUNBOOKS.md`](docs/RUNBOOKS.md) | Disaster recovery, point-in-time restore, cutover drills, and operations |
 | [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) | Concurrency contention analysis, pool sizing, and performance reports |
 | [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md) | Authoritative 45-phase development constitution (Phases 0–44) |
@@ -477,10 +486,9 @@ docker compose -f docker-compose.prod.yml down
 
 ## 18. Current Project Status
 
-- **Current State:** **Phase 41 Completed** — Final Project Documentation, Architecture Diagrams & API Docs.
-  - Implemented runtime Springdoc OpenAPI 3.1 (`springdoc-openapi-starter-webmvc-ui:3.1.1`) with interactive Swagger UI (`/swagger-ui/index.html`) and live OpenAPI JSON (`/v3/api-docs`).
-  - Exported authoritative 28-operation runtime specification to [`docs/openapi.json`](docs/openapi.json).
-  - Authored embedded GitHub-compatible Mermaid diagrams for End-to-End System Topology, Financial Atomic Posting, and External PSP State Recovery.
-  - Rewrote root `README.md` into comprehensive portfolio presentation.
-  - Formally validated test baseline: 847 tests passing across 5 modules (0 failures, 0 errors, 0 skipped).
-- **Next Phase:** **Phase 42 — Dead-Code, Dependency & Security Cleanup**.
+- **Current State:** Post-v1 release candidate with complete Customer, Merchant, and OPS workspaces.
+  - Runtime and repository OpenAPI 3.1 specifications contain 31 operations.
+  - Latest full backend verification: 933 passing tests across 5 modules with no failures, errors, or skips.
+  - Current frontend verification: 99 passing tests, clean lint, and successful production build.
+  - GitHub Actions validates backend, frontend tests/lint/build, financial failure scenarios, production images, and CodeQL analysis for Java and TypeScript.
+- **Release readiness:** Application functionality is complete for its portfolio scope. Public deployment still requires operator-owned production secrets, a public hostname, trusted TLS, backups, and post-deployment smoke testing. This project remains a simulated-money educational system and must not process real funds.

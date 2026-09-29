@@ -1,5 +1,15 @@
 # LedgerGuard Project Status
 
+> **Current main-branch snapshot (2026-09-29):** The sections below preserve the
+> historical v1.0.0 phase record. Since that release, the repository has added
+> complete Customer, Merchant, and OPS workspaces, secure OPS provisioning, and
+> expanded reconciliation operations. The current OpenAPI export contains 31
+> operations. The latest full backend verification recorded 933 passing tests;
+> the current frontend verification records 99 passing tests, clean lint, and a
+> successful production build. Public deployment remains a separate operational
+> step requiring deployment secrets, a hostname, trusted TLS, backups, and smoke
+> tests.
+
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
 - **Current Phase:** Phase 44 — v1.0.0 Portfolio Release

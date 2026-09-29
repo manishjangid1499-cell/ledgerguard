@@ -67,6 +67,10 @@ jobs:
         working-directory: frontend/ledgerguard-web
         run: npm run lint
 
+      - name: Run tests
+        working-directory: frontend/ledgerguard-web
+        run: npm test -- --run
+
       - name: Build production bundle
         working-directory: frontend/ledgerguard-web
         run: npm run build
