@@ -24,6 +24,7 @@ import { useReconciliationCases } from '../hooks/useReconciliation';
 import { ReconciliationCaseResponse } from '../types/reconciliation.types';
 import { SnapshotRepairDialog } from './SnapshotRepairDialog';
 import { formatMinorUnitsToInr } from '../../shared/utils/money';
+import { formatDateTime } from '../../shared/utils/display';
 
 export const SnapshotRepairView: React.FC = () => {
   const { user } = useAuth();
@@ -72,6 +73,7 @@ export const SnapshotRepairView: React.FC = () => {
                   <TableCell>Status</TableCell>
                   <TableCell align="right">Snapshot Cache</TableCell>
                   <TableCell align="right">Journal Ground Truth</TableCell>
+                  <TableCell align="right">Difference</TableCell>
                   <TableCell>Detected At</TableCell>
                   <TableCell align="center">Action</TableCell>
                 </TableRow>
@@ -79,7 +81,7 @@ export const SnapshotRepairView: React.FC = () => {
               <TableBody>
                 {data?.items.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} align="center" sx={{ py: 5 }}>
+                    <TableCell colSpan={8} align="center" sx={{ py: 5 }}>
                       <Stack spacing={1} sx={{ alignItems: 'center' }}>
                         <CheckCircleIcon color="success" sx={{ fontSize: 36 }} />
                         <Typography sx={{ fontWeight: 500 }}>All Balance Snapshots Consistent</Typography>
@@ -97,6 +99,10 @@ export const SnapshotRepairView: React.FC = () => {
                     const isEligibleStatus = caseItem.status === 'OPEN' || caseItem.status === 'IN_REVIEW';
                     const isSnapshotMismatch = caseItem.item.problemType === 'SNAPSHOT_MISMATCH';
                     const canRepair = isSnapshotMismatch && isEligibleStatus && isClaimantAllowed;
+                    const diffMinor =
+                      caseItem.item.actualValue !== null && caseItem.item.expectedValue !== null
+                        ? caseItem.item.actualValue - caseItem.item.expectedValue
+                        : null;
 
                     return (
                       <TableRow key={caseItem.id} hover>
@@ -139,9 +145,29 @@ export const SnapshotRepairView: React.FC = () => {
                               : 'N/A'}
                           </Typography>
                         </TableCell>
+                        <TableCell align="right">
+                          {diffMinor !== null ? (
+                            <Box>
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  fontWeight: 600,
+                                  color: diffMinor === 0 ? 'text.secondary' : 'error.main',
+                                }}
+                              >
+                                {diffMinor > 0 ? `+${formatMinorUnitsToInr(diffMinor)}` : formatMinorUnitsToInr(diffMinor)}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                {diffMinor > 0 ? `+${diffMinor}` : diffMinor} minor units
+                              </Typography>
+                            </Box>
+                          ) : (
+                            <Typography variant="body2" color="text.secondary">—</Typography>
+                          )}
+                        </TableCell>
                         <TableCell>
                           <Typography variant="caption">
-                            {new Date(caseItem.openedAt).toLocaleString()}
+                            {formatDateTime(caseItem.openedAt)}
                           </Typography>
                         </TableCell>
                         <TableCell align="center">

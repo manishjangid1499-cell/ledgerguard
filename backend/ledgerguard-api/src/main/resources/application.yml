@@ -48,7 +48,7 @@ ledgerguard:
     read-timeout-ms: ${PSP_READ_TIMEOUT_MS:2000}
     webhook-url: ${PSP_WEBHOOK_URL:http://localhost:8080/api/provider/webhooks}
     webhook:
-      secret: ${PSP_WEBHOOK_SECRET:}
+      secret: ${LEDGERGUARD_PSP_WEBHOOK_SECRET:${PSP_WEBHOOK_SECRET:}}
       max-clock-skew-seconds: ${PSP_WEBHOOK_MAX_CLOCK_SKEW_SECONDS:300}
     polling:
       enabled: ${LEDGERGUARD_PSP_POLLING_ENABLED:true}

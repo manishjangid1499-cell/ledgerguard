@@ -328,13 +328,14 @@ To enable initial administrative bootstrapping without compromising production s
    - Must run as an ephemeral CLI task with `spring.main.web-application-type=none`.
    - Fails fast immediately if executed within a servlet or reactive web context (`WebApplicationContext` or web server application context).
    - Not exposed through any HTTP endpoint, controller, or webhook.
-3. **Explicit Ephemeral Invocation & Process Completion**:
-   - Executed exclusively as a one-off task (e.g., Kubernetes Job or `docker compose run --rm`).
+3. **Explicit Ephemeral Invocation & Transactional Exit-on-Completion**:
+   - Executed exclusively as a one-off task (e.g., Kubernetes Job, standalone JAR, or `docker compose run --rm`).
    - Reads provisioning credentials strictly from process-local environment variables:
      - `LEDGERGUARD_OPS_PROVISION_EMAIL`
      - `LEDGERGUARD_OPS_PROVISION_PASSWORD`
      - `LEDGERGUARD_OPS_PROVISION_FULL_NAME` (optional, defaults to "Operations Administrator")
-   - Automatically closes context and terminates process with exit code `0` on success; exits non-zero (`1`) on any validation or constraint failure.
+   - Persists through a dedicated `@Transactional` service (`ProductionOpsProvisioningService`), guaranteeing the transaction is committed to PostgreSQL prior to initiating application shutdown.
+   - Automatically closes context and terminates process with exit code `0` on success via `SpringApplication.exit(ctx, () -> 0)`; exits non-zero (`1`) on any validation or constraint failure.
 4. **Defense-in-Depth Provisioning Constraints**:
    - **No Plaintext Logging & Secret Retention**: Credentials are never logged or persisted in plaintext. Secret values are retained in memory only for the provisioning process lifetime, and references are released after use. (Because Java `String` values are immutable, JVM memory erasure cannot be guaranteed; operational security relies on ephemeral container execution and purging external deployment secrets immediately after completion).
    - **BCrypt Hashing**: Passwords are saved strictly as salted BCrypt hashes (`strength = 10`, cost 10). Plaintext is never persisted in PostgreSQL.

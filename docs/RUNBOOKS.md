@@ -522,6 +522,7 @@ Public self-registration of `ROLE_OPS` is prohibited by design. In production, i
 **Guarantees & Constraints**:
 - **Dual-Gate Activation**: Requires BOTH the dedicated Spring profile `ops-provision` AND explicit property `ledgerguard.ops.provision.enabled=true`.
 - **Non-Web Execution Enforced**: Must execute as an ephemeral CLI task with `spring.main.web-application-type=none`. Fails fast immediately if executed within a servlet or reactive web context.
+- **Transactional Commit-Before-Exit**: The provisioning operation executes inside a dedicated `@Transactional` boundary (`ProductionOpsProvisioningService`). The transaction is fully committed to PostgreSQL before `SpringApplication.exit(applicationContext, () -> 0)` initiates process shutdown, guaranteeing zero uncommitted writes upon exit.
 - **Process Exit on Completion**: Closes context and terminates with exit code `0` on success; throws exception and exits non-zero (`1`) on any failure.
 - **Production API Protection**: The standard production service (`ledgerguard-api` in `docker-compose.prod.yml`) strictly omits the `ops-provision` profile and defaults `LEDGERGUARD_OPS_PROVISION_ENABLED=false`.
 - **Zero Financial Footprint**: Strictly never provisions a financial ledger account, balance snapshot, or wallet (`ledger_accounts`).
@@ -532,6 +533,30 @@ Public self-registration of `ROLE_OPS` is prohibited by design. In production, i
 - **Post-Provisioning Secret Lifecycle**: The external deployment secret must be deleted or rotated immediately after provisioning.
 
 ### 9.2 Initial Ephemeral Provisioning Procedure
+
+#### Standalone Process Execution (Clean Environment):
+When executing directly outside Docker Compose (e.g. host VM, custom container runner), all mandatory platform datasource, security, and messaging configurations must be supplied alongside the provisioning parameters:
+```bash
+# 1. Mandatory Core Service Configurations
+export LEDGERGUARD_DB_URL="jdbc:postgresql://<DB_HOST>:5432/ledgerguard"
+export LEDGERGUARD_DB_USER="ledgerguard_app"
+export LEDGERGUARD_DB_PASSWORD="<DB_PASSWORD>"
+export LEDGERGUARD_JWT_SECRET="<MIN_32_BYTE_BASE64_OR_HEX_SECRET>"
+export PSP_WEBHOOK_SECRET="<MIN_32_BYTE_BASE64_OR_HEX_SECRET>" # (or LEDGERGUARD_PSP_WEBHOOK_SECRET)
+export LEDGERGUARD_KAFKA_BOOTSTRAP_SERVERS="<KAFKA_HOST>:9092"
+
+# 2. Mandatory Provisioning Flags & Identity Values
+export SPRING_PROFILES_ACTIVE="prod,ops-provision"
+export SPRING_MAIN_WEB_APPLICATION_TYPE="none"
+export LEDGERGUARD_OPS_PROVISION_ENABLED="true"
+export LEDGERGUARD_OPS_PROVISION_EMAIL="ops.admin@ledgerguard.example.com"
+export LEDGERGUARD_OPS_PROVISION_FULL_NAME="Operations Administrator"
+export LEDGERGUARD_OPS_PROVISION_PASSWORD="${OPS_BOOTSTRAP_SECRET}"
+export LEDGERGUARD_OPS_PROVISION_EXIT_ON_COMPLETION="true"
+
+# 3. Execute Ephemeral JAR Task
+java -jar backend/ledgerguard-api/target/ledgerguard-api-0.1.0-SNAPSHOT.jar
+```
 
 #### Using Docker Compose in Production:
 Run an ephemeral container with `run --rm`:

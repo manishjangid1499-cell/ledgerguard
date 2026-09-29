@@ -25,6 +25,11 @@ import { ResolveCaseDialog } from './ResolveCaseDialog';
 import { SnapshotRepairDialog } from './SnapshotRepairDialog';
 import { formatMinorUnitsToInr } from '../../shared/utils/money';
 import { getErrorMessage } from '../../shared/api/errorMessage';
+import {
+  formatDateTime,
+  formatEnumLabel,
+  sanitizeOperatorDescription,
+} from '../../shared/utils/display';
 
 interface CaseDetailDialogProps {
   caseId: string | null;
@@ -49,6 +54,8 @@ export const CaseDetailDialog: React.FC<CaseDetailDialogProps> = ({
   if (!open) return null;
 
   const isAssignedToMe = caseItem?.assignedToUserId === user?.id;
+  const isAssignedToOther = caseItem?.assignedToUserId !== null && !isAssignedToMe;
+  const isUnassigned = caseItem?.assignedToUserId === null;
   const isResolved = caseItem?.status === 'RESOLVED';
   const isSnapshotMismatch = caseItem?.item.problemType === 'SNAPSHOT_MISMATCH';
 
@@ -70,13 +77,16 @@ export const CaseDetailDialog: React.FC<CaseDetailDialogProps> = ({
         fullWidth
         aria-labelledby="case-detail-dialog-title"
       >
-        <DialogTitle id="case-detail-dialog-title" sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <DialogTitle
+          id="case-detail-dialog-title"
+          sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+        >
           <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
             <span>Reconciliation Case Details</span>
             {caseItem && <StatusBadge status={caseItem.status} />}
           </Stack>
         </DialogTitle>
-        <DialogContent dividers>
+        <DialogContent dividers sx={{ maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
           {isLoading && (
             <Stack sx={{ alignItems: 'center', py: 4 }}>
               <CircularProgress />
@@ -102,7 +112,7 @@ export const CaseDetailDialog: React.FC<CaseDetailDialogProps> = ({
                   <Typography variant="caption" color="text.secondary">Case ID</Typography>
                   <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                     <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{caseItem.id}</Typography>
-                    <CopyButton value={caseItem.id} label="case ID" />
+                    <CopyButton value={caseItem.id} label={`case ID ${caseItem.id}`} />
                   </Stack>
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6 }}>
@@ -120,7 +130,7 @@ export const CaseDetailDialog: React.FC<CaseDetailDialogProps> = ({
                     >
                       {caseItem.item.reconciliationRunId}
                     </Typography>
-                    <CopyButton value={caseItem.item.reconciliationRunId} label="run ID" />
+                    <CopyButton value={caseItem.item.reconciliationRunId} label={`run ID ${caseItem.item.reconciliationRunId}`} />
                   </Stack>
                 </Grid>
 
@@ -133,13 +143,13 @@ export const CaseDetailDialog: React.FC<CaseDetailDialogProps> = ({
                 <Grid size={{ xs: 6, sm: 3 }}>
                   <Typography variant="caption" color="text.secondary">Level</Typography>
                   <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                    {caseItem.item.level.replaceAll('_', ' ')}
+                    {formatEnumLabel(caseItem.item.level)}
                   </Typography>
                 </Grid>
                 <Grid size={{ xs: 6, sm: 3 }}>
                   <Typography variant="caption" color="text.secondary">Problem Type</Typography>
                   <Typography variant="body2" sx={{ fontWeight: 600, color: 'error.main' }}>
-                    {caseItem.item.problemType.replaceAll('_', ' ')}
+                    {formatEnumLabel(caseItem.item.problemType)}
                   </Typography>
                 </Grid>
                 <Grid size={{ xs: 6, sm: 3 }}>
@@ -170,9 +180,9 @@ export const CaseDetailDialog: React.FC<CaseDetailDialogProps> = ({
                       <Typography variant="caption" color="text.secondary">Affected Entity</Typography>
                       <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
                         <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                          {caseItem.item.entityType}: {caseItem.item.entityId}
+                          {formatEnumLabel(caseItem.item.entityType)}: {caseItem.item.entityId}
                         </Typography>
-                        <CopyButton value={caseItem.item.entityId} label="entity ID" />
+                        <CopyButton value={caseItem.item.entityId} label={`entity ID ${caseItem.item.entityId}`} />
                       </Stack>
                     </Grid>
                     {caseItem.item.expectedValue !== null && (
@@ -194,19 +204,19 @@ export const CaseDetailDialog: React.FC<CaseDetailDialogProps> = ({
                     {caseItem.item.observedLocalStatus && (
                       <Grid size={{ xs: 6, sm: 4 }}>
                         <Typography variant="caption" color="text.secondary">Observed Local Status</Typography>
-                        <Typography variant="body2">{caseItem.item.observedLocalStatus}</Typography>
+                        <Typography variant="body2">{formatEnumLabel(caseItem.item.observedLocalStatus)}</Typography>
                       </Grid>
                     )}
                     {caseItem.item.providerStatus && (
                       <Grid size={{ xs: 6, sm: 4 }}>
                         <Typography variant="caption" color="text.secondary">Provider Status</Typography>
-                        <Typography variant="body2">{caseItem.item.providerStatus}</Typography>
+                        <Typography variant="body2">{formatEnumLabel(caseItem.item.providerStatus)}</Typography>
                       </Grid>
                     )}
                     <Grid size={{ xs: 12 }}>
                       <Typography variant="caption" color="text.secondary">Discrepancy Description</Typography>
-                      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', mt: 0.5 }}>
-                        {caseItem.item.description}
+                      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', mt: 0.5 }}>
+                        {sanitizeOperatorDescription(caseItem.item.description)}
                       </Typography>
                     </Grid>
                   </Grid>
@@ -223,7 +233,7 @@ export const CaseDetailDialog: React.FC<CaseDetailDialogProps> = ({
                       <Grid size={{ xs: 6, sm: 4 }}>
                         <Typography variant="caption" color="text.secondary">Resolved At</Typography>
                         <Typography variant="body2">
-                          {caseItem.resolvedAt ? new Date(caseItem.resolvedAt).toLocaleString() : 'N/A'}
+                          {formatDateTime(caseItem.resolvedAt, 'N/A')}
                         </Typography>
                       </Grid>
                       <Grid size={{ xs: 6, sm: 4 }}>
@@ -235,12 +245,12 @@ export const CaseDetailDialog: React.FC<CaseDetailDialogProps> = ({
                       <Grid size={{ xs: 12, sm: 4 }}>
                         <Typography variant="caption" color="text.secondary">Resolution Action</Typography>
                         <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                          {caseItem.resolutionAction?.replaceAll('_', ' ') || 'MANUAL RESOLVE'}
+                          {formatEnumLabel(caseItem.resolutionAction || 'MANUAL_REVIEW_COMPLETED')}
                         </Typography>
                       </Grid>
                       <Grid size={{ xs: 12 }}>
                         <Typography variant="caption" color="text.secondary">Resolution Note</Typography>
-                        <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', mt: 0.5 }}>
+                        <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', mt: 0.5 }}>
                           {caseItem.resolutionNote || 'No resolution note recorded.'}
                         </Typography>
                       </Grid>
@@ -260,10 +270,25 @@ export const CaseDetailDialog: React.FC<CaseDetailDialogProps> = ({
                   size="small"
                   startIcon={<AssignmentIndIcon />}
                   onClick={handleClaim}
-                  disabled={isAssignedToMe || claimMutation.isPending}
+                  disabled={isAssignedToMe || isAssignedToOther || claimMutation.isPending}
+                  title={
+                    isAssignedToMe
+                      ? 'Assigned to You'
+                      : isAssignedToOther
+                      ? 'Assigned to another operator'
+                      : 'Claim Case'
+                  }
+                  aria-label={
+                    isAssignedToMe
+                      ? 'Claim case (Assigned to you)'
+                      : isAssignedToOther
+                      ? 'Claim case (Assigned to another operator)'
+                      : 'Claim case'
+                  }
                 >
                   {isAssignedToMe ? 'Assigned to You' : 'Claim Case'}
                 </Button>
+
                 {isSnapshotMismatch && (
                   <Button
                     variant="contained"
@@ -271,19 +296,48 @@ export const CaseDetailDialog: React.FC<CaseDetailDialogProps> = ({
                     size="small"
                     startIcon={<BuildCircleOutlinedIcon />}
                     onClick={() => setRepairOpen(true)}
+                    disabled={isAssignedToOther}
+                    title={
+                      isAssignedToOther
+                        ? 'Assigned to another operator'
+                        : 'Repair Snapshot'
+                    }
+                    aria-label={
+                      isAssignedToOther
+                        ? 'Repair snapshot (Assigned to another operator)'
+                        : 'Repair snapshot'
+                    }
                   >
                     Repair Snapshot
                   </Button>
                 )}
-                <Button
-                  variant="contained"
-                  color="primary"
-                  size="small"
-                  startIcon={<CheckCircleIcon />}
-                  onClick={() => setResolveOpen(true)}
-                >
-                  Resolve Case
-                </Button>
+
+                {!isSnapshotMismatch && (
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    size="small"
+                    startIcon={<CheckCircleIcon />}
+                    onClick={() => setResolveOpen(true)}
+                    disabled={!isAssignedToMe}
+                    title={
+                      isAssignedToOther
+                        ? 'Assigned to another operator'
+                        : isUnassigned
+                        ? 'Claim case before resolving'
+                        : 'Resolve Case'
+                    }
+                    aria-label={
+                      isAssignedToOther
+                        ? 'Resolve case (Assigned to another operator)'
+                        : isUnassigned
+                        ? 'Claim case before resolving'
+                        : 'Resolve case'
+                    }
+                  >
+                    Resolve Case
+                  </Button>
+                )}
               </Stack>
             )}
           </Box>

@@ -55,6 +55,9 @@ export const FailureLabPage: React.FC = () => {
   return (
     <Container maxWidth="lg">
       <FailureLabHeader />
+      <Alert severity="warning" sx={{ mb: 3 }}>
+        <strong>ISOLATED TESTBED ONLY:</strong> Failure Lab is designed strictly for chaos engineering and resilience verification. It introduces deliberate network faults, latency spikes, and ledger discrepancies. It must never be used in a production environment.
+      </Alert>
       <EnvironmentStatusBanner />
       {loadingScenarios && <DataLoading label="Loading available scenarios" />}
       {!loadingScenarios && !scenariosError && scenarios.length === 0 && <Alert severity="info" sx={{ mb: 3 }}>No scenarios are available.</Alert>}

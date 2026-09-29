@@ -24,7 +24,7 @@ public abstract class AbstractIntegrationTest {
     public static final KafkaContainer KAFKA_CONTAINER =
             new KafkaContainer("apache/kafka:4.3.1");
 
-    private static final String RUNTIME_JWT_SECRET;
+    public static final String RUNTIME_JWT_SECRET;
     public static final String RUNTIME_WEBHOOK_SECRET;
 
     static {

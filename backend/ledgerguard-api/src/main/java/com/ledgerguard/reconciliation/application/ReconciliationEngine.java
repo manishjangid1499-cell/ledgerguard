@@ -219,7 +219,7 @@ public class ReconciliationEngine {
             log.error("Reconciliation run {} FAILED: {}", runId, e.getMessage(), e);
             try {
                 finalizationService.failRun(runId, journalsChecked, accountsChecked, operationsChecked,
-                        e.getClass().getSimpleName() + ": " + e.getMessage());
+                        "Reconciliation execution encountered an internal error during verification sweeps. Check service logs for details.");
             } catch (Exception fe) {
                 log.error("Failed to persist FAILED status for reconciliation run {}: {}", runId, fe.getMessage(), fe);
             }

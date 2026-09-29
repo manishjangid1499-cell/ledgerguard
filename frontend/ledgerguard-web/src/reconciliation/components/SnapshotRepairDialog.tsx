@@ -19,6 +19,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { ReconciliationCaseResponse, SnapshotRepairResponse } from '../types/reconciliation.types';
 import { useRepairSnapshot } from '../hooks/useReconciliation';
 import { formatMinorUnitsToInr } from '../../shared/utils/money';
+import { formatDateTime, formatEnumLabel } from '../../shared/utils/display';
 import { getErrorMessage } from '../../shared/api/errorMessage';
 
 interface SnapshotRepairDialogProps {
@@ -125,7 +126,7 @@ export const SnapshotRepairDialog: React.FC<SnapshotRepairDialogProps> = ({
                 Snapshot Repaired Successfully
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
-                {result.message}
+                {result.message || 'Snapshot successfully re-synchronized with immutable journal entries.'}
               </Typography>
 
               <Divider flexItem sx={{ my: 1 }} />
@@ -134,18 +135,42 @@ export const SnapshotRepairDialog: React.FC<SnapshotRepairDialogProps> = ({
                 <Grid container spacing={1.5}>
                   <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">Previous Snapshot</Typography>
-                    <Typography variant="body2">{formatMinorUnitsToInr(result.oldBalanceMinor)}</Typography>
+                    <Typography variant="body2">
+                      {formatMinorUnitsToInr(
+                        result.previousBalanceMinor
+                          ? Number(result.previousBalanceMinor)
+                          : (result.oldBalanceMinor ?? 0)
+                      )}
+                    </Typography>
                   </Grid>
                   <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">Repaired Balance</Typography>
                     <Typography variant="body2" sx={{ fontWeight: 600, color: 'primary.main' }}>
-                      {formatMinorUnitsToInr(result.newBalanceMinor)}
+                      {formatMinorUnitsToInr(
+                        result.repairedBalanceMinor
+                          ? Number(result.repairedBalanceMinor)
+                          : (result.newBalanceMinor ?? 0)
+                      )}
                     </Typography>
                   </Grid>
-                  <Grid size={{ xs: 12 }}>
-                    <Typography variant="caption" color="text.secondary">Journal Entries Recalculated</Typography>
-                    <Typography variant="body2">{result.journalEntriesCount}</Typography>
+                  <Grid size={{ xs: 6 }}>
+                    <Typography variant="caption" color="text.secondary">Resolution Action</Typography>
+                    <Typography variant="body2">
+                      {formatEnumLabel(result.resolutionAction || 'SNAPSHOT_REPAIRED')}
+                    </Typography>
                   </Grid>
+                  <Grid size={{ xs: 6 }}>
+                    <Typography variant="caption" color="text.secondary">Updated At</Typography>
+                    <Typography variant="body2">
+                      {result.snapshotUpdatedAt ? formatDateTime(result.snapshotUpdatedAt) : 'Synchronized'}
+                    </Typography>
+                  </Grid>
+                  {result.journalEntriesCount !== undefined && (
+                    <Grid size={{ xs: 12 }}>
+                      <Typography variant="caption" color="text.secondary">Journal Entries Recalculated</Typography>
+                      <Typography variant="body2">{result.journalEntriesCount}</Typography>
+                    </Grid>
+                  )}
                 </Grid>
               </Box>
             </Stack>

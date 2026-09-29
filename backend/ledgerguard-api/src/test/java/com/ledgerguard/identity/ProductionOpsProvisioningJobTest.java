@@ -6,6 +6,7 @@ import com.ledgerguard.identity.domain.UserRole;
 import com.ledgerguard.identity.domain.UserStatus;
 import com.ledgerguard.identity.infrastructure.ProductionOpsProvisioningJob;
 import com.ledgerguard.identity.infrastructure.ProductionOpsProvisioningProperties;
+import com.ledgerguard.identity.infrastructure.ProductionOpsProvisioningService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -291,7 +292,7 @@ class ProductionOpsProvisioningJobTest {
                 )
                 .withBean(UserRepository.class, () -> userRepository)
                 .withBean(PasswordEncoder.class, () -> passwordEncoder)
-                .withUserConfiguration(ProductionOpsProvisioningProperties.class, ProductionOpsProvisioningJob.class)
+                .withUserConfiguration(ProductionOpsProvisioningProperties.class, ProductionOpsProvisioningService.class, ProductionOpsProvisioningJob.class)
                 .run(context -> assertThat(context).hasSingleBean(ProductionOpsProvisioningJob.class));
     }
 }

@@ -90,12 +90,18 @@ export interface ReconciliationDashboardSummaryResponse {
 
 export interface SnapshotRepairResponse {
   caseId: string;
-  accountId: string;
-  repaired: boolean;
-  oldBalanceMinor: number;
-  newBalanceMinor: number;
-  journalEntriesCount: number;
-  message: string;
+  ledgerAccountId: string;
+  previousBalanceMinor: string;
+  repairedBalanceMinor: string;
+  resolutionAction: string;
+  snapshotUpdatedAt: string;
+  // Legacy compatibility fields if referenced by previous fixtures
+  accountId?: string;
+  repaired?: boolean;
+  oldBalanceMinor?: number;
+  newBalanceMinor?: number;
+  journalEntriesCount?: number;
+  message?: string;
 }
 
 export interface ManualResolveRequest {

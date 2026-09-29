@@ -3,6 +3,8 @@ import {
   Alert,
   Box,
   Button,
+  Card,
+  CardContent,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -24,6 +26,11 @@ import {
 import { StatusBadge } from '../../shared/components/StatusBadge';
 import { CopyButton } from '../../shared/components/CopyButton';
 import { useReconciliationRun, useReconciliationRunItems } from '../hooks/useReconciliation';
+import {
+  formatDateTime,
+  formatEnumLabel,
+  sanitizeOperatorDescription,
+} from '../../shared/utils/display';
 
 interface RunDetailDialogProps {
   runId: string | null;
@@ -58,13 +65,16 @@ export const RunDetailDialog: React.FC<RunDetailDialogProps> = ({
       fullWidth
       aria-labelledby="run-detail-dialog-title"
     >
-      <DialogTitle id="run-detail-dialog-title" sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <DialogTitle
+        id="run-detail-dialog-title"
+        sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+      >
         <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
           <span>Reconciliation Run Details</span>
           {run && <StatusBadge status={run.status} />}
         </Stack>
       </DialogTitle>
-      <DialogContent dividers>
+      <DialogContent dividers sx={{ maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
         {isRunLoading && (
           <Stack sx={{ alignItems: 'center', py: 4 }}>
             <CircularProgress />
@@ -81,7 +91,7 @@ export const RunDetailDialog: React.FC<RunDetailDialogProps> = ({
           <Stack spacing={3}>
             {run.failureReason && (
               <Alert severity="error">
-                <strong>Failure Reason:</strong> {run.failureReason}
+                <strong>Failure Reason:</strong> {sanitizeOperatorDescription(run.failureReason)}
               </Alert>
             )}
 
@@ -90,23 +100,25 @@ export const RunDetailDialog: React.FC<RunDetailDialogProps> = ({
                 <Typography variant="caption" color="text.secondary">Run ID</Typography>
                 <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                   <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{run.id}</Typography>
-                  <CopyButton value={run.id} label="run ID" />
+                  <CopyButton value={run.id} label={`run ID ${run.id}`} />
                 </Stack>
               </Grid>
               <Grid size={{ xs: 6, sm: 3 }}>
                 <Typography variant="caption" color="text.secondary">Trigger Source</Typography>
-                <Typography variant="body2" sx={{ fontWeight: 500 }}>{run.triggerSource}</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                  {formatEnumLabel(run.triggerSource)}
+                </Typography>
               </Grid>
               <Grid size={{ xs: 6, sm: 3 }}>
                 <Typography variant="caption" color="text.secondary">Started At</Typography>
                 <Typography variant="body2">
-                  {new Date(run.startedAt).toLocaleString()}
+                  {formatDateTime(run.startedAt)}
                 </Typography>
               </Grid>
               <Grid size={{ xs: 6, sm: 3 }}>
                 <Typography variant="caption" color="text.secondary">Completed At</Typography>
                 <Typography variant="body2">
-                  {run.completedAt ? new Date(run.completedAt).toLocaleString() : 'In Progress'}
+                  {formatDateTime(run.completedAt, 'Not completed')}
                 </Typography>
               </Grid>
               <Grid size={{ xs: 6, sm: 3 }}>
@@ -123,7 +135,13 @@ export const RunDetailDialog: React.FC<RunDetailDialogProps> = ({
               </Grid>
               <Grid size={{ xs: 6, sm: 3 }}>
                 <Typography variant="caption" color="text.secondary">Discrepancies</Typography>
-                <Typography variant="body2" sx={{ color: run.discrepancyCount > 0 ? 'error.main' : 'text.primary', fontWeight: run.discrepancyCount > 0 ? 600 : 400 }}>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: run.discrepancyCount > 0 ? 'error.main' : 'text.primary',
+                    fontWeight: run.discrepancyCount > 0 ? 600 : 400,
+                  }}
+                >
                   {run.discrepancyCount}
                 </Typography>
               </Grid>
@@ -160,57 +178,112 @@ export const RunDetailDialog: React.FC<RunDetailDialogProps> = ({
 
               {itemsPage && itemsPage.items.length > 0 && (
                 <>
-                  <TableContainer component={Paper} variant="outlined" sx={{ mt: 1 }}>
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>Problem Type</TableCell>
-                          <TableCell>Classification</TableCell>
-                          <TableCell>Level</TableCell>
-                          <TableCell>Entity</TableCell>
-                          <TableCell>Description</TableCell>
-                          <TableCell>Detected</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {itemsPage.items.map((item) => (
-                          <TableRow key={item.id}>
-                            <TableCell>
-                              <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                                {item.problemType.replaceAll('_', ' ')}
+                  {/* Desktop / Tablet Table View */}
+                  <Box sx={{ display: { xs: 'none', md: 'block' } }}>
+                    <TableContainer component={Paper} variant="outlined" sx={{ mt: 1 }}>
+                      <Table size="small">
+                        <TableHead>
+                          <TableRow>
+                            <TableCell>Problem Type</TableCell>
+                            <TableCell>Classification</TableCell>
+                            <TableCell>Level</TableCell>
+                            <TableCell>Entity</TableCell>
+                            <TableCell>Description</TableCell>
+                            <TableCell>Detected</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {itemsPage.items.map((item) => (
+                            <TableRow key={item.id}>
+                              <TableCell>
+                                <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                  {formatEnumLabel(item.problemType)}
+                                </Typography>
+                              </TableCell>
+                              <TableCell>
+                                <StatusBadge status={item.classification} />
+                              </TableCell>
+                              <TableCell>
+                                <Typography variant="caption">
+                                  {formatEnumLabel(item.level)}
+                                </Typography>
+                              </TableCell>
+                              <TableCell>
+                                <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+                                  <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                                    {formatEnumLabel(item.entityType)}: {item.entityId.slice(0, 8)}...
+                                  </Typography>
+                                  <CopyButton value={item.entityId} label={`entity ID ${item.entityId}`} />
+                                </Stack>
+                              </TableCell>
+                              <TableCell sx={{ maxWidth: 320 }}>
+                                <Typography
+                                  variant="caption"
+                                  sx={{
+                                    display: 'block',
+                                    whiteSpace: 'normal',
+                                    wordBreak: 'break-word',
+                                  }}
+                                >
+                                  {sanitizeOperatorDescription(item.description)}
+                                </Typography>
+                              </TableCell>
+                              <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                                <Typography variant="caption">
+                                  {formatDateTime(item.detectedAt)}
+                                </Typography>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  </Box>
+
+                  {/* Mobile Stacked Card View */}
+                  <Box sx={{ display: { xs: 'block', md: 'none' }, mt: 1 }}>
+                    <Stack spacing={1.5}>
+                      {itemsPage.items.map((item) => (
+                        <Card key={item.id} variant="outlined">
+                          <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                            <Stack spacing={1}>
+                              <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                  {formatEnumLabel(item.problemType)}
+                                </Typography>
+                                <StatusBadge status={item.classification} />
+                              </Stack>
+                              <Typography variant="caption" color="text.secondary">
+                                Level: {formatEnumLabel(item.level)}
                               </Typography>
-                            </TableCell>
-                            <TableCell>
-                              <StatusBadge status={item.classification} />
-                            </TableCell>
-                            <TableCell>
-                              <Typography variant="caption">
-                                {item.level.replaceAll('_', ' ')}
-                              </Typography>
-                            </TableCell>
-                            <TableCell>
                               <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
                                 <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
-                                  {item.entityType}: {item.entityId.slice(0, 8)}...
+                                  {formatEnumLabel(item.entityType)}: {item.entityId.slice(0, 8)}...
                                 </Typography>
-                                <CopyButton value={item.entityId} label="entity ID" />
+                                <CopyButton value={item.entityId} label={`entity ID ${item.entityId}`} />
                               </Stack>
-                            </TableCell>
-                            <TableCell sx={{ maxWidth: 260 }}>
-                              <Typography variant="caption" noWrap title={item.description}>
-                                {item.description}
+                              <Typography
+                                variant="caption"
+                                sx={{
+                                  display: 'block',
+                                  whiteSpace: 'normal',
+                                  wordBreak: 'break-word',
+                                  bgcolor: 'background.default',
+                                  p: 1,
+                                  borderRadius: 1,
+                                }}
+                              >
+                                {sanitizeOperatorDescription(item.description)}
                               </Typography>
-                            </TableCell>
-                            <TableCell>
-                              <Typography variant="caption">
-                                {new Date(item.detectedAt).toLocaleTimeString()}
+                              <Typography variant="caption" color="text.secondary">
+                                Detected: {formatDateTime(item.detectedAt)}
                               </Typography>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
+                            </Stack>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </Stack>
+                  </Box>
 
                   {itemsPage.totalPages > 1 && (
                     <Stack direction="row" sx={{ justifyContent: 'flex-end', mt: 2 }}>

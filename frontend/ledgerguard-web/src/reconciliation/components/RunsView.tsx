@@ -15,19 +15,17 @@ import {
   TableRow,
   Typography,
 } from '@mui/material';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import { StatusBadge } from '../../shared/components/StatusBadge';
 import { CopyButton } from '../../shared/components/CopyButton';
 import { useReconciliationRuns } from '../hooks/useReconciliation';
 import { RunDetailDialog } from './RunDetailDialog';
-import { RunTriggerDialog } from './RunTriggerDialog';
+import { formatDateTime, formatEnumLabel } from '../../shared/utils/display';
 
 export const RunsView: React.FC = () => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
-  const [isTriggerOpen, setIsTriggerOpen] = useState(false);
 
   const { data, isLoading, isError } = useReconciliationRuns(page, rowsPerPage);
 
@@ -42,14 +40,6 @@ export const RunsView: React.FC = () => {
     <Box>
       <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Typography variant="h6">Reconciliation Runs History</Typography>
-        <Button
-          variant="contained"
-          color="primary"
-          startIcon={<PlayArrowIcon />}
-          onClick={() => setIsTriggerOpen(true)}
-        >
-          Start Reconciliation
-        </Button>
       </Stack>
 
       {isError && (
@@ -106,11 +96,11 @@ export const RunsView: React.FC = () => {
                         <StatusBadge status={run.status} />
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2">{run.triggerSource}</Typography>
+                        <Typography variant="body2">{formatEnumLabel(run.triggerSource)}</Typography>
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2">
-                          {new Date(run.startedAt).toLocaleString()}
+                          {formatDateTime(run.startedAt)}
                         </Typography>
                       </TableCell>
                       <TableCell>
@@ -140,6 +130,7 @@ export const RunsView: React.FC = () => {
                           variant="outlined"
                           startIcon={<VisibilityOutlinedIcon />}
                           onClick={() => setSelectedRunId(run.id)}
+                          aria-label={`View details for run ${run.id.slice(0, 8)}`}
                         >
                           Details
                         </Button>
@@ -170,14 +161,6 @@ export const RunsView: React.FC = () => {
         runId={selectedRunId}
         open={Boolean(selectedRunId)}
         onClose={() => setSelectedRunId(null)}
-      />
-
-      <RunTriggerDialog
-        open={isTriggerOpen}
-        onClose={() => setIsTriggerOpen(false)}
-        onSuccess={(run) => {
-          if (run) setSelectedRunId(run.id);
-        }}
       />
     </Box>
   );

@@ -23,10 +23,18 @@ import { StatusBadge } from '../../shared/components/StatusBadge';
 import { useReconciliationSummary } from '../../reconciliation/hooks/useReconciliation';
 import { RunTriggerDialog } from '../../reconciliation/components/RunTriggerDialog';
 import { RunDetailDialog } from '../../reconciliation/components/RunDetailDialog';
+import { formatDateTime } from '../../shared/utils/display';
 
 export const OpsDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { data: summary, isLoading, isError, refetch, isFetching } = useReconciliationSummary();
+  const {
+    data: summary,
+    isLoading,
+    isError,
+    refetch,
+    isFetching,
+    dataUpdatedAt,
+  } = useReconciliationSummary();
 
   const [isTriggerOpen, setIsTriggerOpen] = useState(false);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
@@ -36,6 +44,13 @@ export const OpsDashboard: React.FC = () => {
     const durationMs = new Date(end).getTime() - new Date(start).getTime();
     if (durationMs < 1000) return `${durationMs} ms`;
     return `${(durationMs / 1000).toFixed(1)} s`;
+  };
+
+  const handleCardKeyDown = (e: React.KeyboardEvent, path: string) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      navigate(path);
+    }
   };
 
   return (
@@ -61,12 +76,18 @@ export const OpsDashboard: React.FC = () => {
           <Typography variant="body2" color="text.secondary">
             Continuous payment integrity monitoring, double-entry verification, and case resolution.
           </Typography>
+          {dataUpdatedAt > 0 && (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+              Last updated: {formatDateTime(dataUpdatedAt)}
+            </Typography>
+          )}
         </Box>
 
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
           <Button
             variant="outlined"
             size="medium"
+            aria-label="Refresh metrics"
             startIcon={
               isFetching && !isLoading ? (
                 <CircularProgress size={16} color="inherit" />
@@ -114,7 +135,20 @@ export const OpsDashboard: React.FC = () => {
           {/* Key Metrics Cards */}
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <Card variant="outlined">
+              <Card
+                variant="outlined"
+                role="button"
+                tabIndex={0}
+                aria-label="View open cases"
+                onClick={() => navigate('/app/reconciliation?tab=cases&status=OPEN')}
+                onKeyDown={(e) => handleCardKeyDown(e, '/app/reconciliation?tab=cases&status=OPEN')}
+                sx={{
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease-in-out',
+                  '&:hover': { borderColor: 'primary.main', bgcolor: 'action.hover' },
+                  '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main' },
+                }}
+              >
                 <CardContent>
                   <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
                     <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
@@ -133,7 +167,20 @@ export const OpsDashboard: React.FC = () => {
             </Grid>
 
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <Card variant="outlined">
+              <Card
+                variant="outlined"
+                role="button"
+                tabIndex={0}
+                aria-label="View in review cases"
+                onClick={() => navigate('/app/reconciliation?tab=cases&status=IN_REVIEW')}
+                onKeyDown={(e) => handleCardKeyDown(e, '/app/reconciliation?tab=cases&status=IN_REVIEW')}
+                sx={{
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease-in-out',
+                  '&:hover': { borderColor: 'primary.main', bgcolor: 'action.hover' },
+                  '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main' },
+                }}
+              >
                 <CardContent>
                   <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
                     <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
@@ -152,7 +199,20 @@ export const OpsDashboard: React.FC = () => {
             </Grid>
 
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <Card variant="outlined">
+              <Card
+                variant="outlined"
+                role="button"
+                tabIndex={0}
+                aria-label="View resolved cases"
+                onClick={() => navigate('/app/reconciliation?tab=cases&status=RESOLVED')}
+                onKeyDown={(e) => handleCardKeyDown(e, '/app/reconciliation?tab=cases&status=RESOLVED')}
+                sx={{
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease-in-out',
+                  '&:hover': { borderColor: 'primary.main', bgcolor: 'action.hover' },
+                  '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main' },
+                }}
+              >
                 <CardContent>
                   <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
                     <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
@@ -171,11 +231,24 @@ export const OpsDashboard: React.FC = () => {
             </Grid>
 
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <Card variant="outlined">
+              <Card
+                variant="outlined"
+                role="button"
+                tabIndex={0}
+                aria-label="View reconciliation runs"
+                onClick={() => navigate('/app/reconciliation?tab=runs')}
+                onKeyDown={(e) => handleCardKeyDown(e, '/app/reconciliation?tab=runs')}
+                sx={{
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease-in-out',
+                  '&:hover': { borderColor: 'primary.main', bgcolor: 'action.hover' },
+                  '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main' },
+                }}
+              >
                 <CardContent>
                   <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
                     <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                      TOTAL AUDIT RUNS
+                      TOTAL RECONCILIATION RUNS
                     </Typography>
                     <HistoryOutlinedIcon color="action" />
                   </Stack>
@@ -223,7 +296,7 @@ export const OpsDashboard: React.FC = () => {
                 <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                   <Typography variant="caption" color="text.secondary">Triggered At</Typography>
                   <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                    {new Date(summary.latestRun.startedAt).toLocaleString()}
+                    {formatDateTime(summary.latestRun.startedAt)}
                   </Typography>
                 </Grid>
                 <Grid size={{ xs: 6, sm: 3, md: 2 }}>

@@ -134,26 +134,26 @@ public class ProviderSettlementChecker {
         try {
             providerResponse = pspClient.getOperationByClientOperationId(fundingId);
         } catch (PspTransportException e) {
-            log.warn("Level 3 provider transport failure for funding {}: {}", fundingId, e.getMessage());
+            log.warn("Level 3 provider transport failure for funding {}: {}", fundingId, e.getMessage(), e);
             transactionTemplate.execute(status -> {
                 persistProviderUnavailable(runId, fundingId, FUNDING_ENTITY_TYPE,
-                        "Provider transport failure for funding " + fundingId + ": " + e.getMessage(), null);
+                        "The payment provider was unreachable during settlement verification. Check provider network availability and run reconciliation again after the provider recovers.", null);
                 return null;
             });
             return;
         } catch (com.ledgerguard.funding.infrastructure.PspCallRejectedException e) {
-            log.warn("Level 3 provider client rejected for funding {}: reason={}", fundingId, e.getReason());
+            log.warn("Level 3 provider client rejected for funding {}: reason={}", fundingId, e.getReason(), e);
             transactionTemplate.execute(status -> {
                 persistProviderUnavailable(runId, fundingId, FUNDING_ENTITY_TYPE,
-                        "Provider call rejected (" + e.getReason() + ") for funding " + fundingId + ": " + e.getMessage(), null);
+                        "Provider call rejected (" + e.getReason() + "). The payment provider is currently unavailable or under heavy load.", null);
                 return null;
             });
             return;
         } catch (PspProtocolException e) {
-            log.warn("Level 3 provider protocol error for funding {}: {}", fundingId, e.getMessage());
+            log.warn("Level 3 provider protocol error for funding {}: {}", fundingId, e.getMessage(), e);
             transactionTemplate.execute(status -> {
                 persistProviderUnavailable(runId, fundingId, FUNDING_ENTITY_TYPE,
-                        "Provider protocol error for funding " + fundingId + ": " + e.getMessage(), null);
+                        "The simulated provider response could not be processed. Check provider availability and run reconciliation again after the provider recovers.", null);
                 return null;
             });
             return;
@@ -192,26 +192,26 @@ public class ProviderSettlementChecker {
         try {
             providerResponse = pspClient.getOperationByClientOperationId(payoutId);
         } catch (PspTransportException e) {
-            log.warn("Level 3 provider transport failure for payout {}: {}", payoutId, e.getMessage());
+            log.warn("Level 3 provider transport failure for payout {}: {}", payoutId, e.getMessage(), e);
             transactionTemplate.execute(status -> {
                 persistProviderUnavailable(runId, payoutId, PAYOUT_ENTITY_TYPE,
-                        "Provider transport failure for payout " + payoutId + ": " + e.getMessage(), null);
+                        "The payment provider was unreachable during settlement verification. Check provider network availability and run reconciliation again after the provider recovers.", null);
                 return null;
             });
             return;
         } catch (com.ledgerguard.funding.infrastructure.PspCallRejectedException e) {
-            log.warn("Level 3 provider client rejected for payout {}: reason={}", payoutId, e.getReason());
+            log.warn("Level 3 provider client rejected for payout {}: reason={}", payoutId, e.getReason(), e);
             transactionTemplate.execute(status -> {
                 persistProviderUnavailable(runId, payoutId, PAYOUT_ENTITY_TYPE,
-                        "Provider call rejected (" + e.getReason() + ") for payout " + payoutId + ": " + e.getMessage(), null);
+                        "Provider call rejected (" + e.getReason() + "). The payment provider is currently unavailable or under heavy load.", null);
                 return null;
             });
             return;
         } catch (PspProtocolException e) {
-            log.warn("Level 3 provider protocol error for payout {}: {}", payoutId, e.getMessage());
+            log.warn("Level 3 provider protocol error for payout {}: {}", payoutId, e.getMessage(), e);
             transactionTemplate.execute(status -> {
                 persistProviderUnavailable(runId, payoutId, PAYOUT_ENTITY_TYPE,
-                        "Provider protocol error for payout " + payoutId + ": " + e.getMessage(), null);
+                        "The simulated provider response could not be processed. Check provider availability and run reconciliation again after the provider recovers.", null);
                 return null;
             });
             return;

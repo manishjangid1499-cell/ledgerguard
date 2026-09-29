@@ -152,6 +152,24 @@ public class ReconciliationCaseQueryService {
         return PageRequest.of(resolvedPage, resolvedSize, sort);
     }
 
+    public static String sanitizeOperatorDescription(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return raw;
+        }
+        if (raw.contains("com.ledgerguard")
+                || raw.contains("Exception")
+                || (raw.contains("at ") && raw.contains("("))
+                || raw.contains("http://")
+                || raw.contains("https://")
+                || raw.contains("PspOperationResponse")
+                || raw.contains("RestClient")
+                || raw.contains("{\"")
+                || raw.contains("org.springframework")) {
+            return "The simulated provider response could not be processed. Check provider availability and run reconciliation again after the provider recovers.";
+        }
+        return raw;
+    }
+
     private ReconciliationRunSummaryResponse mapToRunSummary(ReconciliationRun run) {
         return new ReconciliationRunSummaryResponse(
                 run.getId(),
@@ -164,7 +182,7 @@ public class ReconciliationCaseQueryService {
                 run.getOperationsChecked(),
                 run.getDiscrepancyCount(),
                 run.getUnresolvedCount(),
-                run.getFailureReason()
+                sanitizeOperatorDescription(run.getFailureReason())
         );
     }
 
@@ -181,7 +199,7 @@ public class ReconciliationCaseQueryService {
                 formatNumeric(item.getExpectedValue()),
                 formatNumeric(item.getActualValue()),
                 item.getProviderStatus(),
-                item.getDescription(),
+                sanitizeOperatorDescription(item.getDescription()),
                 item.getDetectedAt()
         );
     }

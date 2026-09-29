@@ -177,4 +177,132 @@ class ProductionOpsAuthenticationIntegrationTest extends AbstractIntegrationTest
                 .andExpect(jsonPath("$.detail").value("Registration with OPS role is not permitted."))
                 .andExpect(jsonPath("$.errorCode").value("VALIDATION_FAILED"));
     }
+
+    @Test
+    @DisplayName("Exit-on-completion lifecycle commits transaction before process exit and returns exit code 0")
+    void exitOnCompletionLifecycleCommitsBeforeExit() throws Exception {
+        String processEmail = "process.exit.ops@ledgerguard.example.com";
+        String processPassword = "ProcessExitPassword456!";
+        String processFullName = "Process Exit Officer";
+
+        String javaHome = System.getProperty("java.home");
+        String javaBin = javaHome + java.io.File.separator + "bin" + java.io.File.separator + "java";
+        String classpath = System.getProperty("java.class.path");
+
+        ProcessBuilder pb = new ProcessBuilder(
+                javaBin,
+                "-cp",
+                classpath,
+                "com.ledgerguard.LedgerGuardApplication"
+        );
+        java.util.Map<String, String> env = pb.environment();
+        env.put("SPRING_PROFILES_ACTIVE", "test,ops-provision");
+        env.put("SPRING_MAIN_WEB_APPLICATION_TYPE", "none");
+        env.put("LEDGERGUARD_OPS_PROVISION_ENABLED", "true");
+        env.put("LEDGERGUARD_OPS_PROVISION_EMAIL", processEmail);
+        env.put("LEDGERGUARD_OPS_PROVISION_PASSWORD", processPassword);
+        env.put("LEDGERGUARD_OPS_PROVISION_FULL_NAME", processFullName);
+        env.put("LEDGERGUARD_OPS_PROVISION_EXIT_ON_COMPLETION", "true");
+        env.put("LEDGERGUARD_DB_URL", POSTGRES_CONTAINER.getJdbcUrl());
+        env.put("LEDGERGUARD_DB_USER", POSTGRES_CONTAINER.getUsername());
+        env.put("LEDGERGUARD_DB_PASSWORD", POSTGRES_CONTAINER.getPassword());
+        env.put("LEDGERGUARD_KAFKA_BOOTSTRAP_SERVERS", KAFKA_CONTAINER.getBootstrapServers());
+        env.put("LEDGERGUARD_JWT_SECRET", RUNTIME_JWT_SECRET);
+        env.put("PSP_WEBHOOK_SECRET", RUNTIME_WEBHOOK_SECRET);
+        env.put("LEDGERGUARD_PSP_POLLING_ENABLED", "false");
+
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+
+        StringBuilder processOutput = new StringBuilder();
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                new java.io.InputStreamReader(process.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                processOutput.append(line).append("\n");
+            }
+        }
+
+        boolean finished = process.waitFor(60, java.util.concurrent.TimeUnit.SECONDS);
+        assertThat(finished).as("Separate JVM subprocess should terminate within 60 seconds").isTrue();
+        int exitCode = process.exitValue();
+        String processLogs = processOutput.toString();
+        String sanitizedLogs = processLogs
+                .replace(processPassword, "[REDACTED_PASSWORD]")
+                .replace(POSTGRES_CONTAINER.getPassword(), "[REDACTED_DB_PASS]")
+                .replace(RUNTIME_JWT_SECRET, "[REDACTED_JWT_SECRET]")
+                .replace(RUNTIME_WEBHOOK_SECRET, "[REDACTED_WEBHOOK_SECRET]");
+
+        assertThat(exitCode)
+                .withFailMessage("Subprocess failed with exit code %d.\nCommand: %s\nWorking Dir: %s\nLogs:\n%s",
+                        exitCode, pb.command(), pb.directory(), sanitizedLogs)
+                .isZero();
+
+        assertThat(processLogs).contains("[OPS PROVISION] Successfully provisioned production OPS user");
+        assertThat(processLogs).contains("[OPS PROVISION] Production OPS provisioning committed successfully (outcome=CREATED)");
+        assertThat(processLogs).contains("[OPS PROVISION] Production OPS provisioning finished. Exiting process with code 0.");
+        assertThat(processLogs).doesNotContain(processPassword);
+
+        // Reconnect via independent JDBC connection
+        try (java.sql.Connection conn = java.sql.DriverManager.getConnection(
+                POSTGRES_CONTAINER.getJdbcUrl(),
+                POSTGRES_CONTAINER.getUsername(),
+                POSTGRES_CONTAINER.getPassword())) {
+
+            try (java.sql.PreparedStatement stmt = conn.prepareStatement(
+                    "SELECT id, password_hash, role, status, full_name FROM users WHERE email = ?")) {
+                stmt.setString(1, processEmail);
+                try (java.sql.ResultSet rs = stmt.executeQuery()) {
+                    assertThat(rs.next()).isTrue();
+                    UUID opsId = UUID.fromString(rs.getString("id"));
+                    String hash = rs.getString("password_hash");
+                    assertThat(rs.getString("role")).isEqualTo("OPS");
+                    assertThat(rs.getString("status")).isEqualTo("ACTIVE");
+                    assertThat(rs.getString("full_name")).isEqualTo(processFullName);
+                    assertThat(hash).startsWith("$2a$");
+                    assertThat(hash).doesNotContain(processPassword);
+                    assertThat(passwordEncoder.matches(processPassword, hash)).isTrue();
+
+                    // Confirm 0 ledger accounts and 0 snapshots
+                    try (java.sql.PreparedStatement acctStmt = conn.prepareStatement(
+                            "SELECT count(*) FROM ledger_accounts WHERE owner_user_id = ?")) {
+                        acctStmt.setObject(1, opsId);
+                        try (java.sql.ResultSet acctRs = acctStmt.executeQuery()) {
+                            acctRs.next();
+                            assertThat(acctRs.getInt(1)).isZero();
+                        }
+                    }
+
+                    try (java.sql.PreparedStatement snapStmt = conn.prepareStatement(
+                            "SELECT count(*) FROM ledger_balance_snapshots WHERE ledger_account_id IN (SELECT id FROM ledger_accounts WHERE owner_user_id = ?)")) {
+                        snapStmt.setObject(1, opsId);
+                        try (java.sql.ResultSet snapRs = snapStmt.executeQuery()) {
+                            snapRs.next();
+                            assertThat(snapRs.getInt(1)).isZero();
+                        }
+                    }
+                }
+            }
+        }
+
+        // Verify the provisioned credentials authenticate via the normal running API
+        LoginRequest loginRequest = new LoginRequest(processEmail, processPassword);
+        MvcResult loginResult = mockMvc.perform(post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(loginRequest)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tokenType").value("Bearer"))
+                .andExpect(jsonPath("$.user.email").value(processEmail))
+                .andExpect(jsonPath("$.user.role").value("OPS"))
+                .andReturn();
+
+        String accessToken = objectMapper.readTree(loginResult.getResponse().getContentAsString())
+                .get("accessToken").asText();
+
+        mockMvc.perform(get("/api/auth/me")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.role").value("OPS"))
+                .andExpect(jsonPath("$.email").value(processEmail));
+    }
 }

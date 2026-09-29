@@ -21,6 +21,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import { useSearchParams } from 'react-router-dom';
 import FilterAltOffIcon from '@mui/icons-material/FilterAltOff';
 import AssignmentIndIcon from '@mui/icons-material/AssignmentInd';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -40,6 +41,10 @@ import { useClaimCase, useReconciliationCases } from '../hooks/useReconciliation
 import { CaseDetailDialog } from './CaseDetailDialog';
 import { ResolveCaseDialog } from './ResolveCaseDialog';
 import { SnapshotRepairDialog } from './SnapshotRepairDialog';
+import {
+  formatDateTime,
+  formatEnumLabel,
+} from '../../shared/utils/display';
 
 interface CasesViewProps {
   initialRunId?: string;
@@ -51,16 +56,16 @@ export const CasesView: React.FC<CasesViewProps> = ({
   initialProblemType,
 }) => {
   const { user } = useAuth();
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [statusFilter, setStatusFilter] = useState<ReconciliationCaseStatus | ''>('');
-  const [levelFilter, setLevelFilter] = useState<ReconciliationLevel | ''>('');
-  const [problemTypeFilter, setProblemTypeFilter] = useState<ReconciliationProblemType | ''>(
-    initialProblemType || ''
-  );
-  const [assignedFilter, setAssignedFilter] = useState<'all' | 'assigned' | 'unassigned'>('all');
-  const [runIdFilter, setRunIdFilter] = useState<string>(initialRunId || '');
+  const statusFilter = (searchParams.get('status') as ReconciliationCaseStatus) || '';
+  const levelFilter = (searchParams.get('level') as ReconciliationLevel) || '';
+  const problemTypeFilter =
+    (searchParams.get('problemType') as ReconciliationProblemType) || initialProblemType || '';
+  const assignedFilter = (searchParams.get('assigned') as 'all' | 'assigned' | 'unassigned') || 'all';
+  const runIdFilter = searchParams.get('runId') || initialRunId || '';
+  const page = parseInt(searchParams.get('page') || '0', 10);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
 
   // Dialog states
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
@@ -68,6 +73,26 @@ export const CasesView: React.FC<CasesViewProps> = ({
   const [repairingCase, setRepairingCase] = useState<ReconciliationCaseResponse | null>(null);
 
   const claimMutation = useClaimCase();
+
+  const updateParam = (key: string, value: string | undefined, resetPage = true) => {
+    const next = new URLSearchParams(searchParams);
+    if (!next.has('tab')) next.set('tab', 'cases');
+    if (value && value !== 'all') {
+      next.set(key, value);
+    } else {
+      next.delete(key);
+    }
+    if (resetPage) {
+      next.delete('page');
+    }
+    setSearchParams(next);
+  };
+
+  const handleResetFilters = () => {
+    const next = new URLSearchParams();
+    next.set('tab', 'cases');
+    setSearchParams(next);
+  };
 
   const filterParams: CaseFilterParams = {
     page,
@@ -81,15 +106,6 @@ export const CasesView: React.FC<CasesViewProps> = ({
   };
 
   const { data, isLoading, isError } = useReconciliationCases(filterParams);
-
-  const handleResetFilters = () => {
-    setStatusFilter('');
-    setLevelFilter('');
-    setProblemTypeFilter('');
-    setAssignedFilter('all');
-    setRunIdFilter('');
-    setPage(0);
-  };
 
   const handleClaim = async (caseItem: ReconciliationCaseResponse) => {
     try {
@@ -110,10 +126,7 @@ export const CasesView: React.FC<CasesViewProps> = ({
                 labelId="case-status-label"
                 value={statusFilter}
                 label="Status"
-                onChange={(e) => {
-                  setStatusFilter(e.target.value as ReconciliationCaseStatus | '');
-                  setPage(0);
-                }}
+                onChange={(e) => updateParam('status', e.target.value as string)}
               >
                 <MenuItem value="">All Statuses</MenuItem>
                 <MenuItem value="OPEN">Open</MenuItem>
@@ -130,10 +143,7 @@ export const CasesView: React.FC<CasesViewProps> = ({
                 labelId="case-level-label"
                 value={levelFilter}
                 label="Check Level"
-                onChange={(e) => {
-                  setLevelFilter(e.target.value as ReconciliationLevel | '');
-                  setPage(0);
-                }}
+                onChange={(e) => updateParam('level', e.target.value as string)}
               >
                 <MenuItem value="">All Levels</MenuItem>
                 <MenuItem value="JOURNAL_BALANCE">Journal Balance</MenuItem>
@@ -150,10 +160,7 @@ export const CasesView: React.FC<CasesViewProps> = ({
                 labelId="case-problem-type-label"
                 value={problemTypeFilter}
                 label="Problem Type"
-                onChange={(e) => {
-                  setProblemTypeFilter(e.target.value as ReconciliationProblemType | '');
-                  setPage(0);
-                }}
+                onChange={(e) => updateParam('problemType', e.target.value as string)}
               >
                 <MenuItem value="">All Problems</MenuItem>
                 <MenuItem value="UNBALANCED_JOURNAL">Unbalanced Journal</MenuItem>
@@ -176,10 +183,7 @@ export const CasesView: React.FC<CasesViewProps> = ({
                 labelId="case-assigned-label"
                 value={assignedFilter}
                 label="Assignment"
-                onChange={(e) => {
-                  setAssignedFilter(e.target.value as 'all' | 'assigned' | 'unassigned');
-                  setPage(0);
-                }}
+                onChange={(e) => updateParam('assigned', e.target.value as string)}
               >
                 <MenuItem value="all">All Cases</MenuItem>
                 <MenuItem value="assigned">Assigned</MenuItem>
@@ -195,10 +199,7 @@ export const CasesView: React.FC<CasesViewProps> = ({
               label="Run ID"
               placeholder="Filter by Run ID"
               value={runIdFilter}
-              onChange={(e) => {
-                setRunIdFilter(e.target.value);
-                setPage(0);
-              }}
+              onChange={(e) => updateParam('runId', e.target.value)}
             />
           </Grid>
 
@@ -207,7 +208,8 @@ export const CasesView: React.FC<CasesViewProps> = ({
               variant="text"
               color="inherit"
               onClick={handleResetFilters}
-              title="Reset Filters"
+              title="Clear filters"
+              aria-label="Clear filters"
               sx={{ minWidth: 40, p: 1 }}
             >
               <FilterAltOffIcon />
@@ -254,11 +256,13 @@ export const CasesView: React.FC<CasesViewProps> = ({
                 ) : (
                   data?.items.map((caseItem) => {
                     const isAssignedToMe = caseItem.assignedToUserId === user?.id;
-                    const isClaimantAllowed = caseItem.assignedToUserId === null || isAssignedToMe;
+                    const isAssignedToOther =
+                      caseItem.assignedToUserId !== null && !isAssignedToMe;
+                    const isUnassigned = caseItem.assignedToUserId === null;
                     const isResolved = caseItem.status === 'RESOLVED';
-                    const isEligibleStatus = caseItem.status === 'OPEN' || caseItem.status === 'IN_REVIEW';
                     const isSnapshotMismatch = caseItem.item.problemType === 'SNAPSHOT_MISMATCH';
-                    const canRepairSnapshot = isSnapshotMismatch && isEligibleStatus && isClaimantAllowed;
+                    const canRepairSnapshot =
+                      isSnapshotMismatch && !isResolved && (isUnassigned || isAssignedToMe);
 
                     return (
                       <TableRow key={caseItem.id} hover>
@@ -276,7 +280,7 @@ export const CasesView: React.FC<CasesViewProps> = ({
                             >
                               {caseItem.id.slice(0, 8)}...
                             </Typography>
-                            <CopyButton value={caseItem.id} label="case ID" />
+                            <CopyButton value={caseItem.id} label={`case ID ${caseItem.id}`} />
                           </Stack>
                         </TableCell>
                         <TableCell>
@@ -284,17 +288,17 @@ export const CasesView: React.FC<CasesViewProps> = ({
                         </TableCell>
                         <TableCell>
                           <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                            {caseItem.item.problemType.replaceAll('_', ' ')}
+                            {formatEnumLabel(caseItem.item.problemType)}
                           </Typography>
                         </TableCell>
                         <TableCell>
                           <Typography variant="caption" color="text.secondary">
-                            {caseItem.item.level.replaceAll('_', ' ')}
+                            {formatEnumLabel(caseItem.item.level)}
                           </Typography>
                         </TableCell>
                         <TableCell>
                           <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
-                            {caseItem.item.entityType}: {caseItem.item.entityId.slice(0, 8)}...
+                            {formatEnumLabel(caseItem.item.entityType)}: {caseItem.item.entityId.slice(0, 8)}...
                           </Typography>
                         </TableCell>
                         <TableCell>
@@ -303,7 +307,9 @@ export const CasesView: React.FC<CasesViewProps> = ({
                               isAssignedToMe ? (
                                 <strong>You</strong>
                               ) : (
-                                <span style={{ fontFamily: 'monospace' }}>{caseItem.assignedToUserId.slice(0, 8)}...</span>
+                                <span style={{ fontFamily: 'monospace' }}>
+                                  {caseItem.assignedToUserId.slice(0, 8)}...
+                                </span>
                               )
                             ) : (
                               <em style={{ color: 'gray' }}>Unassigned</em>
@@ -312,7 +318,7 @@ export const CasesView: React.FC<CasesViewProps> = ({
                         </TableCell>
                         <TableCell>
                           <Typography variant="caption">
-                            {new Date(caseItem.openedAt).toLocaleDateString()}
+                            {formatDateTime(caseItem.openedAt)}
                           </Typography>
                         </TableCell>
                         <TableCell align="center">
@@ -322,6 +328,7 @@ export const CasesView: React.FC<CasesViewProps> = ({
                               variant="outlined"
                               onClick={() => setSelectedCaseId(caseItem.id)}
                               title="View Details"
+                              aria-label={`View details for case ${caseItem.id.slice(0, 8)}`}
                               sx={{ minWidth: 32, p: 0.5 }}
                             >
                               <VisibilityOutlinedIcon fontSize="small" />
@@ -332,9 +339,22 @@ export const CasesView: React.FC<CasesViewProps> = ({
                                 <Button
                                   size="small"
                                   variant="outlined"
-                                  disabled={isAssignedToMe || claimMutation.isPending}
+                                  disabled={isAssignedToMe || isAssignedToOther || claimMutation.isPending}
                                   onClick={() => handleClaim(caseItem)}
-                                  title={isAssignedToMe ? 'Assigned to You' : 'Claim Case'}
+                                  title={
+                                    isAssignedToMe
+                                      ? 'Assigned to You'
+                                      : isAssignedToOther
+                                      ? 'Assigned to another operator'
+                                      : 'Claim Case'
+                                  }
+                                  aria-label={
+                                    isAssignedToMe
+                                      ? 'Claim case (Assigned to you)'
+                                      : isAssignedToOther
+                                      ? 'Claim case (Assigned to another operator)'
+                                      : 'Claim case'
+                                  }
                                   sx={{ minWidth: 32, p: 0.5 }}
                                 >
                                   <AssignmentIndIcon fontSize="small" />
@@ -354,16 +374,32 @@ export const CasesView: React.FC<CasesViewProps> = ({
                                   </Button>
                                 )}
 
-                                <Button
-                                  size="small"
-                                  variant="outlined"
-                                  color="primary"
-                                  onClick={() => setResolvingCase(caseItem)}
-                                  title="Resolve Case"
-                                  sx={{ minWidth: 32, p: 0.5 }}
-                                >
-                                  <CheckCircleIcon fontSize="small" />
-                                </Button>
+                                {!isSnapshotMismatch && (
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    color="primary"
+                                    disabled={!isAssignedToMe}
+                                    onClick={() => setResolvingCase(caseItem)}
+                                    title={
+                                      isAssignedToOther
+                                        ? 'Assigned to another operator'
+                                        : isUnassigned
+                                        ? 'Claim case before resolving'
+                                        : 'Resolve Case'
+                                    }
+                                    aria-label={
+                                      isAssignedToOther
+                                        ? 'Resolve case (Assigned to another operator)'
+                                        : isUnassigned
+                                        ? 'Claim case before resolving'
+                                        : 'Resolve case'
+                                    }
+                                    sx={{ minWidth: 32, p: 0.5 }}
+                                  >
+                                    <CheckCircleIcon fontSize="small" />
+                                  </Button>
+                                )}
                               </>
                             )}
                           </Stack>
@@ -380,11 +416,11 @@ export const CasesView: React.FC<CasesViewProps> = ({
             component="div"
             count={data?.totalElements ?? 0}
             page={page}
-            onPageChange={(_, newPage) => setPage(newPage)}
+            onPageChange={(_, newPage) => updateParam('page', newPage > 0 ? String(newPage) : undefined, false)}
             rowsPerPage={rowsPerPage}
             onRowsPerPageChange={(e) => {
               setRowsPerPage(parseInt(e.target.value, 10));
-              setPage(0);
+              updateParam('page', undefined, false);
             }}
             rowsPerPageOptions={[5, 10, 25, 50]}
           />

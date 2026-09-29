@@ -11,6 +11,7 @@ const messages: Record<string, string> = {
   IDEMPOTENCY_CONFLICT: 'This request conflicts with an earlier transfer. Check your transfer history before continuing.',
   IDEMPOTENCY_OPERATION_IN_PROGRESS: 'This transfer is still being processed. Check your transfer history for confirmation.',
   RATE_LIMIT_EXCEEDED: 'Too many requests. Wait a moment before trying again.',
+  RECONCILIATION_CONFLICT: 'The reconciliation action conflicts with the current state of this case or another run is already in progress.',
 };
 
 export function getErrorMessage(error: unknown, fallback: string): string {

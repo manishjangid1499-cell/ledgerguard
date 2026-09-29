@@ -14,6 +14,9 @@ import { OpsDashboard } from '../ops/components/OpsDashboard';
 import { ReconciliationCaseResponse } from './types/reconciliation.types';
 import * as environmentModule from '../shared/config/environment';
 import { reconciliationApi } from './api/reconciliationApi';
+import { RouteMetadata } from '../app/router/RouteMetadata';
+import { formatDateTime, formatEnumLabel, sanitizeOperatorDescription } from '../shared/utils/display';
+import { RunsView } from './components/RunsView';
 
 const mockOpsUser: UserSummary = {
   id: '00000000-0000-0000-0000-000000000099',
@@ -199,8 +202,8 @@ describe('Operations Workspace & Reconciliation UI', () => {
           })
         );
         expect(onClose).toHaveBeenCalled();
-      }, 15000);
-    });
+      }, { timeout: 15000 });
+    }, 15000);
   });
 
   describe('Snapshot Repair Dialog Scoping & Confirmation', () => {
@@ -634,6 +637,231 @@ describe('Operations Workspace & Reconciliation UI', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Start On-Demand Reconciliation')).toBeInTheDocument();
+      });
+    });
+
+    it('renders TOTAL RECONCILIATION RUNS and provides clickable metric cards', async () => {
+      vi.spyOn(reconciliationApi, 'getSummary').mockResolvedValue({
+        openCases: 5,
+        inReviewCases: 2,
+        resolvedCases: 15,
+        totalRuns: 8,
+        latestRun: null,
+      });
+
+      renderWithProviders(<OpsDashboard />, { user: mockOpsUser });
+
+      await waitFor(() => {
+        expect(screen.getByText('TOTAL RECONCILIATION RUNS')).toBeInTheDocument();
+        expect(screen.getByLabelText('View open cases')).toBeInTheDocument();
+        expect(screen.getByLabelText('View in review cases')).toBeInTheDocument();
+        expect(screen.getByLabelText('View resolved cases')).toBeInTheDocument();
+        expect(screen.getByLabelText('View reconciliation runs')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Document Title & Route Metadata Integrity', () => {
+    it('sets Reconciliation | LedgerGuard for /app/reconciliation and handles query params', () => {
+      renderWithProviders(<RouteMetadata />, { initialEntries: ['/app/reconciliation'] });
+      expect(document.title).toBe('Reconciliation | LedgerGuard');
+
+      renderWithProviders(<RouteMetadata />, { initialEntries: ['/app/reconciliation?tab=runs'] });
+      expect(document.title).toBe('Reconciliation | LedgerGuard');
+
+      renderWithProviders(<RouteMetadata />, { initialEntries: ['/app/reconciliation?tab=cases&status=OPEN'] });
+      expect(document.title).toBe('Reconciliation | LedgerGuard');
+
+      renderWithProviders(<RouteMetadata />, { initialEntries: ['/app/reconciliation?tab=repair'] });
+      expect(document.title).toBe('Reconciliation | LedgerGuard');
+    });
+
+    it('sets correct titles for Dashboard, Profile, and unknown routes', () => {
+      renderWithProviders(<RouteMetadata />, { initialEntries: ['/app'] });
+      expect(document.title).toBe('Dashboard | LedgerGuard');
+
+      renderWithProviders(<RouteMetadata />, { initialEntries: ['/profile'] });
+      expect(document.title).toBe('Profile | LedgerGuard');
+
+      renderWithProviders(<RouteMetadata />, { initialEntries: ['/non-existent-route'] });
+      expect(document.title).toBe('Page not found | LedgerGuard');
+    });
+  });
+
+  describe('Reconciliation Header Action Single-Placement', () => {
+    it('ReconciliationPage renders exactly one Start Reconciliation button in header', async () => {
+      vi.spyOn(reconciliationApi, 'getRuns').mockResolvedValue({
+        items: [],
+        page: 0,
+        size: 10,
+        totalElements: 0,
+        totalPages: 0,
+      });
+
+      renderWithProviders(<ReconciliationPage />, {
+        user: mockOpsUser,
+        initialEntries: ['/app/reconciliation?tab=runs'],
+      });
+
+      await waitFor(() => {
+        const startButtons = screen.getAllByRole('button', { name: /start reconciliation/i });
+        // Exactly one header button must exist, none inside RunsView
+        expect(startButtons).toHaveLength(1);
+      });
+    });
+
+    it('RunsView itself does not render a duplicate Start Reconciliation button', async () => {
+      vi.spyOn(reconciliationApi, 'getRuns').mockResolvedValue({
+        items: [],
+        page: 0,
+        size: 10,
+        totalElements: 0,
+        totalPages: 0,
+      });
+
+      renderWithProviders(<RunsView />, { user: mockOpsUser });
+
+      await waitFor(() => {
+        expect(screen.getByText('Reconciliation Runs History')).toBeInTheDocument();
+        const startButton = screen.queryByRole('button', { name: /start reconciliation/i });
+        expect(startButton).not.toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Exhaustive Enum & Timezone Formatting', () => {
+    it('formats exhaustive backend enums to human readable titles', () => {
+      expect(formatEnumLabel('ON_DEMAND')).toBe('On demand');
+      expect(formatEnumLabel('SCHEDULED')).toBe('Scheduled');
+      expect(formatEnumLabel('RUNNING')).toBe('Running');
+      expect(formatEnumLabel('COMPLETED')).toBe('Completed');
+      expect(formatEnumLabel('FAILED')).toBe('Failed');
+      expect(formatEnumLabel('DISCREPANCY')).toBe('Discrepancy');
+      expect(formatEnumLabel('UNRESOLVED')).toBe('Unresolved');
+      expect(formatEnumLabel('JOURNAL_BALANCE')).toBe('Journal balance');
+      expect(formatEnumLabel('SNAPSHOT_CONSISTENCY')).toBe('Snapshot consistency');
+      expect(formatEnumLabel('PROVIDER_SETTLEMENT')).toBe('Provider settlement');
+      expect(formatEnumLabel('SNAPSHOT_MISMATCH')).toBe('Snapshot mismatch');
+      expect(formatEnumLabel('SNAPSHOT_REPAIRED')).toBe('Snapshot repaired');
+      expect(formatEnumLabel('UNKNOWN_NEW_ENUM')).toBe('Unknown (UNKNOWN_NEW_ENUM)');
+      expect(formatEnumLabel(null)).toBe('—');
+    });
+
+    it('formats timestamps into Asia/Kolkata (IST) format and provides honest fallback', () => {
+      const formatted = formatDateTime('2026-09-28T17:01:45Z');
+      expect(formatted).toContain('28 Sep 2026');
+      expect(formatted).toContain('10:31:45');
+      expect(formatted).toContain('PM IST');
+
+      expect(formatDateTime(null, 'Not completed')).toBe('Not completed');
+      expect(formatDateTime(undefined, '—')).toBe('—');
+    });
+
+    it('sanitizes operator-facing error descriptions', () => {
+      expect(
+        sanitizeOperatorDescription(
+          'com.ledgerguard.reconciliation.domain.ReconciliationConflictException: Balance drift detected\n\tat com.ledgerguard.Engine.reconcile'
+        )
+      ).toBe('Balance drift detected');
+
+      expect(sanitizeOperatorDescription('Standard safe description')).toBe('Standard safe description');
+      expect(sanitizeOperatorDescription(null)).toBe('—');
+    });
+  });
+
+  describe('Case Action State Gating & Difference Presentation', () => {
+    it('enforces state gating for unassigned case: Claim is active, Resolve is disabled', async () => {
+      const openCase: ReconciliationCaseResponse = {
+        ...sampleCase,
+        status: 'OPEN',
+        assignedToUserId: null,
+        item: {
+          ...sampleCase.item,
+          problemType: 'PROVIDER_STATUS_MISMATCH',
+        },
+      };
+
+      vi.spyOn(reconciliationApi, 'getCases').mockResolvedValue({
+        items: [openCase],
+        page: 0,
+        size: 10,
+        totalElements: 1,
+        totalPages: 1,
+      });
+
+      renderWithProviders(<CasesView />, { user: mockOpsUser });
+
+      await waitFor(() => {
+        // Claim button is enabled
+        const claimBtn = screen.getByLabelText('Claim case');
+        expect(claimBtn).toBeEnabled();
+
+        // Resolve button is disabled because unassigned
+        const resolveBtn = screen.getByLabelText('Claim case before resolving');
+        expect(resolveBtn).toBeDisabled();
+      });
+    });
+
+    it('disallows manual resolve on SNAPSHOT_MISMATCH cases', async () => {
+      vi.spyOn(reconciliationApi, 'getCases').mockResolvedValue({
+        items: [{ ...sampleCase, assignedToUserId: mockOpsUser.id }],
+        page: 0,
+        size: 10,
+        totalElements: 1,
+        totalPages: 1,
+      });
+
+      renderWithProviders(<CasesView />, { user: mockOpsUser });
+
+      await waitFor(() => {
+        // Repair snapshot button is present
+        expect(screen.getByTitle('Repair Snapshot')).toBeInTheDocument();
+        // Resolve case button must NOT be present for SNAPSHOT_MISMATCH
+        expect(screen.queryByTitle('Resolve Case')).not.toBeInTheDocument();
+      });
+    });
+
+    it('disables actions when case is assigned to another operator', async () => {
+      const otherCase: ReconciliationCaseResponse = {
+        ...sampleCase,
+        status: 'IN_REVIEW',
+        assignedToUserId: '99999999-9999-9999-9999-999999999999',
+        item: {
+          ...sampleCase.item,
+          problemType: 'PROVIDER_STATUS_MISMATCH',
+        },
+      };
+
+      vi.spyOn(reconciliationApi, 'getCases').mockResolvedValue({
+        items: [otherCase],
+        page: 0,
+        size: 10,
+        totalElements: 1,
+        totalPages: 1,
+      });
+
+      renderWithProviders(<CasesView />, { user: mockOpsUser });
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Claim case (Assigned to another operator)')).toBeDisabled();
+        expect(screen.getByLabelText('Resolve case (Assigned to another operator)')).toBeDisabled();
+      });
+    });
+
+    it('renders Difference column with minor units in SnapshotRepairView', async () => {
+      vi.spyOn(reconciliationApi, 'getCases').mockResolvedValue({
+        items: [sampleCase],
+        page: 0,
+        size: 10,
+        totalElements: 1,
+        totalPages: 1,
+      });
+
+      renderWithProviders(<SnapshotRepairView />, { user: mockOpsUser });
+
+      await waitFor(() => {
+        expect(screen.getByText('Difference')).toBeInTheDocument();
+        expect(screen.getByText('-10000 minor units')).toBeInTheDocument();
       });
     });
   });
