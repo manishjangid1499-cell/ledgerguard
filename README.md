@@ -1,20 +1,103 @@
 # LedgerGuard — Payment Integrity & Ledger Platform
 
-> **Disclaimer**: This is a portfolio and educational financial-infrastructure system designed to demonstrate correctness-first Java backend engineering, transactional integrity, and distributed systems resilience. It is **NOT** intended to process real money and operates strictly on simulated financial workflows.
+[![CI](https://github.com/manishjangid1499-cell/ledgerguard/actions/workflows/ci.yml/badge.svg)](https://github.com/manishjangid1499-cell/ledgerguard/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/manishjangid1499-cell/ledgerguard/actions/workflows/codeql.yml/badge.svg)](https://github.com/manishjangid1499-cell/ledgerguard/actions/workflows/codeql.yml)
+![Java 21](https://img.shields.io/badge/Java-21-ED8B00?style=flat&logo=openjdk&logoColor=white)
+![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.1.1-6DB33F?style=flat&logo=springboot&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?style=flat&logo=react&logoColor=black)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat&logo=typescript&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?style=flat&logo=postgresql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat&logo=docker&logoColor=white)
+
+**LedgerGuard** is a correctness-first payment and ledger platform designed to address the central challenges of financial backend systems: race conditions, double-spending, distributed failure ambiguity, dual-write divergence, and forensic auditability. Rather than treating monetary balances as mutable database counters or thin wrappers around third-party APIs, LedgerGuard implements an immutable double-entry accounting engine where balances are strictly derived from append-only journal entries backed by PostgreSQL ACID transactions.
+
+The platform provides complete financial flows across dedicated **Customer**, **Merchant**, and **Operations (OPS)** workspaces. Customers can fund simulated wallets, execute peer-to-peer transfers, pay merchants, and request simulated payouts. Merchants receive payments with transparent platform fee deduction, manage pro-rata refunds, and request simulated payouts from available wallet funds. Operations teams monitor platform health through an operations command center, run multi-level reconciliation jobs, claim and resolve discrepancy cases with audit notes, and repair desynchronized balance snapshots under pessimistic lock.
+
+Under the hood, LedgerGuard models realistic distributed payment infrastructure. Financial operations enforce required idempotency keys with SHA-256 request fingerprints, deterministic row locking, and durable balance holds. Domain events propagate reliably via a PostgreSQL transactional outbox pattern to Apache Kafka for asynchronous notification processing. External payment service provider (PSP) interactions employ a standalone PSP simulator with resilient HTTP clients and a state machine that enforces the core distributed systems principle that `UNKNOWN != FAILED`, ensuring funds are never prematurely credited, debited, or lost during network interruptions.
 
 ---
 
-## 1. Project Overview
+## Quick Navigation
 
-**LedgerGuard** is a high-reliability financial core and payment ledger platform designed to solve the most difficult challenges in financial backend engineering: concurrency contention, double-spending, distributed failure ambiguity, idempotent request processing, immutable auditing, and multi-level ledger reconciliation.
-
-Rather than treating balances as simple mutable numbers in a database row or wrapping third-party payment gateway APIs, LedgerGuard implements an authoritative **immutable double-entry accounting engine** backed by PostgreSQL ACID transactions, coupled with an asynchronous transactional outbox for post-commit event propagation via Apache Kafka.
-
-Every monetary operation is recorded in integer minor units (paise in **INR** currency) with balanced debits and credits, preserving mathematical invariants across concurrent transfers, merchant checkouts, pro-rata fee refunds, temporary balance holds, external payment gateway top-ups, and automated disaster recovery drills.
+- [Product Tour](#product-tour)
+- [Engineering Highlights](#engineering-highlights)
+- [Roles and Workflows](#roles-and-workflows)
+- [Why This Project Exists](#why-this-project-exists)
+- [Core Correctness Guarantees](#core-correctness-guarantees)
+- [Architecture](#architecture)
+- [Financial Model](#financial-model)
+- [Platform Capabilities](#platform-capabilities)
+- [Distributed Systems & Reliability](#distributed-systems--reliability-patterns)
+- [Security](#security-architecture)
+- [Observability](#observability--telemetry)
+- [Testing & Failure Lab](#testing--money-integrity-failure-lab)
+- [Concurrency Benchmarks](#concurrency-benchmark-results)
+- [Disaster Recovery & Runbooks](#disaster-recovery--operational-runbooks)
+- [API Documentation](#api--swagger-documentation)
+- [Technology Stack](#technology-stack)
+- [Local Quickstart](#local-developer-quickstart)
+- [Production-Like Docker Startup](#production-like-docker-compose-startup)
+- [Repository Documentation](#repository-documentation-index)
+- [Portfolio Scope](#portfolio-scope)
+- [Current Project Status](#current-project-status)
 
 ---
 
-## 2. Why This Project Exists
+## Engineering Highlights
+
+- **Immutable, Balanced Double-Entry Journal**: Every financial transaction enforces zero-sum debit/credit balance ($\sum \text{Debits} = \sum \text{Credits}$) in integer minor units, backed by PostgreSQL database immutability triggers that forbid updates and deletions.
+- **Deterministic Locking & Concurrency Protection**: Multi-account operations acquire row locks in stable primary-key order (`ORDER BY ledger_account_id ASC`), reducing circular-wait deadlock risk and preventing double-spending or unauthorized overdrafts under heavy concurrency.
+- **Required Idempotency Keys & Request Fingerprints**: Financial write operations require unique client idempotency keys with SHA-256 payload fingerprinting and database constraints, ensuring at-most-once execution semantics across network retries.
+- **Transactional Outbox with Kafka**: Domain events commit atomically with business data in PostgreSQL, then publish asynchronously to Apache Kafka using `SELECT ... FOR UPDATE SKIP LOCKED` bounded batch polling, avoiding dual-write discrepancies.
+- **`UNKNOWN != FAILED` State Machine Handling**: Network timeouts and provider ambiguities transition external operations to `UNKNOWN` rather than `FAILED`, preventing premature reversals or duplicate disbursements while background pollers recover authoritative status.
+- **Balance Holds for In-Flight Payouts**: Outbound fund disbursements pre-reserve balance holds, separating spendable available balance from posted ledger totals to protect funds during external processing without mutating journal history.
+- **Multi-Level Reconciliation & Snapshot Repair**: Automated three-level reconciliation audits double-entry balance, snapshot parity, and simulated provider records, with case-scoped snapshot re-derivation from immutable journals under pessimistic lock.
+- **Role-Scoped Workspaces**: Strict role-based access control segregates Customer, Merchant, and Operations (OPS) capabilities across the API and frontend interfaces.
+
+---
+
+## Product Tour
+
+### Customer Workspace
+![Customer Dashboard showing wallet balances, available funds, quick actions, and recent activity](docs/assets/readme/customer-dashboard.png)
+*Customer quick actions for funding, peer transfers, merchant payments and simulated withdrawals, with recent wallet activity.*
+
+### Merchant Workspace
+![Merchant Dashboard displaying payment volume, platform fees, net credits, refunds, and balance](docs/assets/readme/merchant-dashboard.png)
+*Customer payment volume, platform fees, merchant net credits, refunds, and available wallet balance.*
+
+### Operations Command Center
+![Operations Command Center displaying reconciliation metrics, discrepancy queues, and platform health](docs/assets/readme/ops-command-center.png)
+*Operations dashboard showing open, in-review and resolved case counts, reconciliation run totals and the latest execution result.*
+
+<details>
+<summary><strong>More product views</strong></summary>
+
+<br />
+
+#### Reconciliation Workspace
+![Reconciliation Workspace displaying reconciliation runs, discrepancy details, and case resolution](docs/assets/readme/reconciliation-workspace.png)
+*Reconciliation investigation view for examining multi-level discrepancy items, operator claim workflows, and audit resolutions.*
+
+#### Authentication & Role-Based Sign-In
+![Sign-in screen with role-based authentication for Customer, Merchant, and OPS accounts](docs/assets/readme/sign-in.png)
+*Secure authentication with role-based routing for Customer, Merchant, and OPS accounts.*
+
+</details>
+
+---
+
+## Roles and Workflows
+
+| Role | Main Capabilities |
+| :--- | :--- |
+| **Customer** | Fund a simulated wallet, transfer funds to peers, pay merchants, withdraw funds, and review transaction history |
+| **Merchant** | Receive customer payments, inspect gross/fee/net amounts, issue full or partial pro-rata refunds, and request payouts |
+| **OPS** | Trigger reconciliation runs, investigate discrepancy cases, claim and resolve cases with audit notes, and repair desynchronized balance snapshots |
+
+---
+
+## Why This Project Exists
 
 In modern fintech systems, standard web architectures frequently suffer from subtle, catastrophic failure modes:
 1. **Concurrency Race Conditions**: Two simultaneous withdrawal requests reading the same balance snapshot simultaneously, resulting in double-spending and unauthorized overdrafts.
@@ -26,7 +109,7 @@ LedgerGuard solves each of these foundational problems through strict transactio
 
 ---
 
-## 3. Core Correctness Guarantees
+## Core Correctness Guarantees
 
 The fundamental principle governing every transaction in LedgerGuard:
 
@@ -43,9 +126,9 @@ $$\text{\bf MONEY MUST NEVER BE CREATED, DESTROYED, DUPLICATED, OR SILENTLY LOST
 
 ---
 
-## 4. Architectural Diagrams
+## Architecture
 
-### 4.1 End-to-End System Topology
+### End-to-End System Topology
 
 ```mermaid
 flowchart TD
@@ -67,7 +150,7 @@ flowchart TD
 
         subgraph Async_Workers["Dedicated Background Services"]
             NotifWorker["Notification Worker (notification-worker)\n(Idempotent Consumer Inbox)"]
-            PspSim["PSP Simulator (psp-simulator:8081)\n(External Banking Simulator / HMAC Webhooks)"]
+            PspSim["PSP Simulator (psp-simulator:8081)\n(External PSP Simulator / HMAC Webhooks)"]
         end
 
         subgraph Observability_Stack["Telemetry & Observability"]
@@ -95,7 +178,7 @@ flowchart TD
     FailureLab -.->|Adversarial verification| Postgres
 ```
 
-### 4.2 Financial Atomic Posting Flow
+### Financial Atomic Posting Flow
 
 ```mermaid
 sequenceDiagram
@@ -149,7 +232,7 @@ sequenceDiagram
     end
 ```
 
-### 4.3 External PSP State Machine & Ambiguous Outcome Recovery (`UNKNOWN != FAILED`)
+### External PSP State Machine & Ambiguous Outcome Recovery (`UNKNOWN != FAILED`)
 
 ```mermaid
 stateDiagram-v2
@@ -173,7 +256,7 @@ stateDiagram-v2
         Dispatched --> Ambiguous_Outcome: Network Timeout / 5xx / Connection Drop
     }
 
-    Definite_Success --> SUCCEEDED: Authoritative Settlement (Payout: Hold Consumed; Funding: Wallet Credited)
+    Definite_Success --> SUCCEEDED: Authoritative Resolution (Payout: Hold Consumed; Funding: Wallet Credited)
     Definite_Failure --> FAILED: Authoritative Failure (Payout: Hold Released; Funding: No Credit)
 
     Ambiguous_Outcome --> UNKNOWN: Ambiguity Dominance Rule
@@ -204,9 +287,9 @@ stateDiagram-v2
 
 ---
 
-## 5. Authoritative Financial Model
+## Financial Model
 
-### 5.1 Account Types & Normal Balances
+### Account Types & Normal Balances
 All balances are calculated and stored in **INR** minor units (paise) as signed 64-bit integers (`BIGINT`), eliminating IEEE 754 floating-point rounding inaccuracies:
 
 | Account Type | Normal Balance | Balance Calculation Formula | Ownership |
@@ -217,7 +300,7 @@ All balances are calculated and stored in **INR** minor units (paise) as signed 
 | **`PSP_CLEARING`** | **Debit-Normal** | $\text{balance} = \sum \text{Debits} - \sum \text{Credits}$ | System account (External bank receivables) |
 | **`PLATFORM_RESERVE`** | **Debit-Normal** | $\text{balance} = \sum \text{Debits} - \sum \text{Credits}$ | System account (Liquidity buffer) |
 
-### 5.2 Balance Snapshots & Holds
+### Balance Snapshots & Holds
 - **Derived Snapshots**: The `ledger_balance_snapshots` table is maintained as an atomic projection updated exclusively by database trigger `trg_journal_transactions_update_snapshots` upon journal posting. Snapshots are fully reconstructible from append-only journal entries.
 - **Balance Holds (`balance_holds`)**: Temporary fund reservations that separate spendable capacity from historical ledger balances without mutating journal history:
   $$\text{availableBalance} = \text{postedBalance} - \sum(\text{ACTIVE holds})$$
@@ -225,22 +308,22 @@ All balances are calculated and stored in **INR** minor units (paise) as signed 
 
 ---
 
-## 6. Major Platform Capabilities
+## Platform Capabilities
 
 - **Internal Peer-to-Peer Transfers**: Generic wallet transfer creation is CUSTOMER -> CUSTOMER only. Transfers to merchants are prohibited (use Pay Merchant / `POST /api/payments`). Merchants retain historical transfer read access. Synchronous money movement with atomic debit/credit journal creation, deterministic row locking, and idempotency deduplication.
-- **Merchant Payments**: Commercial checkout transactions (`CUSTOMER` to `MERCHANT`) deducting a 100 bps integer platform fee (`PLATFORM_FEES`) in a balanced 3-leg atomic journal.
+- **Merchant Payments**: Simulated checkout payments (`CUSTOMER` to `MERCHANT`) deducting a 100 bps integer platform fee (`PLATFORM_FEES`) in a balanced 3-leg atomic journal.
 - **Pro-Rata Payment Refunds**: Synchronous full and partial refunds with telescoping pro-rata fee reversal (`original-payment-pro-rata:v1`), cumulative refund cap enforcement, parent payment serialization (`FOR UPDATE`), and original fee account resolution.
-- **External Wallet Funding**: Inbound wallet top-ups via PSP simulator with decoupled non-transactional HTTP calls and confirmed-success double-entry settlement.
+- **External Wallet Funding**: Simulated inbound wallet top-ups via PSP simulator with decoupled non-transactional HTTP calls and confirmed-success double-entry journal posting.
 - **External Payouts**: Outbound withdrawals using pre-network balance hold reservations, definite-failure hold releases, and in-flight hold expiration protection.
 - **Three-Level Reconciliation Engine**:
   - **Level 1 (Double-Entry Balance)**: Audits all posted journal transactions to detect unbalanced postings or malformed legs.
   - **Level 2 (Snapshot Parity)**: Single-statement MVCC scan comparing cached snapshots against cumulative journal entries.
-  - **Level 3 (Provider Settlement)**: Reconciles internal funding/payout outcomes against external PSP settlement truth without database transaction locks.
-- **Automated Discrepancy Recovery & Manual Review**: Automated snapshot re-derivation under pessimistic lock for `SNAPSHOT_MISMATCH`, and an isolated manual review queue (`reconciliation_cases`) with mandatory audit notes.
+  - **Level 3 (Provider Reconciliation)**: Reconciles internal funding/payout outcomes against simulated external PSP records without database transaction locks.
+- **Discrepancy Detection & Case Review**: Case-scoped snapshot re-derivation under pessimistic lock for `SNAPSHOT_MISMATCH`, and an isolated manual review queue (`reconciliation_cases`) with mandatory audit notes.
 
 ---
 
-## 7. Distributed Systems & Reliability Patterns
+## Distributed Systems & Reliability Patterns
 
 - **Transactional Outbox (`SKIP LOCKED`)**: LedgerGuard avoids the direct DB-then-Kafka dual-write pattern by committing domain events (`outbox_events`) atomically within the local PostgreSQL financial transaction. Background workers poll pending events using `SELECT ... FOR UPDATE SKIP LOCKED` for concurrent non-blocking outbox claiming and asynchronous post-commit publishing to Apache Kafka.
 - **Consumer Inbox Deduplication**: Asynchronous consumers (`notification-worker`) deduplicate incoming messages in a database-backed inbox, ensuring idempotent execution despite Kafka at-least-once transport delivery.
@@ -249,7 +332,7 @@ All balances are calculated and stored in **INR** minor units (paise) as signed 
 
 ---
 
-## 8. Security Architecture
+## Security Architecture
 
 - **Stateless Authentication**: Short-lived HS256 JWT access tokens (15-minute TTL) verified via Nimbus JOSE/JWT.
 - **Atomic Refresh Token Rotation**: High-entropy opaque refresh tokens stored as SHA-256 hashes in PostgreSQL with a configured maximum lifetime (`expires_at`, default 7 days), delivered via `HttpOnly`, `SameSite=Strict`, `Secure` session-scoped cookies by default (without persistent `Max-Age` or `Expires`), using pessimistic row locking to prevent token reuse races.
@@ -264,7 +347,7 @@ All balances are calculated and stored in **INR** minor units (paise) as signed 
 
 ---
 
-## 9. Observability & Telemetry
+## Observability & Telemetry
 
 - **Prometheus Metric Exposition**: Decoupled-scrape architecture exposing metrics at `/actuator/prometheus`. In-memory atomics sample financial integrity gauges (`unbalanced_journal_count`, `reconciliation_discrepancies`, `outbox_lag_seconds`) every 15s with zero database overhead during scrapes.
 - **Pre-Provisioned Grafana Dashboards**:
@@ -274,29 +357,29 @@ All balances are calculated and stored in **INR** minor units (paise) as signed 
 
 ---
 
-## 10. Testing & Money Integrity Failure Lab
+## Testing & Money Integrity Failure Lab
 
-### 10.1 Authoritative Test Suite Baseline
+### Test Suite Baseline
 The platform maintains an exhaustive test suite running on Java 21 across 5 Maven modules:
 
 ```
-ledgerguard-api:      798 tests (Unit, Service, Controller, Database Trigger Integration)
+ledgerguard-api:      799 tests (Unit, Service, Controller, Database Trigger Integration)
 psp-simulator:         18 tests (External Provider Simulation, Webhook Signatures)
 notification-worker:   72 tests (Idempotent Inbox Consumer, Kafka Listeners, SMTP Delivery)
 failure-lab:           34 tests (Chaos Scenarios, Adversarial Injection, SQL Oracle)
 e2e-tests:             11 tests (Multi-Service Testcontainers End-to-End Flows)
 -----------------------------------------------------------------------------------------
-WORKSPACE TOTAL:      933 passing tests (0 failures, 0 errors, 0 skipped)
+WORKSPACE TOTAL:      934 passing tests (0 failures, 0 errors, 0 skipped)
 ```
 
 The React workspace currently adds **99 passing unit and component tests**, and
 CI runs those tests alongside linting and the production build.
 
-### 10.2 Money Integrity Failure Lab
+### Money Integrity Failure Lab
 A standalone automated chaos testing engine (`backend/failure-lab`) that deliberately injects hostile operating conditions:
 1. **`OPPOSING_TRANSFERS`**: Concurrent opposing transfers between identical accounts using thread barriers, verifying deterministic lock ordering and zero lost funds.
 2. **`TIMEOUT_AFTER_COMMIT`**: External gateway drops connection after transaction commit, validating that the transaction transitions to `UNKNOWN`, holds remain `ACTIVE`, and status recovery settles the outcome.
-3. **`CORRUPTED_SNAPSHOT`**: Deliberate out-of-band balance snapshot drift injection, validating detection by Level 2 reconciliation and auto-repair from immutable journals.
+3. **`CORRUPTED_SNAPSHOT`**: Deliberate out-of-band balance snapshot drift injection, validating detection by Level 2 reconciliation and case-scoped repair from immutable journals.
 4. **`WEBHOOK_RACE`**: 5 concurrent duplicate HMAC-SHA256 signed webhooks, validating database deduplication and single economic effect.
 
 An independent SQL oracle (`FinancialInvariantOracle`) runs after each scenario to verify that total currency is strictly conserved:
@@ -305,7 +388,7 @@ $\sum \text{Final Balances} = \sum \text{Opening Balances} + \sum \text{External
 
 ---
 
-## 11. Concurrency Benchmark Results
+## Concurrency Benchmark Results
 
 In Phase 39, LedgerGuard's transaction throughput and database connection pool contention were empirically benchmarked directly through the service and database tiers (`TransferService.createTransfer()` over HikariCP and PostgreSQL 17):
 - **Workload Scenarios**: Evaluated three canonical workloads—`LOW_CONTENTION` (disjoint accounts), `HOT_ACCOUNT` (single shared destination), and `OPPOSING_TRANSFERS` (cyclic opposing transfers).
@@ -317,7 +400,7 @@ In Phase 39, LedgerGuard's transaction throughput and database connection pool c
 
 ---
 
-## 12. Disaster Recovery & Operational Runbooks
+## Disaster Recovery & Operational Runbooks
 
 Comprehensive disaster recovery procedures and automation scripts are established in Phase 40:
 - **Logical Backup Automation (`scripts/backup-db.sh`)**: Generates compressed PostgreSQL custom-format archives (`pg_dump -Fc --no-owner --no-privileges`) with automated SHA-256 sidecar checksums and pre-success table-of-contents validation.
@@ -327,7 +410,7 @@ Comprehensive disaster recovery procedures and automation scripts are establishe
 
 ---
 
-## 13. API & Swagger Documentation
+## API & Swagger Documentation
 
 LedgerGuard exposes **31 authoritative REST operations** across 9 controllers, documented with OpenAPI 3.1:
 
@@ -368,12 +451,12 @@ LedgerGuard exposes **31 authoritative REST operations** across 9 controllers, d
 | **Reconciliation** | `GET` | `/api/reconciliation/cases` | `ROLE_OPS` (Operational review queue) |
 | **Reconciliation** | `GET` | `/api/reconciliation/cases/{caseId}` | `ROLE_OPS` (Case investigation detail) |
 | **Reconciliation** | `POST` | `/api/reconciliation/cases/{caseId}/claim` | `ROLE_OPS` (Atomic operator claim assignment) |
-| **Reconciliation** | `POST` | `/api/reconciliation/cases/{caseId}/repair-snapshot` | `ROLE_OPS` (Auto-repairs snapshot from posted journals) |
+| **Reconciliation** | `POST` | `/api/reconciliation/cases/{caseId}/repair-snapshot` | `ROLE_OPS` (Repairs case snapshot from posted journals) |
 | **Reconciliation** | `POST` | `/api/reconciliation/cases/{caseId}/resolve` | `ROLE_OPS` (Manual resolution with audit notes) |
 
 ---
 
-## 14. Technology Stack
+## Technology Stack
 
 - **Backend Runtime**: Java 21 LTS (OpenJDK Temurin)
 - **Application Framework**: Spring Boot 4.1.1 (Spring Framework 7.0.9)
@@ -390,7 +473,7 @@ LedgerGuard exposes **31 authoritative REST operations** across 9 controllers, d
 
 ---
 
-## 15. Local Developer Quickstart
+## Local Developer Quickstart
 
 ### Prerequisites
 - Docker Engine 29+ & Docker Compose v5+
@@ -433,7 +516,7 @@ npm run dev
 
 ---
 
-## 16. Production-Like Docker Compose Startup
+## Production-Like Docker Compose Startup
 
 In production-like mode, **Nginx** operates as the authoritative edge reverse proxy and TLS termination gateway:
 
@@ -465,7 +548,7 @@ docker compose -f docker-compose.prod.yml down
 
 ---
 
-## 17. Repository Documentation Index
+## Repository Documentation Index
 
 | Document | Purpose |
 | :--- | :--- |
@@ -484,7 +567,13 @@ docker compose -f docker-compose.prod.yml down
 
 ---
 
-## 18. Current Project Status
+## Portfolio Scope
+
+LedgerGuard is a portfolio and educational financial-infrastructure system. It operates entirely through simulated financial workflows, using simulated financial-provider integrations, and is not intended to process real money. The project models production-oriented transactional patterns, double-entry bookkeeping, failure recovery, and reconciliation in a controlled environment.
+
+---
+
+## Current Project Status
 
 - **Current State:** Post-v1 release candidate with complete Customer, Merchant, and OPS workspaces.
   - Runtime and repository OpenAPI 3.1 specifications contain 31 operations.
