@@ -8,6 +8,7 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat&logo=typescript&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?style=flat&logo=postgresql&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat&logo=docker&logoColor=white)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **LedgerGuard** is a correctness-first payment and ledger platform designed to address the central challenges of financial backend systems: race conditions, double-spending, distributed failure ambiguity, dual-write divergence, and forensic auditability. Rather than treating monetary balances as mutable database counters or thin wrappers around third-party APIs, LedgerGuard implements an immutable double-entry accounting engine where balances are strictly derived from append-only journal entries backed by PostgreSQL ACID transactions.
 
