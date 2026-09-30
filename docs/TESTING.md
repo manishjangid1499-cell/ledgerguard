@@ -1,6 +1,6 @@
 # LedgerGuard Testing Strategy & Invariant Verification
 
-> **Current Verification Status**: The repository's verified test suite contains **934 passing backend tests** across 5 modules (`ledgerguard-api`: 799, `psp-simulator`: 18, `notification-worker`: 72, `failure-lab`: 34, `e2e-tests`: 11) with 0 failures, 0 errors, and 0 skips, alongside **99 passing frontend tests** in `ledgerguard-web`. Historical phase-specific counts preserved in sections below reflect point-in-time metrics prior to subsequent feature completions and the secure OPS reconciliation workspace expansion.
+> **Current Verification Status**: The repository's verified test suite contains **942 passing backend tests** across 5 modules (`ledgerguard-api`: 799, `psp-simulator`: 18, `notification-worker`: 72, `failure-lab`: 34, `e2e-tests`: 19 [8 unit tests + 11 integration tests]) with 0 failures, 0 errors, and 0 skips, alongside **99 passing frontend tests** in `ledgerguard-web` (**1,041 total passing automated tests**). Historical phase-specific counts preserved in sections below reflect point-in-time metrics prior to subsequent feature completions and the secure OPS reconciliation workspace expansion.
 
 ## 1. Testing Philosophy & Invariant Priority
 
@@ -915,7 +915,7 @@ Because independent GitHub Actions runners do not inherit compiled artifacts fro
    ```bash
    ./mvnw -B -ntp -pl backend/ledgerguard-api -am install -DskipTests
    ```
-   Compiles and installs the `ledgerguard-api:0.1.0-SNAPSHOT` artifact required by `failure-lab` without re-running the 675 API tests.
+   Compiles and installs the `ledgerguard-api` artifact for the current reactor version required by `failure-lab` without re-running the API tests.
 2. **Execute Isolated Failure Lab Gate**:
    ```bash
    ./mvnw -B -ntp -f backend/failure-lab/pom.xml clean test -Pfinancial-failure-ci

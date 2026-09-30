@@ -368,13 +368,14 @@ ledgerguard-api:      799 tests (Unit, Service, Controller, Database Trigger Int
 psp-simulator:         18 tests (External Provider Simulation, Webhook Signatures)
 notification-worker:   72 tests (Idempotent Inbox Consumer, Kafka Listeners, SMTP Delivery)
 failure-lab:           34 tests (Chaos Scenarios, Adversarial Injection, SQL Oracle)
-e2e-tests:             11 tests (Multi-Service Testcontainers End-to-End Flows)
+e2e-tests:             19 tests (Dynamic Jar Resolution Unit Tests & Multi-Service Testcontainers E2E)
 -----------------------------------------------------------------------------------------
-WORKSPACE TOTAL:      934 passing tests (0 failures, 0 errors, 0 skipped)
+WORKSPACE TOTAL:      942 passing tests (0 failures, 0 errors, 0 skipped)
 ```
 
-The React workspace currently adds **99 passing unit and component tests**, and
-CI runs those tests alongside linting and the production build.
+The React workspace currently adds **99 passing unit and component tests**
+(bringing the combined suite to **1,041 automated tests**), and CI runs those
+tests alongside linting and the production build.
 
 ### Money Integrity Failure Lab
 A standalone automated chaos testing engine (`backend/failure-lab`) that deliberately injects hostile operating conditions:
@@ -576,9 +577,11 @@ LedgerGuard is a portfolio and educational financial-infrastructure system. It o
 
 ## Current Project Status
 
-- **Current State:** Post-v1 release candidate with complete Customer, Merchant, and OPS workspaces.
+- **Current State:** v1.1.0 release baseline with complete Customer, Merchant, and OPS workspaces.
+  - Full release verification completed on 2026-09-30.
   - Runtime and repository OpenAPI 3.1 specifications contain 31 operations.
-  - Latest full backend verification: 934 passing tests across 5 modules with no failures, errors, or skips.
-  - Current frontend verification: 99 passing tests, clean lint, and successful production build.
+  - Authoritative backend baseline: 942 passing tests across 5 modules with no failures, errors, or skips.
+  - Authoritative frontend baseline: 99 passing tests, clean lint, and successful production build.
+  - Combined test suite: 1,041 automated tests total.
   - GitHub Actions validates backend, frontend tests/lint/build, financial failure scenarios, production images, and CodeQL analysis for Java and TypeScript.
-- **Release readiness:** Application functionality is complete for its portfolio scope. Public deployment still requires operator-owned production secrets, a public hostname, trusted TLS, backups, and post-deployment smoke testing. This project remains a simulated-money educational system and must not process real funds.
+- **Operational Status:** Application functionality is complete for its portfolio scope. Public deployment remains a separate operational step requiring operator-owned production secrets, a public hostname, trusted TLS, backups, and post-deployment smoke testing. This project remains a simulated-money educational system and must not process real funds.

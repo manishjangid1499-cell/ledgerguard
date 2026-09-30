@@ -1258,15 +1258,15 @@ The end-to-end test suite in `backend/e2e-tests` provides hermetic, cross-servic
 ### 2. Multi-Service Container Topology
 - **PostgreSQL 17.11**: Provisions separate logical databases (`ledgerguard`, `psp_simulator`, and `notification_worker`). Flyway automatically runs migrations independently for each service.
 - **Apache Kafka 4.3.1**: Ephemeral broker configured with advertised internal listener on private network alias `kafka:19092`.
-- **PSP Simulator Container**: Runs `psp-simulator-0.1.0-SNAPSHOT.jar` listening on internal port 8081, handling external operations and HTTP webhook callbacks to `http://ledgerguard-api:8080/api/provider/webhooks`.
-- **Notification Worker Container**: Asynchronous non-web worker running `notification-worker-0.1.0-SNAPSHOT.jar`, consuming transactional outbox events from Kafka `kafka:19092`.
-- **LedgerGuard API Container**: Runs `ledgerguard-api-0.1.0-SNAPSHOT-exec.jar` listening on internal port 8080 with all production services active (transfer, funding, payout, outbox publisher, status polling). Readiness verified via `/actuator/health`.
+- **PSP Simulator Container**: Runs `psp-simulator-<version>.jar` listening on internal port 8081, handling external operations and HTTP webhook callbacks to `http://ledgerguard-api:8080/api/provider/webhooks`.
+- **Notification Worker Container**: Asynchronous non-web worker running `notification-worker-<version>.jar`, consuming transactional outbox events from Kafka `kafka:19092`.
+- **LedgerGuard API Container**: Runs `ledgerguard-api-<version>-exec.jar` listening on internal port 8080 with all production services active (transfer, funding, payout, outbox publisher, status polling). Readiness verified via `/actuator/health`.
 
 ### 3. Packaging & Classpath Decoupling
 To ensure module interoperability:
-- `ledgerguard-api` configures `<classifier>exec</classifier>` on its Spring Boot repackage goal. This keeps the primary `ledgerguard-api.jar` as a clean library JAR (allowing `backend/failure-lab` to depend on it without duplicate nested jar classloader conflicts) while producing `ledgerguard-api-0.1.0-SNAPSHOT-exec.jar` for containerized execution.
+- `ledgerguard-api` configures `<classifier>exec</classifier>` on its Spring Boot repackage goal. This keeps the primary `ledgerguard-api-<version>.jar` as a clean library JAR (allowing `backend/failure-lab` to depend on it without duplicate nested jar classloader conflicts) while producing `ledgerguard-api-<version>-exec.jar` for containerized execution.
 - `psp-simulator` and `notification-worker` configure standard Spring Boot repackage without explicit mainClass overrides, allowing Spring Boot to auto-detect their single main application classes.
-- `backend/e2e-tests` resolves executable JARs deterministically via `JarResolver`, verifying file existence, size (> 1 MB), and `Main-Class` manifest attributes before mounting into `eclipse-temurin:21-jre` containers.
+- `backend/e2e-tests` dynamically resolves executable JARs deterministically via `JarResolver` by inspecting target directories for version-neutral artifacts (`ledgerguard-api-*-exec.jar`, `psp-simulator-*.jar`, `notification-worker-*.jar`), verifying file existence, single-candidate uniqueness, size (> 1 MB), and `Main-Class` manifest attributes before mounting into `eclipse-temurin:21-jre` containers.
 
 ### 4. Real Provider Contract Compliance
 Phase 34 E2E testing uncovered a genuine integration contract mismatch: `PspOperationResponse` in the API expected `boolean replayed`, but `OperationResponse` in `psp-simulator` did not serialize it.

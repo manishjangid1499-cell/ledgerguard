@@ -13,7 +13,11 @@ COPY backend/e2e-tests/pom.xml backend/e2e-tests/
 COPY backend/ledgerguard-api/src backend/ledgerguard-api/src
 
 RUN sed -i 's/\r$//' mvnw && chmod +x mvnw && \
-    ./mvnw -pl backend/ledgerguard-api -am package -DskipTests
+    ./mvnw -pl backend/ledgerguard-api -am package -DskipTests && \
+    FOUND=$(find backend/ledgerguard-api/target -maxdepth 1 -type f -name 'ledgerguard-api-*-exec.jar' ! -name '*.original') && \
+    COUNT=$(echo "$FOUND" | grep -c . || true) && \
+    if [ "$COUNT" -ne 1 ]; then echo "Error: Expected exactly 1 exec JAR, found $COUNT: $FOUND" >&2; exit 1; fi && \
+    cp "$FOUND" /workspace/app.jar
 
 # Stage 2: Runtime stage
 FROM eclipse-temurin:21-jre-jammy AS runtime
@@ -22,7 +26,7 @@ WORKDIR /app
 RUN groupadd --system --gid 1001 ledgerguard && \
     useradd --system --uid 1001 --gid ledgerguard --no-create-home ledgerguard
 
-COPY --from=builder --chown=ledgerguard:ledgerguard /workspace/backend/ledgerguard-api/target/ledgerguard-api-0.1.0-SNAPSHOT-exec.jar /app/app.jar
+COPY --from=builder --chown=ledgerguard:ledgerguard /workspace/app.jar /app/app.jar
 
 USER ledgerguard
 EXPOSE 8080

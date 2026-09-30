@@ -1,19 +1,25 @@
 # LedgerGuard Project Status
 
-> **Current main-branch snapshot (2026-09-29):** The sections below preserve the
-> historical v1.0.0 phase record. Since that release, the repository has added
-> complete Customer, Merchant, and OPS workspaces, secure OPS provisioning, and
-> expanded reconciliation operations. The current OpenAPI export contains 31
-> operations. The latest full backend verification recorded 934 passing tests;
-> the current frontend verification records 99 passing tests, clean lint, and a
-> successful production build. Public deployment remains a separate operational
-> step requiring deployment secrets, a hostname, trusted TLS, backups, and smoke
-> tests.
+> **Current main-branch snapshot (2026-09-30):** Current `main` represents the
+> v1.1.0 release baseline. Release v1.0.0 remains the preserved historical
+> release baseline. Complete Customer, Merchant, and OPS workspaces are present.
+> The runtime and repository OpenAPI export contains 31 operations. Verification
+> was completed on 2026-09-30 with 942 passing backend tests and 99 passing frontend
+> tests (1,041 automated tests total, with clean lint and a successful
+> production build). Public deployment remains a separate operational step
+> requiring operator-owned deployment secrets, a hostname, trusted TLS, backups,
+> and smoke tests.
 
 ## 1. Project Information
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Current Phase:** Phase 44 — v1.0.0 Portfolio Release
-- **Status:** PHASE 44: COMPLETE — v1.0.0 PORTFOLIO RELEASE
+- **Release Baseline:** v1.1.0
+- **Status:** v1.1.0 RELEASE BASELINE — VERIFICATION COMPLETE
+- **Current State:** v1.1.0 release baseline
+- **Verification Date:** 2026-09-30
+- **Verified Metrics:** 942 backend tests, 99 frontend tests (1,041 automated tests total)
+- **Last Verified Baseline:** 2026-09-30
+- **Git Branch:** main
+- **Historical Development Program:** 45 / 45 phases completed (100%)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)
   - **Phase 1 — Workspace Bootstrap & Multi-Module Setup** (Completed: 2026-08-30)
@@ -60,8 +66,7 @@
   - **Phase 42 — Dead-Code, Dependency & Security Cleanup** (Completed: 2026-09-13)
   - **Phase 43 — Complete Release Verification** (Completed: 2026-09-13)
   - **Phase 44 — v1.0.0 Portfolio Release** (Completed: 2026-09-13)
-- **Phase Completion:** 45 / 45 phases completed (100%)
-- **Current Work:** Phase 44 v1.0.0 Portfolio Release prepared and completed:
+- **Historical v1.0.0 Release Record (Phase 44 — 2026-09-13):**
   - Prepared initial v1.0.0 portfolio release artifacts, establishing authoritative release history in `CHANGELOG.md` adhering to Keep a Changelog standards.
   - Preserved authoritative Phase 43 release candidate verification metrics:
     - Backend regression: full `.\mvnw.cmd clean verify` passed with 760/760 tests (API: 675, PSP: 18, Notification Worker: 22, Failure Lab: 34, E2E: 11; 0 failures, 0 errors, 0 skipped).
@@ -77,11 +82,8 @@
     - Documentation and API contract consistency: all 22 tracked markdown files verified with 0 broken local links; OpenAPI 3.1.0 specification verified with 22 operations and 4 security schemes.
     - Release candidate verification: PASS.
   - Finalized repository documentation, architectural diagrams, runbooks, benchmarks, and API specifications.
-  - Release tag `v1.0.0` is designated as the final tagging target upon merge to `main`.
+  - Release tag `v1.0.0` was tagged from commit `2f18554` on 2026-09-13 (historical branch: `release/phase-44-v1.0.0-portfolio-release`).
   - Documented upstream shaded dependency exception remains documented and unchanged in Section 5.
-- **Next Phase:** None — Project Complete (v1.0.0 Portfolio Release)
-- **Last Verified:** 2026-09-13
-- **Git Branch:** release/phase-44-v1.0.0-portfolio-release
 
 
 ---

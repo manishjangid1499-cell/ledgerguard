@@ -9,30 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-30
+
 ### Added
 - Complete role-aware Customer and Merchant workspaces with accessible financial forms, histories, details, and retry-safe idempotency behavior.
-- Secure OPS provisioning and an OPS reconciliation workspace with dashboard summaries, on-demand runs, case filters, claims, resolutions, and case-scoped snapshot repair.
+- Secure development and automated OPS user provisioning with credential validation and dedicated runtime fixtures.
+- Secure OPS reconciliation workspace featuring dashboard summary metrics, on-demand run triggers, case investigation filters, atomic claims, audit-noted resolutions, and case-scoped snapshot repair.
 - Frontend unit and component tests for Customer, Merchant, and OPS workflows.
+- Repository MIT license and recruiter-facing product tour with multi-role UI previews.
 
 ### Changed
-- Expanded the runtime OpenAPI contract to 31 operations, including payment summaries and reconciliation run/summary operations.
-- Updated CI to execute frontend tests in addition to linting and production builds.
-- Added scheduled and pull-request CodeQL analysis for Java and TypeScript.
-- Grouped routine Dependabot updates and reduced open-update limits to keep the maintenance queue reviewable.
-- Refreshed README architecture diagrams, verification totals, API inventory, and release-readiness guidance.
+- Expanded the runtime OpenAPI contract to 31 operations, adding scoped financial read APIs, merchant payment summaries, and reconciliation run/summary operations.
+- Hardened authentication and refresh-session reliability using session-scoped refresh cookies, successor-token revocation on logout, and frontend refresh-race prevention.
+- Enforced merchant routing constraints on internal transfers (disallowing peer-to-peer transfers to merchant accounts in favor of simulated checkout).
+- Upgraded notification domain events to recipient-aware v2 contracts and added resilient provider-neutral notification delivery with opt-in production SMTP.
 - Bound the PSP simulator and observability ports to loopback by default and made production SMTP delivery opt-in.
+- Updated CI to execute frontend tests in addition to linting and production builds, and added scheduled and pull-request CodeQL analysis for Java and TypeScript.
+- Grouped routine Dependabot updates and reduced open-update limits to keep the maintenance queue reviewable.
+- Refreshed README architecture diagrams, verification totals, API inventory, and release-readiness guidance for public deployment preparation.
 
 ### Removed
+- Dead code, unused repository artifacts, and transient fixtures across modules.
 - Accidental root-level command-output artifact `tatus --short`.
 
 ## [1.0.0] - 2026-09-13
 
-Initial portfolio release of the **LedgerGuard** Payment Integrity & Ledger Platform. This release culminates a 45-phase development lifecycle establishing a production-grade, correctness-first financial engine designed to eliminate double-spending, data drift, distributed ambiguity, and dual-write inconsistencies.
+Initial portfolio release of the **LedgerGuard** Payment Integrity & Ledger Platform. This release culminates a 45-phase development lifecycle establishing a simulated-money, correctness-first financial platform designed to prevent double-spending, data drift, distributed ambiguity, and dual-write inconsistencies.
 
 ### Architecture & Foundations
 - **Modular Multi-Module Reactor**: Clean Java 21 LTS Maven multi-module architecture separating domain concerns:
   - `backend/ledgerguard-api`: Authoritative double-entry core, payment processing, idempotency filters, and RESTful APIs.
-  - `backend/psp-simulator`: Dedicated payment service provider simulator mimicking external banking partner behaviors.
+  - `backend/psp-simulator`: Dedicated payment service provider simulator mimicking external PSP behaviors.
   - `backend/notification-worker`: Asynchronous, non-web consumer processing Kafka domain events via an idempotent inbox.
   - `backend/failure-lab`: Controlled chaos harness executing financial invariant corruption scenarios against live services.
   - `backend/e2e-tests`: Multi-container End-to-End integration suite orchestrating real services via Testcontainers.
@@ -44,32 +51,32 @@ Initial portfolio release of the **LedgerGuard** Payment Integrity & Ledger Plat
 - **Immutable Double-Entry Engine**: Every monetary transaction enforces exact debit-credit parity ($\sum \text{Debits} = \sum \text{Credits}$) in integer minor units (paise in INR currency).
 - **PostgreSQL Immutability Triggers**: Engine-level database triggers (`trg_journal_transactions_immutability`, `trg_journal_entries_immutability`, and `trg_journal_transactions_balance_check`) preventing mutations or deletions of posted financial entries.
 - **Derived Balance Snapshots**: Ledger accounts maintain point-in-time balance snapshots derived strictly from the immutable journal history, complete with forensic reconstruction services.
-- **Deterministic Concurrency Control**: Consistent row-level lock acquisition ordering (`ORDER BY ledger_account_id ASC`) during transactional operations, eliminating circular-wait deadlocks under heavy concurrent load.
+- **Deterministic Concurrency Control**: Consistent row-level lock acquisition ordering (`ORDER BY ledger_account_id ASC`) during transactional operations, reducing circular-wait deadlock risk under heavy concurrent load.
 - **Overdraft & Race Prevention**: Strict balance assertions preventing accounts from negative overdraft balances during concurrent withdrawal attempts.
-- **Cryptographic Request Idempotency**: Required `Idempotency-Key` request deduplication powered by SHA-256 payload fingerprinting and atomic database constraints.
-- **Two-Phase Hold Lifecycle**: Balance reservations via balance holds (`ACTIVE`, `CAPTURED`, `RELEASED`) protecting funds during multi-step payments and external settlements without premature debiting.
+- **Authoritative Request Idempotency**: Required `Idempotency-Key` request deduplication powered by SHA-256 request payload fingerprinting and atomic database constraints.
+- **Durable Balance-Hold Lifecycle**: Balance reservations via balance holds (`ACTIVE`, `CAPTURED`, `RELEASED`) protecting funds during multi-step payments and external disbursements without premature debiting.
 
 ### Payments & PSP Workflows
 - **Peer-to-Peer Internal Transfers**: Atomic wallet-to-wallet transfers executing debit/credit postings in a single database transaction.
-- **Merchant Checkout & Refunds**: Commercial payment flows with support for full and pro-rata partial fee refunds.
+- **Merchant Payments & Refunds**: Simulated payment checkout flows with support for full and pro-rata partial fee refunds.
 - **External Top-Ups (Funding)**: Asynchronous wallet funding top-up lifecycle with HMAC-SHA256 signature verification and replay prevention.
 - **External Payouts (Withdrawals)**: Safe external fund disbursements utilizing balance hold reservations before external provider dispatch.
-- **PSP Banking Simulator**: Standalone simulator modeling deterministic success, transient timeouts, network latency, and ambiguous failure outcomes.
+- **PSP Simulator**: Standalone simulator modeling deterministic success, transient timeouts, network latency, and ambiguous failure outcomes.
 - **Provider Outcome Handling (`UNKNOWN != FAILED`)**: Strict state machine architecture treating gateway timeouts and HTTP 500 errors as `UNKNOWN` rather than `FAILED`, preventing premature duplicate fund disbursements.
 
 ### Messaging & Reliability
 - **Transactional Outbox Pattern**: Atomic database persistence of business events (`outbox_events`) alongside domain entity mutations, eliminating the dual-write vulnerability between database and message bus.
 - **Asynchronous Kafka Delivery**: Background publisher relaying committed outbox events to Kafka topics with delivery retries and trace context propagation.
-- **Idempotent Inbox Consumer**: Worker consumption tracking (`inbox_events`) guaranteeing exact-once processing semantics regardless of message redelivery.
+- **Idempotent Inbox Consumer**: Worker consumption tracking (`inbox_events`) providing idempotent at-least-once message consumption with single-execution side effects regardless of message redelivery.
 - **Resilient Provider Client**: Resilience4j circuit breakers, bounded exponential retries, and rate limiting with backpressure guards.
 
 ### Reconciliation & Correctness
-- **Core Reconciliation Engine**: Multi-level reconciliation comparing internal journal transactions, balance snapshot parity, and external provider statements.
-- **Reconciliation Recovery Workflows**: Automated case management, variance detection, forensic auditing, and operator-assisted snapshot repair endpoints.
+- **Core Reconciliation Engine**: Multi-level reconciliation comparing internal journal transactions, balance snapshot parity, and simulated provider records.
+- **Reconciliation Recovery Workflows**: Discrepancy detection, case investigation queues, forensic auditing, and operator-initiated case-scoped snapshot repair endpoints under pessimistic lock.
 - **Continuous Invariant Assertions**: Database-enforced and application-level financial invariant evaluations ensuring ledger zero-sum integrity across all accounts.
 
 ### Resilience & Observability
-- **Money Integrity Failure Lab**: Comprehensive test suite injecting 34 distinct failure modes (split-brain race conditions, simulated power failures, network timeouts, duplicate webhooks, corrupted snapshot data) to verify self-healing and invariant preservation.
+- **Money Integrity Failure Lab**: Comprehensive test suite executing 34 failure tests across hostile operating conditions (concurrency race conditions, gateway timeouts after commit, duplicate webhooks, corrupted snapshot data) to verify recovery and total currency conservation.
 - **Metrics & Monitoring**: Prometheus operational, integrity, and business metric exporters tracking balance drift, outbox lag, and circuit breaker trip rates.
 - **Grafana Dashboards**: Provisioned financial integrity and operations dashboards visualizing transaction throughput, error distributions, and system health.
 - **Distributed Tracing & Structured Logging**: OpenTelemetry correlation IDs and W3C Trace Context propagating across API, worker, Kafka headers, and database transactions.
@@ -113,3 +120,7 @@ Authoritative verification baseline validated during release candidate qualifica
 - Operational disaster recovery runbooks and database backup/restore scripts in `docs/RUNBOOKS.md`.
 - Concurrency contention benchmarks and connection pool profiling in `docs/BENCHMARKS.md`.
 - Comprehensive portfolio overview and mathematical invariant guarantees in `README.md`.
+
+[Unreleased]: https://github.com/manishjangid1499-cell/ledgerguard/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/manishjangid1499-cell/ledgerguard/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/manishjangid1499-cell/ledgerguard/releases/tag/v1.0.0

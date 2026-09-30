@@ -555,7 +555,15 @@ export LEDGERGUARD_OPS_PROVISION_PASSWORD="${OPS_BOOTSTRAP_SECRET}"
 export LEDGERGUARD_OPS_PROVISION_EXIT_ON_COMPLETION="true"
 
 # 3. Execute Ephemeral JAR Task
-java -jar backend/ledgerguard-api/target/ledgerguard-api-0.1.0-SNAPSHOT.jar
+shopt -s nullglob
+jars=(backend/ledgerguard-api/target/ledgerguard-api-*-exec.jar)
+
+if (( ${#jars[@]} != 1 )); then
+  echo "Error: Expected exactly one ledgerguard-api executable JAR; found ${#jars[@]}" >&2
+  exit 1
+fi
+
+java -jar "${jars[0]}"
 ```
 
 #### Using Docker Compose in Production:

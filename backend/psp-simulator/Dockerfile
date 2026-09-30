@@ -13,7 +13,11 @@ COPY backend/e2e-tests/pom.xml backend/e2e-tests/
 COPY backend/psp-simulator/src backend/psp-simulator/src
 
 RUN sed -i 's/\r$//' mvnw && chmod +x mvnw && \
-    ./mvnw -pl backend/psp-simulator -am package -DskipTests
+    ./mvnw -pl backend/psp-simulator -am package -DskipTests && \
+    FOUND=$(find backend/psp-simulator/target -maxdepth 1 -type f -name 'psp-simulator-*.jar' ! -name '*.original' ! -name '*-sources.jar' ! -name '*-javadoc.jar' ! -name '*-tests.jar' ! -name '*-exec.jar') && \
+    COUNT=$(echo "$FOUND" | grep -c . || true) && \
+    if [ "$COUNT" -ne 1 ]; then echo "Error: Expected exactly 1 jar, found $COUNT: $FOUND" >&2; exit 1; fi && \
+    cp "$FOUND" /workspace/app.jar
 
 # Stage 2: Runtime stage
 FROM eclipse-temurin:21-jre-jammy AS runtime
@@ -22,7 +26,7 @@ WORKDIR /app
 RUN groupadd --system --gid 1001 ledgerguard && \
     useradd --system --uid 1001 --gid ledgerguard --no-create-home ledgerguard
 
-COPY --from=builder --chown=ledgerguard:ledgerguard /workspace/backend/psp-simulator/target/psp-simulator-0.1.0-SNAPSHOT.jar /app/app.jar
+COPY --from=builder --chown=ledgerguard:ledgerguard /workspace/app.jar /app/app.jar
 
 USER ledgerguard
 EXPOSE 8081
