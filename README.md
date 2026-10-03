@@ -18,7 +18,21 @@ Under the hood, LedgerGuard models realistic distributed payment infrastructure.
 
 ---
 
+## Live Demo
+
+**[Open LedgerGuard](https://ledgerguard.duckdns.org)**
+
+Register a Customer account to explore simulated wallet funding, peer transfers, merchant payments and payouts. Register a Merchant account to receive simulated payments, review fees and issue eligible refunds.
+
+OPS access is operator-managed and is not available through public registration.
+
+All wallet amounts and provider operations are simulated. No real money is processed. Use a unique password that you do not reuse elsewhere.
+
+---
+
 ## Quick Navigation
+
+- [Live Demo](#live-demo)
 
 - [Product Tour](#product-tour)
 - [Engineering Highlights](#engineering-highlights)
@@ -119,7 +133,7 @@ $$\text{\bf MONEY MUST NEVER BE CREATED, DESTROYED, DUPLICATED, OR SILENTLY LOST
 1. **Balanced Double-Entry Rule**: For every posted journal transaction across all accounts:
    $$\sum \text{DEBITS} = \sum \text{CREDITS}$$
    Enforced at the database engine level via PostgreSQL trigger `trg_journal_transactions_balance_check`.
-2. **Permanent Ledger Immutability**: Posted journal transactions and journal entries cannot be updated or deleted under any circumstance (enforced by triggers `trg_journal_transactions_immutability` and `trg_journal_entries_immutability`). Adjustments are made strictly through new compensating journal entries.
+2. **Permanent Ledger Immutability**: Database triggers reject updates and deletes to posted journal transactions and their entries during normal application operation (enforced by triggers `trg_journal_transactions_immutability` and `trg_journal_entries_immutability`). Adjustments are made strictly through new compensating journal entries.
 3. **Deterministic Lock Ordering**: All multi-account financial operations acquire row-level write locks (`SELECT ... FOR UPDATE`) in stable primary key order (`ORDER BY ledger_account_id ASC`). This serializes competing access to affected financial rows, prevents lost-update and concurrent-overspend races on protected rows, and reduces circular-wait deadlock risk (Phase 39 controlled contention tests observed 0 deadlocks).
 4. **Authoritative Request Idempotency**: Financial write endpoints (`POST /api/transfers`, `POST /api/payments`, `POST /api/payments/{paymentId}/refund`, `POST /api/funding`, `POST /api/payouts`) use a required `Idempotency-Key` header with cryptographic SHA-256 request fingerprinting and database-backed replay/conflict handling to ensure at-most-once financial execution.
 5. **Transactional Outbox Event Persistence**: LedgerGuard avoids the direct DB-then-Kafka dual-write pattern. Domain events (`outbox_events`) are committed atomically within the local PostgreSQL financial database transaction, while Kafka publication executes asynchronously post-commit. Temporary broker or consumer outages may leave outbox rows delayed in `PENDING` status, but they never fabricate financial success or require financial rollback.
@@ -276,7 +290,7 @@ stateDiagram-v2
         [*] --> Flagged_For_Investigation
         Flagged_For_Investigation --> Level3_Detection: Level 3 Recon Scan (Detection Only)
         Level3_Detection --> Case_Opened: Logs discrepancy item & triggers ops case (No balance mutation)
-        Case_Opened --> Ops_Audit: Operator audits bank records & notes resolution in case
+        Case_Opened --> Ops_Audit: Operator reviews simulated provider records & notes resolution in case
     }
 
     RECONCILIATION_REQUIRED --> SUCCEEDED: Late Webhook Confirms Success (Settles Journal & Consumes Hold)
@@ -298,7 +312,7 @@ All balances are calculated and stored in **INR** minor units (paise) as signed 
 | **`CUSTOMER`** | **Credit-Normal** | $\text{balance} = \sum \text{Credits} - \sum \text{Debits}$ | Owned by authenticated User (`owner_user_id`) |
 | **`MERCHANT`** | **Credit-Normal** | $\text{balance} = \sum \text{Credits} - \sum \text{Debits}$ | Owned by authenticated User (`owner_user_id`) |
 | **`PLATFORM_FEES`** | **Credit-Normal** | $\text{balance} = \sum \text{Credits} - \sum \text{Debits}$ | System account (Platform fee revenue) |
-| **`PSP_CLEARING`** | **Debit-Normal** | $\text{balance} = \sum \text{Debits} - \sum \text{Credits}$ | System account (External bank receivables) |
+| **`PSP_CLEARING`** | **Debit-Normal** | $\text{balance} = \sum \text{Debits} - \sum \text{Credits}$ | System account (Simulated provider clearing) |
 | **`PLATFORM_RESERVE`** | **Debit-Normal** | $\text{balance} = \sum \text{Debits} - \sum \text{Credits}$ | System account (Liquidity buffer) |
 
 ### Balance Snapshots & Holds
@@ -328,7 +342,7 @@ All balances are calculated and stored in **INR** minor units (paise) as signed 
 
 - **Transactional Outbox (`SKIP LOCKED`)**: LedgerGuard avoids the direct DB-then-Kafka dual-write pattern by committing domain events (`outbox_events`) atomically within the local PostgreSQL financial transaction. Background workers poll pending events using `SELECT ... FOR UPDATE SKIP LOCKED` for concurrent non-blocking outbox claiming and asynchronous post-commit publishing to Apache Kafka.
 - **Consumer Inbox Deduplication**: Asynchronous consumers (`notification-worker`) deduplicate incoming messages in a database-backed inbox, ensuring idempotent execution despite Kafka at-least-once transport delivery.
-- **Resilient Provider Client**: Programmatic Resilience4j integration (`CircuitBreaker` $\to$ `Bulkhead` $\to$ `Retry` with exponential jitter $\to$ `RestClient`) ensuring graceful degradation during external banking outages.
+- **Resilient Provider Client**: Programmatic Resilience4j integration (`CircuitBreaker` $\to$ `Bulkhead` $\to$ `Retry` with exponential jitter $\to$ `RestClient`) handling simulated provider outages with circuit breaking, concurrency limits and bounded retries.
 - **Durable Status Recovery Poller**: Background polling worker that scans unresolved external operations with exponential backoff and queries authoritative provider status. Confirmed provider success or failure settles the operation automatically; unresolved or ambiguous outcomes progress to `RECONCILIATION_REQUIRED`. Level 3 reconciliation detects external discrepancies, allowing operators to investigate via operational review cases (`reconciliation_cases`) with mandatory audit notes, strictly prohibiting silent balance mutation or historical ledger rewrites.
 
 ---
@@ -361,21 +375,25 @@ All balances are calculated and stored in **INR** minor units (paise) as signed 
 ## Testing & Money Integrity Failure Lab
 
 ### Test Suite Baseline
-The platform maintains an exhaustive test suite running on Java 21 across 5 Maven modules:
 
-```
-ledgerguard-api:      799 tests (Unit, Service, Controller, Database Trigger Integration)
-psp-simulator:         18 tests (External Provider Simulation, Webhook Signatures)
-notification-worker:   72 tests (Idempotent Inbox Consumer, Kafka Listeners, SMTP Delivery)
-failure-lab:           34 tests (Chaos Scenarios, Adversarial Injection, SQL Oracle)
-e2e-tests:             19 tests (Dynamic Jar Resolution Unit Tests & Multi-Service Testcontainers E2E)
------------------------------------------------------------------------------------------
-WORKSPACE TOTAL:      942 passing tests (0 failures, 0 errors, 0 skipped)
-```
+Verified on 2026-10-03 using Java 21. Backend totals include Surefire and Failsafe XML reports across 5 Maven modules.
 
-The React workspace currently adds **99 passing unit and component tests**
-(bringing the combined suite to **1,041 automated tests**), and CI runs those
-tests alongside linting and the production build.
+| Module | Passing tests |
+| --- | ---: |
+| LedgerGuard API | 807 |
+| PSP simulator | 18 |
+| Notification worker | 73 |
+| Failure lab | 34 |
+| E2E tests | 19 |
+| **Backend total** | **951** |
+
+Backend verification completed with **0 failures, 0 errors and 0 skipped tests**.
+
+The React workspace has **99 passing unit and component tests**, bringing the combined baseline to **1,050 automated tests**. Frontend lint and the production build also passed.
+
+The frontend test run emitted React `act(...)` warnings in merchant refund and withdrawal tests. These remain test-maintenance work.
+
+Historical release and phase-specific verification figures are preserved separately.
 
 ### Money Integrity Failure Lab
 A standalone automated chaos testing engine (`backend/failure-lab`) that deliberately injects hostile operating conditions:
@@ -407,7 +425,7 @@ In Phase 39, LedgerGuard's transaction throughput and database connection pool c
 Comprehensive disaster recovery procedures and automation scripts are established in Phase 40:
 - **Logical Backup Automation (`scripts/backup-db.sh`)**: Generates compressed PostgreSQL custom-format archives (`pg_dump -Fc --no-owner --no-privileges`) with automated SHA-256 sidecar checksums and pre-success table-of-contents validation.
 - **Verified Database Cutover (`scripts/restore-db.sh`)**: Restores into isolated recovery targets, verifies role ownership (`ledgerguard_app`), and runs an automated Mode A financial invariant verification suite before traffic cutover.
-- **Mode A Invariant Verification**: Validates 20 schema tables, Flyway history (V1..V18 frozen), zero-sum double-entry balance, snapshot parity against normal balance rules, trigger enablement, and outbox trace integrity.
+- **Mode A Invariant Verification**: Validates 20 schema tables, Flyway history (API migrations V1..V19), zero-sum double-entry balance, snapshot parity against normal balance rules, trigger enablement, and outbox trace integrity.
 - Detailed operational runbooks, Kafka lag remediation, and incident response checklists are documented in [docs/RUNBOOKS.md](docs/RUNBOOKS.md).
 
 ---
@@ -464,7 +482,7 @@ LedgerGuard exposes **31 authoritative REST operations** across 9 controllers, d
 - **Application Framework**: Spring Boot 4.1.1 (Spring Framework 7.0.9)
 - **Security & Identity**: Spring Security, Nimbus JOSE/JWT (HS256), BCrypt
 - **API Documentation**: Springdoc OpenAPI 3.1.1 (`springdoc-openapi-starter-webmvc-ui`)
-- **Database & Persistence**: PostgreSQL 17.11, Spring Data JPA / Hibernate, Flyway Migration Engine (V1–V18)
+- **Database & Persistence**: PostgreSQL 17.11, Spring Data JPA / Hibernate, Flyway Migration Engine (API migrations V1–V19)
 - **Messaging Spine**: Apache Kafka 4.3.1 (KRaft mode, no ZooKeeper)
 - **Fault Tolerance**: Resilience4j 2.4.0 (CircuitBreaker, Bulkhead, Retry)
 - **Rate Limiting**: Bucket4j 8.19.0, Caffeine 3.x
@@ -478,75 +496,151 @@ LedgerGuard exposes **31 authoritative REST operations** across 9 controllers, d
 ## Local Developer Quickstart
 
 ### Prerequisites
-- Docker Engine 29+ & Docker Compose v5+
-- Java 21 LTS & Maven 3.9+ (or use included `mvnw`)
-- Node.js 24 LTS & npm 11+
 
-### 1. Setup Local Environment
-```bash
-# Copy local development environment configuration
-cp .env.example .env    # Windows: Copy-Item .env.example .env
-```
+- Java 21 and the included Maven wrapper.
+- Docker Engine and Docker Compose.
+- Node.js 24 and npm.
+- Commands below use Windows PowerShell from the repository root.
 
-### 2. Start Core Infrastructure (PostgreSQL, Kafka, Prometheus, Grafana)
-```bash
-docker compose up -d
-docker compose ps
-```
+### 1. Configure local environment values
 
-### 3. Run Backend Verification & Compile
-```bash
-# Run the complete backend reactor verification
-./mvnw clean verify     # Windows: .\mvnw.cmd clean verify
-```
+Copy the template only if `.env` does not already exist:
 
-### 4. Start Core API Service
-```bash
-./mvnw -pl backend/ledgerguard-api spring-boot:run
-# Swagger UI available at: http://localhost:8080/swagger-ui/index.html
-# OpenAPI JSON available at: http://localhost:8080/v3/api-docs
-```
+    if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 
-### 5. Start Frontend Development Server
-```bash
-cd frontend/ledgerguard-web
-npm install
-npm test -- --run
-npm run dev
-# Web application available at: http://localhost:5173
-```
+Edit `.env` locally. Fill `POSTGRES_PASSWORD`, `LEDGERGUARD_DB_PASSWORD`, `PSP_DB_PASSWORD`, `NOTIFICATION_DB_PASSWORD`, `GRAFANA_ADMIN_PASSWORD`, `LEDGERGUARD_JWT_SECRET` (at least 32 bytes) and `PSP_WEBHOOK_SECRET`.
+
+Retain the default database usernames, ports and Mailpit settings for this quickstart. Never commit `.env`.
+
+Compose reads `.env` automatically. Maven-launched services need the same values in their process environment. Run this loader in each backend-service terminal:
+
+    Get-Content .env -Encoding UTF8 | ForEach-Object {
+        if ($_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
+            [Environment]::SetEnvironmentVariable(
+                $matches[1], $matches[2],
+                [EnvironmentVariableTarget]::Process
+            )
+        }
+    }
+
+The loader supports plain, unquoted `KEY=value` entries. It treats values literally and does not execute file content.
+
+### 2. Start local infrastructure
+
+    docker compose config --quiet
+    docker compose up -d
+    docker compose ps
+
+This starts PostgreSQL, Kafka, Prometheus, Grafana and Mailpit. Wait for PostgreSQL and Kafka readiness before starting the Java services.
+
+Existing database volumes retain their initialized credentials; editing `.env` does not change existing database passwords.
+
+### 3. Verify the backend
+
+With Docker running:
+
+    .\mvnw.cmd -B -ntp clean verify
+
+### 4. Start the backend services
+
+Use three separate PowerShell terminals at the repository root. Run the environment loader from step 1 in each terminal first.
+
+**API terminal:**
+
+    .\mvnw.cmd -pl backend/ledgerguard-api spring-boot:run "-Dspring-boot.run.profiles=dev"
+
+**PSP simulator terminal:**
+
+    .\mvnw.cmd -pl backend/psp-simulator spring-boot:run
+
+**Notification worker terminal:**
+
+    .\mvnw.cmd -pl backend/notification-worker spring-boot:run
+
+The API development profile supports local HTTP cookies and the frontend origin. The PSP simulator handles simulated provider operations; the worker consumes domain events and sends local email through Mailpit.
+
+### 5. Start the frontend
+
+In another PowerShell terminal at the repository root:
+
+    npm.cmd --prefix frontend/ledgerguard-web ci
+    npm.cmd --prefix frontend/ledgerguard-web test -- --run
+    npm.cmd --prefix frontend/ledgerguard-web run dev
+
+### Local access points
+
+| Component | URL |
+| --- | --- |
+| Web application | http://localhost:5173 |
+| API Swagger UI | http://localhost:8080/swagger-ui/index.html |
+| OpenAPI JSON | http://localhost:8080/v3/api-docs |
+| Mailpit inbox | http://localhost:8025 |
+| Grafana | http://localhost:3000 |
+| Prometheus | http://localhost:9090 |
+
+Register Customer and Merchant accounts through the application. For OPS provisioning, see [docs/RUNBOOKS.md](docs/RUNBOOKS.md).
+
+Stop application processes with `Ctrl+C`. Stop infrastructure with `docker compose down`; retain database volumes to preserve local data.
 
 ---
 
 ## Production-Like Docker Compose Startup
 
-In production-like mode, **Nginx** operates as the authoritative edge reverse proxy and TLS termination gateway:
+This procedure tests the production Compose stack locally. Public deployment requires a hostname, trusted TLS certificates, renewal automation, backups and deployment-specific configuration.
 
-```bash
-# 1. Generate local self-signed TLS certificates (never committed)
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-  -keyout infrastructure/nginx/certs/server.key \
-  -out infrastructure/nginx/certs/server.crt \
-  -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+### 1. Prepare a separate environment file
 
-# 2. Configure production environment
-cp .env.prod.example .env    # Windows: Copy-Item .env.prod.example .env
+From the repository root in Windows PowerShell:
 
-# 3. Build and launch all 9 production containers
-docker compose -f docker-compose.prod.yml up -d --build
+    if (-not (Test-Path .env.prod)) { Copy-Item .env.prod.example .env.prod }
 
-# 4. Inspect container health (all 9 containers healthy/up)
-docker compose -f docker-compose.prod.yml ps
+Fill all required database passwords, the Grafana password, JWT signing secret and shared PSP webhook secret in `.env.prod`. Use high-entropy secrets and keep the file private. Both `.env` and `.env.prod` are ignored by Git.
 
-# 5. Access points:
-# HTTPS Web Application: https://localhost/
-# API Gateway Endpoint:  https://localhost/api/
-# Prometheus Telemetry:  http://127.0.0.1:9090/ (loopback only)
-# Grafana Dashboards:    http://127.0.0.1:3000/ (loopback only)
+Keep notification email disabled until an SMTP provider is configured. Enabling it also requires valid sender credentials and appropriate TLS settings.
 
-# 6. Tear down production containers
-docker compose -f docker-compose.prod.yml down
-```
+### 2. Prepare local TLS certificates
+
+The edge proxy expects `server.crt` and `server.key` in `infrastructure/nginx/certs`. Create the directory first:
+
+    New-Item -ItemType Directory -Force infrastructure/nginx/certs | Out-Null
+
+With OpenSSL installed, generate a self-signed certificate for local testing only. Do not overwrite an existing certificate or key:
+
+    if ((Test-Path infrastructure/nginx/certs/server.key) -or (Test-Path infrastructure/nginx/certs/server.crt)) { throw "Existing TLS files found. Inspect them before proceeding." }
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout infrastructure/nginx/certs/server.key -out infrastructure/nginx/certs/server.crt -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+
+Self-signed certificates cause browser trust warnings. Use a trusted certificate for the public demo.
+
+Nginx runs as an unprivileged user. The mounted certificate and key must be readable inside the container. On Linux, grant narrowly scoped access to the container user/group; do not make the private key world-readable.
+
+### 3. Validate, build and start
+
+Run this on your local machine. Do not run it against the live deployment without its deployment-specific overrides.
+
+    docker compose --project-name ledgerguard-local-prod --env-file .env.prod -f docker-compose.prod.yml config --quiet
+    docker compose --project-name ledgerguard-local-prod --env-file .env.prod -f docker-compose.prod.yml up -d --build --wait --wait-timeout 300
+    docker compose --project-name ledgerguard-local-prod --env-file .env.prod -f docker-compose.prod.yml ps
+
+The stack contains 9 services. Services with health checks should become healthy; services without health checks should remain running. Inspect logs if startup fails.
+
+Stop other local stacks that occupy the same host ports before starting this stack.
+
+### Local access points
+
+| Component | URL |
+| --- | --- |
+| HTTPS web application | https://localhost/ |
+| API through edge proxy | https://localhost/api/ |
+| Prometheus (loopback only) | http://127.0.0.1:9090/ |
+| Grafana (loopback only) | http://127.0.0.1:3000/ |
+
+### Stop the local stack
+
+    docker compose --project-name ledgerguard-local-prod --env-file .env.prod -f docker-compose.prod.yml down
+
+This retains named volumes. Keep backups before deleting volumes or changing initialized database credentials.
+
+For operational procedures and OPS provisioning, see [docs/RUNBOOKS.md](docs/RUNBOOKS.md). The live Oracle deployment uses external configuration and trusted TLS; this local procedure does not reproduce those server-specific settings.
 
 ---
 
@@ -577,11 +671,24 @@ LedgerGuard is a portfolio and educational financial-infrastructure system. It o
 
 ## Current Project Status
 
-- **Current State:** v1.1.0 release baseline with complete Customer, Merchant, and OPS workspaces.
+- **Current State:** Live portfolio deployment with complete Customer, Merchant, and OPS workspaces, including post-v1.1.0 system-account and Kafka startup fixes.
+- **Current Verification (2026-10-03):**
+  - Backend: 951 tests across 5 modules; 0 failures, errors or skips.
+  - Module totals: API 807, PSP simulator 18, notification worker 73, failure lab 34, E2E 19.
+  - Frontend: 99 passing tests, successful lint and production build.
+  - Combined baseline: 1,050 automated tests.
+  - Frontend tests emitted React act(...) warnings in merchant refund and withdrawal tests; these remain test-maintenance work.
+  - CI and CodeQL passed for commit `5ba057c2461617ec29b827552c100903b39f7149`.
+- **Historical v1.1.0 Release Baseline (2026-09-30):**
   - Full release verification completed on 2026-09-30.
   - Runtime and repository OpenAPI 3.1 specifications contain 31 operations.
   - Authoritative backend baseline: 942 passing tests across 5 modules with no failures, errors, or skips.
   - Authoritative frontend baseline: 99 passing tests, clean lint, and successful production build.
   - Combined test suite: 1,041 automated tests total.
   - GitHub Actions validates backend, frontend tests/lint/build, financial failure scenarios, production images, and CodeQL analysis for Java and TypeScript.
-- **Operational Status:** Application functionality is complete for its portfolio scope. Public deployment remains a separate operational step requiring operator-owned production secrets, a public hostname, trusted TLS, backups, and post-deployment smoke testing. This project remains a simulated-money educational system and must not process real funds.
+- **Operational Status:** The portfolio application is live at [ledgerguard.duckdns.org](https://ledgerguard.duckdns.org) on an Oracle Cloud ARM virtual machine.
+  - Deployment smoke checks completed on 2026-10-03 for HTTPS, role-based login, simulated merchant payments, reconciliation and email notification delivery.
+  - Deployed API and notification-worker fix: `5ba057c2461617ec29b827552c100903b39f7149`, newer than the preserved `v1.1.0` release.
+  - Certificate renewal and daily database backups are configured. Backup restoration was tested in an isolated PostgreSQL container, and a verified backup copy was downloaded off-server.
+  - The deployment uses a single VM; ongoing monitoring and regular off-server backup copies remain operator responsibilities.
+  - All financial workflows are simulated. No real money is processed.

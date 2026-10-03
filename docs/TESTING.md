@@ -1,10 +1,18 @@
 # LedgerGuard Testing Strategy & Invariant Verification
 
-> **Current Verification Status**: The repository's verified test suite contains **942 passing backend tests** across 5 modules (`ledgerguard-api`: 799, `psp-simulator`: 18, `notification-worker`: 72, `failure-lab`: 34, `e2e-tests`: 19 [8 unit tests + 11 integration tests]) with 0 failures, 0 errors, and 0 skips, alongside **99 passing frontend tests** in `ledgerguard-web` (**1,041 total passing automated tests**). Historical phase-specific counts preserved in sections below reflect point-in-time metrics prior to subsequent feature completions and the secure OPS reconciliation workspace expansion.
+> **Current Verification Status (2026-10-03):** **951 passing backend tests**
+> across 5 modules: `ledgerguard-api` 807, `psp-simulator` 18,
+> `notification-worker` 73, `failure-lab` 34 and `e2e-tests` 19
+> (8 unit tests + 11 integration tests), with zero failures, errors or skips.
+> The frontend has **99 passing tests**, giving **1,050 automated tests total**.
+> Frontend lint and production build passed. Merchant refund and withdrawal
+> tests emitted React `act(...)` warnings; these remain test-maintenance work.
+> Historical release and phase-specific counts below are preserved as
+> point-in-time verification records.
 
 ## 1. Testing Philosophy & Invariant Priority
 
-In LedgerGuard, tests are not merely code-coverage metrics; they are executable mathematical proofs that the central invariant holds:
+LedgerGuard tests verify financial invariants across covered normal, concurrent and failure scenarios. They provide evidence of correctness within that coverage, rather than a mathematical proof for every possible execution. The central invariant is:
 
 $$\text{\bf MONEY MUST NEVER BE CREATED, DESTROYED, DUPLICATED, OR SILENTLY LOST.}$$
 
@@ -77,7 +85,7 @@ To validate correctness under real financial conditions, tests must run against 
   - Flyway V3 migration historical backfill reconstructs exact balances from immutable POSTED journals.
   - Concurrency tests verify multi-threaded postings on shared accounts yield zero lost updates and no deadlocks via deterministic row update ordering.
   - Balance snapshot arithmetic overflow triggers immediate PostgreSQL exception, aborting and rolling back the complete journal posting transaction.
-  - Intentionally injected balance snapshot drift is flagged and auto-repaired from ledger entries.
+  - Intentionally injected balance snapshot drift is detected; repair tests verify reconstruction from immutable POSTED journals through an explicit repair workflow.
   - Unbalanced transactions in test datasets trigger immediate system integrity alarms.
   - Discrepancies between internal payment states and external PSP settlement dumps are identified and routed to `MANUAL_REVIEW`.
 

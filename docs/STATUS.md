@@ -1,24 +1,35 @@
 # LedgerGuard Project Status
 
-> **Current main-branch snapshot (2026-09-30):** Current `main` represents the
-> v1.1.0 release baseline. Release v1.0.0 remains the preserved historical
-> release baseline. Complete Customer, Merchant, and OPS workspaces are present.
-> The runtime and repository OpenAPI export contains 31 operations. Verification
-> was completed on 2026-09-30 with 942 passing backend tests and 99 passing frontend
-> tests (1,041 automated tests total, with clean lint and a successful
-> production build). Public deployment remains a separate operational step
-> requiring operator-owned deployment secrets, a hostname, trusted TLS, backups,
-> and smoke tests.
+> **Current main-branch snapshot (2026-10-03):** Complete Customer, Merchant
+> and OPS workspaces are deployed at https://ledgerguard.duckdns.org.
+> The deployed API and notification worker include the post-v1.1.0
+> system-account provisioning and Kafka startup fixes from commit `5ba057c`.
+> Current verification: 951 backend tests and 99 frontend tests
+> (1,050 automated tests total), with successful lint and production build.
+> Frontend merchant tests emitted React `act(...)` warnings.
+> Published v1.1.0 and v1.0.0 remain preserved historical release baselines.
+> All financial workflows are simulated; no real money is processed.
 
 ## 1. Project Information
+
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
-- **Release Baseline:** v1.1.0
-- **Status:** v1.1.0 RELEASE BASELINE — VERIFICATION COMPLETE
-- **Current State:** v1.1.0 release baseline
-- **Verification Date:** 2026-09-30
-- **Verified Metrics:** 942 backend tests, 99 frontend tests (1,041 automated tests total)
-- **Last Verified Baseline:** 2026-09-30
+- **Published Release Baseline:** v1.1.0 (2026-09-30); preserved unchanged
+- **Status:** LIVE PORTFOLIO DEPLOYMENT — POST-RELEASE FIXES VERIFIED
+- **Current State:** Complete Customer, Merchant and OPS workspaces with system-account and Kafka startup fixes
+- **Live Demo:** https://ledgerguard.duckdns.org
+- **Deployed API / Notification Worker Commit:** `5ba057c2461617ec29b827552c100903b39f7149`
+- **Verification Date:** 2026-10-03
+- **Verified Metrics:** 951 backend tests, 99 frontend tests (1,050 automated tests total)
+- **Backend Breakdown:** API 807, PSP simulator 18, notification worker 73, failure lab 34, E2E 19; zero failures, errors or skips
+- **Frontend Verification:** 99 passing tests; lint and production build passed; React `act(...)` warnings remain test-maintenance work
+- **CI / CodeQL:** Passed for commit `5ba057c2461617ec29b827552c100903b39f7149`
+- **API Contract:** 31 OpenAPI operations
+- **API Database Migrations:** V1 through V19
+- **Last Verified Baseline:** 2026-10-03
 - **Git Branch:** main
+- **Deployment Checks:** HTTPS, role-based login, simulated merchant payments, reconciliation and email notification delivery
+- **Operational Safeguards:** Certificate renewal and daily database backups configured; isolated archive restoration and one off-server backup copy verified
+- **Operational Limitations:** Single VM; ongoing monitoring and regular off-server backup copies remain operator responsibilities
 - **Historical Development Program:** 45 / 45 phases completed (100%)
 - **Completed Phases:**
   - **Phase 0 — Project Constitution, Architecture & Build Plan** (Completed: 2026-08-30)

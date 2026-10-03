@@ -16,9 +16,9 @@ LedgerGuard defines three principal roles:
 
 | Role | Target Identity | Permissions & Scope |
 | :--- | :--- | :--- |
-| **`ROLE_CUSTOMER`** | End users / Wallet owners | Manage personal profile; view own wallet; initiate peer-to-peer transfers; initiate deposits/withdrawals; view own journal entries and transaction history. |
-| **`ROLE_MERCHANT`** | Commercial accounts | Manage merchant profile; accept payments; initiate refunds on owned payments; inspect merchant settlement ledger. |
-| **`ROLE_OPS`** | Platform administrators & Operators | Access system-wide integrity metrics; execute reconciliation jobs; inspect outbox queues; trigger Money Integrity Failure Lab scenarios; view system audit logs. |
+| **`ROLE_CUSTOMER`** | End users / Wallet owners | View personal profile and own wallet; initiate simulated funding, peer transfers, merchant payments and payouts; view authorized financial history and journal details. |
+| **`ROLE_MERCHANT`** | Merchant accounts | View merchant profile and own wallet; receive simulated customer payments; issue eligible refunds on owned payments; request simulated payouts; view authorized payment and payout history. |
+| **`ROLE_OPS`** | Platform operators | View reconciliation summaries, runs and discrepancy items; start reconciliation runs; inspect, claim and resolve cases with audit notes; repair derived balance snapshots through authorized case workflows. Failure Lab access is optional and requires separately enabled sandbox configuration. |
 
 ### Endpoint Authorization Rules
 - `/api/auth/register`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`: Publicly accessible endpoints.
@@ -31,7 +31,7 @@ LedgerGuard defines three principal roles:
 ## 3. Authentication & Token Management
 
 ### Password Hashing
-- User passwords are encrypted using **BCrypt** with an adaptive work factor (default `strength = 10` in Spring Security `BCryptPasswordEncoder`). Plaintext passwords never touch logs, storage, or external systems.
+- User passwords are stored as salted **BCrypt hashes** with an adaptive work factor (default `strength = 10` in Spring Security `BCryptPasswordEncoder`). Application code must not log or persist plaintext passwords.
 
 ### Access & Refresh Token Design
 - **Access Tokens**: Short-lived JSON Web Tokens (JWT) signed with HMAC-SHA256 (`HS256`) using a 256-bit+ secret key configured via `LEDGERGUARD_JWT_SECRET`.
