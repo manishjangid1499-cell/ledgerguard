@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Fix fresh-database provisioning of the three required INR system accounts.
+- Preserve existing valid accounts, balances and journal history during upgrade.
+- Reject duplicate or invalid existing system accounts transactionally.
+
 ## [1.1.0] - 2026-09-30
 
 ### Added

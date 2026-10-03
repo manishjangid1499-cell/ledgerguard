@@ -152,10 +152,10 @@ Mode A executes directly after restore and validates the following invariants:
 1. **Schema Completeness:** Verifies that all 20 authoritative tables exist in `public`:
    `users`, `refresh_tokens`, `ledger_accounts`, `journal_transactions`, `journal_entries`, `ledger_balance_snapshots`, `idempotency_records`, `transfers`, `payments`, `refunds`, `balance_holds`, `outbox_events`, `funding_operations`, `payouts`, `provider_events`, `reconciliation_runs`, `reconciliation_items`, `reconciliation_cases`, `audit_events`, `flyway_schema_history`.
 2. **Flyway History Verification:**
-   * Exact set {1..17} all present and marked `success = true`.
-   * Total migration count equals `17`.
-   * Highest numeric migration version is `17`.
-   * Zero migrations exist with version $> 17$ (no V18).
+   * Exact set {1..19} all present and marked `success = true`.
+   * Total migration count equals `19`.
+   * Highest numeric migration version is `19`.
+   * Zero migrations exist with version $> 19$ (no V20).
 3. **POSTED Journal Structure:**
    * For every `POSTED` transaction: $\text{entries} \ge 2$, $\text{debits} \ge 1$, $\text{credits} \ge 1$.
    * Per-transaction $\sum \text{Debits} = \sum \text{Credits}$ (evaluated with `amount_minor::numeric`).
