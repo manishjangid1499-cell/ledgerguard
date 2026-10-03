@@ -140,15 +140,18 @@ public class SecurityConfig {
 
     @Bean
     public Converter<Jwt, ? extends AbstractAuthenticationToken> jwtAuthenticationConverter() {
-        return jwt -> {
-            String role = jwt.getClaimAsString("role");
-            Collection<GrantedAuthority> authorities;
-            if (role != null && !role.isBlank()) {
-                authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role));
-            } else {
-                authorities = Collections.emptyList();
+        return new Converter<Jwt, JwtAuthenticationToken>() {
+            @Override
+            public JwtAuthenticationToken convert(Jwt jwt) {
+                String role = jwt.getClaimAsString("role");
+                Collection<GrantedAuthority> authorities;
+                if (role != null && !role.isBlank()) {
+                    authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role));
+                } else {
+                    authorities = Collections.emptyList();
+                }
+                return new JwtAuthenticationToken(jwt, authorities, jwt.getSubject());
             }
-            return new JwtAuthenticationToken(jwt, authorities, jwt.getSubject());
         };
     }
 

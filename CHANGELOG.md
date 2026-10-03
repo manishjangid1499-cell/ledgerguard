@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix fresh-database provisioning of the three required INR system accounts.
 - Preserve existing valid accounts, balances and journal history during upgrade.
 - Reject duplicate or invalid existing system accounts transactionally.
+- Restore Spring Boot Kafka auto-configuration in the API and notification worker so required topics are provisioned at startup when broker auto-creation is disabled; preserve JWT role conversion using an explicitly typed converter and add isolated startup regression tests.
 
 ## [1.1.0] - 2026-09-30
 
