@@ -1,5 +1,17 @@
 # LedgerGuard Architecture Specification
 
+## Current Architecture and Historical Notes
+
+The runtime diagrams below describe the current service boundaries. For the live Oracle Cloud topology and GitHub-to-server delivery workflow, see [Live Cloud Deployment](../README.md#live-cloud-deployment).
+
+- The production Compose stack contains nine services, including the Nginx edge proxy.
+- Kafka operates in KRaft mode without ZooKeeper.
+- API database migrations currently extend through V20.
+- Access JWT validation checks the current account status and credential version in PostgreSQL. Password reset or change invalidates previously issued credentials.
+- The live deployment uses one Ubuntu VM and has no automatic failover.
+
+Sections identified by development phase preserve implementation history. Their migration limits, service counts and statements about changes made during a phase describe that milestone rather than the current deployment. Current verification and deployed revisions are recorded in [STATUS.md](STATUS.md); current authentication behavior is described in [SECURITY.md](SECURITY.md).
+
 ## 1. Goals & Non-Goals
 
 ### Goals
@@ -51,7 +63,8 @@ flowchart TD
     API -->|Outbox publication| Kafka
     Kafka -->|Domain events| Worker
     Worker -->|Inbox and delivery records| NotificationDB
-    Worker -->|Email dispatch when enabled| SMTP
+    Worker -->|Financial notification emails| SMTP
+    API -->|Password recovery emails| SMTP
 ```
 
 Prometheus scrapes the API over the internal network; Grafana queries Prometheus. Their host ports bind to loopback by default. The Failure Lab runs separately against ephemeral test targets, not the live deployment database. The component inventory below describes these boundaries in more detail.
@@ -238,7 +251,7 @@ LedgerGuard defines a three-tier reconciliation architecture:
 
 ---
 
-## 8. Observability Architecture
+## 9. Observability Architecture
 
 - **Metrics**: Micrometer instruments application metrics exposed to Prometheus (unbalanced transaction count, outbox queue lag, duplicate idempotency keys, state transition rejections, lock wait durations).
 - **Dashboards**: Grafana visualizes financial integrity KPIs, system throughput, and queue health.
@@ -247,7 +260,7 @@ LedgerGuard defines a three-tier reconciliation architecture:
 
 ---
 
-## 9. Horizontal Scaling & Deferred Sharding
+## 10. Horizontal Scaling & Deferred Sharding
 
 - **Stateless Monolith Instances**: Multiple instances of `ledgerguard-api` can run concurrently behind the Nginx reverse proxy.
 - **Database-Enforced Safety**: Concurrency control relies on PostgreSQL row locks (ordered by account ID) and unique database constraints, never on single-JVM locks (`synchronized` / `ReentrantLock`).
@@ -255,7 +268,7 @@ LedgerGuard defines a three-tier reconciliation architecture:
 
 ---
 
-## 10. Explicitly Excluded Technologies
+## 11. Explicitly Excluded Technologies
 
 To maintain focus on correctness and avoid resume-driven architecture, the following are strictly excluded:
 - Kubernetes, Service Mesh, Eureka, Spring Cloud Gateway
@@ -269,7 +282,7 @@ To maintain focus on correctness and avoid resume-driven architecture, the follo
 
 ---
 
-## 11. Frontend Financial Experience Architecture
+## 12. Frontend Financial Experience Architecture
 
 - **Server-Authoritative State**: No client-side optimistic balance calculations or optimistic transfer history insertions. All balance and transaction states are invalidated and refetched from server read endpoints upon confirmed mutation success.
 - **Financial Precision Invariants**:
@@ -286,7 +299,7 @@ To maintain focus on correctness and avoid resume-driven architecture, the follo
 
 ---
 
-## 12. Architectural Invariants
+## 13. Architectural Invariants
 
 1. **Balance Equation**: $\text{Available Balance} = \text{Posted Balance} - \text{Active Holds}$.
 2. **Double-Entry Balance**: For every transaction $T$, $\sum_{e \in T} \text{Debit}(e) = \sum_{e \in T} \text{Credit}(e)$.
@@ -296,7 +309,7 @@ To maintain focus on correctness and avoid resume-driven architecture, the follo
 
 ---
 
-## 13. External Wallet Funding & Settlement Architecture (Phase 20)
+## 14. External Wallet Funding & Settlement Architecture (Phase 20)
 
 - **Decoupled Three-Phase Pipeline**:
   1. `FundingCreationService` (`@Transactional`): Atomically registers the idempotency record and commits a durable `FundingOperation` row in `PROCESSING` status.
@@ -307,7 +320,7 @@ To maintain focus on correctness and avoid resume-driven architecture, the follo
 
 ---
 
-## 14. External Payouts / Withdrawals Architecture (Phase 21)
+## 15. External Payouts / Withdrawals Architecture (Phase 21)
 
 - **Balance Hold Reservation Before Network**:
   1. `PayoutCreationService` (`@Transactional`): Atomically validates wallet ownership and spendable available balance, registers the idempotency record, creates an `ACTIVE` `BalanceHold` (preventing double-spend of in-flight funds), and commits a durable `Payout` record in `PROCESSING` status referencing the hold ID.
@@ -321,7 +334,7 @@ To maintain focus on correctness and avoid resume-driven architecture, the follo
 
 ---
 
-## 15. Inbound PSP Webhook Subsystem & Event Inbox Architecture (Phase 22)
+## 16. Inbound PSP Webhook Subsystem & Event Inbox Architecture (Phase 22)
 
 - **Decoupled 3-Phase Webhook Ingress & Execution**:
   1. **Phase A: Ingress Authentication (Non-Transactional)**
@@ -354,7 +367,7 @@ To maintain focus on correctness and avoid resume-driven architecture, the follo
 
 ---
 
-## 16. External State Machines & Ambiguous Outcomes Architecture (Phase 23)
+## 17. External State Machines & Ambiguous Outcomes Architecture (Phase 23)
 
 ### Six-State External Operation Lifecycle
 
@@ -447,7 +460,7 @@ Hold expiration queries explicitly exclude holds linked to payouts in `PROCESSIN
 
 ---
 
-## 17. Core Reconciliation Engine Architecture (Phase 24)
+## 18. Core Reconciliation Engine Architecture (Phase 24)
 
 ### Purpose & Detection-Only Principle
 
@@ -525,7 +538,7 @@ To prevent discrepancy items from being inserted into a run after it has been fi
 
 ---
 
-## 17. Reconciliation Recovery & Manual Review Architecture (Phase 25)
+## 19. Reconciliation Recovery & Manual Review Architecture (Phase 25)
 
 Phase 25 introduces automated repair mechanisms and human-in-the-loop workflows for discrepancy resolution while strictly preserving the immutability of historical ledger entries and external state machines.
 
@@ -559,7 +572,7 @@ Phase 25 introduces automated repair mechanisms and human-in-the-loop workflows 
 
 ---
 
-## 18. Resilient Provider Client Architecture (Phase 26)
+## 20. Resilient Provider Client Architecture (Phase 26)
 
 Phase 26 hardens outbound communication to external Payment Service Providers (PSPs) by integrating Resilience4j 2.4.0 core modules programmatically, avoiding annotation-based magic or Spring Boot starters.
 
@@ -609,7 +622,7 @@ External PSP Simulator
 
 ---
 
-## 19. Rate Limiting & Bounded Backpressure Architecture (Phase 27)
+## 21. Rate Limiting & Bounded Backpressure Architecture (Phase 27)
 
 Phase 27 establishes multi-layer admission control and bounded thread/connection execution across all services, preventing resource exhaustion and unbounded queue growth under denial-of-service or high-concurrency spikes.
 
@@ -681,7 +694,7 @@ When a bucket is exhausted:
 
 ---
 
-## 18. Audit Trail & Security Hardening (Phase 28)
+## 22. Audit Trail & Security Hardening (Phase 28)
 
 ### 1. Database-Level Immutable Audit Persistence
 
@@ -723,7 +736,7 @@ When a bucket is exhausted:
 
 ---
 
-## 19. Business & Financial Integrity Metrics (Phase 29)
+## 23. Business & Financial Integrity Metrics (Phase 29)
 
 ### 1. Architectural Purpose & Decoupled Scrape Model
 
@@ -884,7 +897,7 @@ SELECT
 
 ---
 
-## 20. OpenTelemetry Distributed Tracing & Correlation IDs (Phase 30)
+## 24. OpenTelemetry Distributed Tracing & Correlation IDs (Phase 30)
 
 Phase 30 implements end-to-end distributed tracing and correlation ID propagation across synchronous HTTP ingress, asynchronous transactional outbox persistence, Kafka event publication, and notification worker event consumption.
 
@@ -995,7 +1008,7 @@ Phase 30 implements end-to-end distributed tracing and correlation ID propagatio
 
 ---
 
-## 27. Grafana Operations & Financial Integrity Dashboards Architecture (Phase 31)
+## 25. Grafana Operations & Financial Integrity Dashboards Architecture (Phase 31)
 
 ### 1. Prometheus Scraper Architecture
 - **Service Container**: `prom/prometheus:v3.2.1` in `docker-compose.yml` on port `9090` (configured via `${PROMETHEUS_PORT:-9090}`), mounted with read-only static configuration `infrastructure/prometheus/prometheus.yml` and persistent volume `ledgerguard-prometheus-data`.
@@ -1037,7 +1050,7 @@ Phase 30 implements end-to-end distributed tracing and correlation ID propagatio
 
 ---
 
-## 28. Money Integrity Failure Lab Architecture (Phase 32)
+## 26. Money Integrity Failure Lab Architecture (Phase 32)
 
 Phase 32 introduces the **Money Integrity Failure Lab**, an automated programmatic chaos execution engine and mathematical financial verification suite contained entirely within the `backend/failure-lab` module.
 
@@ -1194,34 +1207,33 @@ backend/failure-lab (FailureLabApplication - Spring Boot Web)
 
 ---
 
-## 29. Complete Testcontainers & Cross-Service End-to-End Suite Architecture (Phase 34)
+## 27. Complete Testcontainers & Cross-Service End-to-End Suite Architecture (Phase 34)
 
 ### 1. Architectural Scope & Purpose
 The end-to-end test suite in `backend/e2e-tests` provides hermetic, cross-service validation of the entire LedgerGuard platform. Unlike unit and single-service integration tests, the E2E suite tests real packaged fat JARs inside real JVM containers running on an isolated virtual network alongside real infrastructure (PostgreSQL 17.11 and Apache Kafka 4.3.1). While Phase 34 focuses on non-adversarial cross-service journeys of packaged applications, adversarial transport failure modes and ambiguous provider timeout recovery remain authoritatively covered by the dedicated Failure Lab (`backend/failure-lab`).
 
+```mermaid
+flowchart TD
+    Tests["JUnit E2E tests"]
+    subgraph Network["Isolated Testcontainers network"]
+        API["Packaged API"]
+        PSP["Packaged PSP simulator"]
+        Kafka["Kafka: KRaft"]
+        Worker["Packaged notification worker"]
+        DB[("PostgreSQL: three databases")]
+        API -->|Financial and identity records| DB
+        API -->|Outbox events| Kafka
+        Kafka -->|Domain events| Worker
+        Worker -->|Processing and delivery records| DB
+        API -->|Provider requests| PSP
+        PSP -->|Signed webhooks| API
+        PSP -->|Provider records| DB
+    end
+    Tests -->|HTTP journeys| API
+    Tests -->|Read-only SQL assertions| DB
 ```
-+---------------------------------------------------------------------------------------------------+
-|                                 Testcontainers Virtual Bridge Network                             |
-|                                                                                                   |
-|  +------------------+      +------------------+      +-------------------+                        |
-|  | PostgreSQL 17.11 |      |   Kafka 4.3.1    |      |   PSP Simulator   |                        |
-|  | (Flyway V1-V17)  |      |   (Broker + ZK)  |      |   (:8081 / JVM)   |                        |
-|  +--------^---------+      +--------^---------+      +---------^---------+                        |
-|           |                         |                          |                                  |
-|           +-------------------------+--------------------------+                                  |
-|                                     |                                                             |
-|                          +----------v---------+      +---------v---------+                        |
-|                          |  LedgerGuard API   |      |   Notification    |                        |
-|                          |   (:8080 / JVM)    |----->|      Worker       |                        |
-|                          |                    |      |     (JVM)         |                        |
-|                          +----------^---------+      +-------------------+                        |
-+-------------------------------------|-------------------------------------------------------------+
-                                      | HTTP REST / JDBC Verification
-                           +----------+----------+
-                           |   JUnit 5 Flow Test |
-                           |  (E2EDatabaseProbe) |
-                           +---------------------+
-```
+
+Each service applies its own database migrations. The tests exercise packaged applications and inspect persisted outcomes; Kafka uses KRaft without ZooKeeper.
 
 ### 2. Multi-Service Container Topology
 - **PostgreSQL 17.11**: Provisions separate logical databases (`ledgerguard`, `psp_simulator`, and `notification_worker`). Flyway automatically runs migrations independently for each service.
@@ -1259,7 +1271,7 @@ The E2E suite verifies domain invariants through external HTTP REST calls and di
 
 ---
 
-## 30. Production Multi-Stage Docker Images & Compose Topology (Phase 35)
+## 28. Production Multi-Stage Docker Images & Compose Topology (Phase 35)
 
 Phase 35 packages all LedgerGuard microservices and client web assets into lightweight, security-hardened, multi-stage Docker container images, orchestrating the full platform via an all-in-one local production Compose stack (`docker-compose.prod.yml`).
 
@@ -1327,9 +1339,9 @@ All container images are built using multi-stage pipelines to separate compiler 
 
 ### 3. Production Compose Topology & Environment Management
 
-The production stack (`docker-compose.prod.yml`) connects all 8 services across an isolated bridge network (`ledgerguard-prod-network`):
+The Phase 35 topology contained eight services before the Phase 36 edge proxy was added. The current production stack (`docker-compose.prod.yml`) contains nine services on the isolated bridge network (`ledgerguard-prod-network`):
 
-- **Database Credentials**: Managed through environment variables (`POSTGRES_PASSWORD`, `LEDGERGUARD_DB_PASSWORD`, `PSP_SIMULATOR_DB_PASSWORD`, `NOTIFICATION_WORKER_DB_PASSWORD`).
+- **Database Credentials**: Managed through environment variables (`POSTGRES_PASSWORD`, `LEDGERGUARD_DB_PASSWORD`, `PSP_DB_PASSWORD`, `NOTIFICATION_DB_PASSWORD`).
 - **Database Initialization**: PostgreSQL container executes `01-init-databases.sh` on initial volume boot, creating three distinct databases (`ledgerguard`, `psp_simulator`, `notification_worker`) with separate user roles and revoking public connection permissions.
 - **Service Coordination**: Strong healthcheck dependencies (`depends_on: condition: service_healthy`) ensure PostgreSQL and Kafka achieve full readiness before microservices launch.
 - **Secret Hygiene**: Template configuration is published in `.env.prod.example` with empty secret placeholders. The `.gitignore` and `.dockerignore` files prevent local environment files or development artifacts from leaking into git repositories or container images.
@@ -1345,7 +1357,7 @@ Phase 35 maintains the strict zero-impact invariant:
 
 ---
 
-## 22. Production Edge Ingress Gateway & SSL Configuration (Phase 36)
+## 29. Production Edge Ingress Gateway & SSL Configuration (Phase 36)
 
 ### 1. Ingress Architecture & Port Minimization
 In Phase 36, an unprivileged Nginx edge reverse proxy (`nginx-edge`) is introduced as the single authoritative public web ingress gateway for the platform:

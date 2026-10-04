@@ -47,6 +47,8 @@ All wallet amounts and provider operations are simulated. No real money is proce
 - [Disaster Recovery & Runbooks](#disaster-recovery--operational-runbooks)
 - [API Documentation](#api--swagger-documentation)
 - [Technology Stack](#technology-stack)
+- [Live Cloud Deployment](#live-cloud-deployment)
+- [CI and Manual Deployment](#ci-and-manual-deployment)
 - [Local Quickstart](#local-developer-quickstart)
 - [Production-Like Docker Startup](#production-like-docker-compose-startup)
 - [Repository Documentation](#repository-documentation-index)
@@ -157,7 +159,8 @@ flowchart TD
     API -->|Outbox publication| Kafka
     Kafka -->|Domain events| Worker
     Worker -->|Inbox and delivery records| NotificationDB
-    Worker -->|Email dispatch when enabled| SMTP
+    Worker -->|Financial notification emails| SMTP
+    API -->|Password recovery emails| SMTP
 ```
 
 Prometheus scrapes the API over the internal network; Grafana queries Prometheus. Their host ports bind to loopback by default. The Failure Lab runs separately against ephemeral test targets, not the live deployment database. See [architecture details](docs/ARCHITECTURE.md) for component boundaries and operational constraints.
@@ -430,6 +433,85 @@ The complete method/path inventory, request examples and error contracts are in 
 - **Web Frontend**: React 19, TypeScript 5.7, Vite 8, Material UI 9, TanStack Query, React Hook Form
 - **Edge Proxy**: Nginx 1.27 unprivileged Alpine (TLSv1.2/1.3 termination, rate limiting, static asset caching)
 - **Testing & Quality**: JUnit 5, Testcontainers 2.0.5, Mockito, ArchUnit, Maven Failsafe, Vitest
+
+---
+
+## Live Cloud Deployment
+
+The public demo runs on a single Ubuntu virtual machine in Oracle Cloud Infrastructure. Docker Compose runs the application and supporting services on that VM.
+
+### Cloud deployment topology
+
+```mermaid
+flowchart TD
+    Browser["Browser"]
+    DNS["DuckDNS"]
+    SMTP["External SMTP"]
+    subgraph VM["Oracle Cloud: Ubuntu VM"]
+        Edge["Nginx: HTTPS ingress"]
+        subgraph Internal["Private Docker network"]
+            Web["React web server"]
+            API["Spring Boot API"]
+            Events["Kafka and notification worker"]
+            PSP["PSP simulator"]
+            DB[("PostgreSQL: three databases")]
+        end
+        Storage[("Persistent Docker volumes")]
+    end
+    Browser -.->|DNS lookup| DNS
+    Browser -->|HTTPS to VM| Edge
+    Edge -->|Static application| Web
+    Edge -->|API requests| API
+    API -->|Financial and identity data| DB
+    API -->|Outbox publication| Events
+    Events -->|Inbox and delivery records| DB
+    API -->|Provider HTTP requests| PSP
+    PSP -->|Signed webhooks| API
+    PSP -->|Provider records| DB
+    API -->|Password recovery email| SMTP
+    Events -->|Financial notification email| SMTP
+    DB -->|Database files| Storage
+    Events -->|Kafka broker data| Storage
+```
+
+DuckDNS resolves the hostname; application traffic travels directly to the VM. Kafka and the notification worker are grouped here for readability but run as separate containers. The runtime architecture above shows their individual connections.
+
+| Component | Deployment responsibility |
+| --- | --- |
+| DuckDNS | Resolves the public hostname `ledgerguard.duckdns.org` to the server address |
+| Nginx edge | Terminates HTTPS and routes requests to the frontend and API |
+| Frontend | Serves the compiled React application from a web container |
+| Spring Boot API | Handles identity, financial workflows, reconciliation and password recovery emails |
+| PostgreSQL | Hosts separate ledgerguard, psp_simulator and notification_worker databases |
+| Kafka and notification worker | Process committed financial events and dispatch notification emails |
+| External SMTP provider | Accepts password recovery and financial notification emails |
+| Prometheus and Grafana | Collect and display internal application metrics |
+
+PostgreSQL and Kafka have no published host ports. Grafana, Prometheus and the PSP debug endpoint bind to loopback. Public application traffic enters through Nginx.
+
+Production secrets and deployment overrides are maintained outside the Git checkout. Trusted TLS certificates are mounted into Nginx, with renewal automation configured. Daily database backups are configured; regular off-server copies and recovery drills remain operator responsibilities.
+
+Persistent Docker volumes retain state across container replacement but do not replace backups. The deployment has one VM, one PostgreSQL instance and one Kafka broker, with no automatic failover. All financial operations remain simulated.
+
+### CI and Manual Deployment
+
+GitHub hosts the source and pull requests. GitHub Actions runs automated verification and CodeQL analysis. Deployment to Oracle Cloud is performed manually over SSH.
+
+| Step | Action |
+| --- | --- |
+| Review | Implement changes on a feature branch and review the pull request |
+| Verify | Check automated test, build and security-analysis results before merging |
+| Prepare | Select the deployment commit, verify private configuration and take a database backup before schema changes |
+| Build | Check out the selected commit on the VM and build the affected Docker images |
+| Deploy | Recreate affected services using the production Compose file and external deployment overrides |
+| Migrate | The API applies pending Flyway migrations during startup |
+| Confirm | Check container health, Nginx configuration and live application flows |
+
+Source merges do not automatically update the running deployment. Deployed component revisions are recorded separately from the current repository revision.
+
+Returning to an older application image does not undo a database migration. Recovery must account for schema compatibility and the documented backup/restore procedure.
+
+See [docs/RUNBOOKS.md](docs/RUNBOOKS.md) for backup and recovery procedures and [Current Project Status](#current-project-status) for deployed revisions.
 
 ---
 
