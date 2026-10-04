@@ -41,11 +41,15 @@ class JwtValidationTest extends AbstractIntegrationTest {
     @Autowired
     private JwtEncoder jwtEncoder;
 
+    @Autowired
+    private com.ledgerguard.identity.domain.UserRepository userRepository;
+
     @Test
     @DisplayName("Generated JWT contains subject, role, issuer, jti and valid expiration without sensitive claims")
     void jwtContainsRequiredClaimsAndValidSignature() {
         UUID userId = UUID.randomUUID();
         User user = new User(userId, "jwt.test@example.com", "$2a$hash", UserRole.CUSTOMER, UserStatus.ACTIVE);
+        userRepository.save(user);
 
         String token = jwtTokenService.generateAccessToken(user);
         assertThat(token).isNotBlank();
@@ -119,5 +123,45 @@ class JwtValidationTest extends AbstractIntegrationTest {
         assertThatThrownBy(config::jwtSecretKey)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("must be at least 256 bits (32 bytes)");
+    }
+
+    @Test
+    @DisplayName("JWT decoder rejects missing, fractional, non-positive, overflowing, or string-malformed cv claims")
+    void rejectsMalformedCredentialVersionClaims() {
+        UUID userId = UUID.randomUUID();
+        User user = new User(userId, "cv.malformed@example.com", "$2a$hash", UserRole.CUSTOMER, UserStatus.ACTIVE);
+        userRepository.save(user);
+
+        Object[] invalidCvClaims = new Object[]{
+                null,                   // missing cv
+                1.5,                    // fractional number
+                0,                      // zero
+                -1,                     // negative
+                3000000000L,            // overflowing int
+                "1.5",                  // fractional string
+                "0",                    // zero string
+                "-5",                   // negative string
+                "99999999999999",       // overflowing string
+                "not-a-number"          // malformed string
+        };
+
+        for (Object invalidCv : invalidCvClaims) {
+            Instant now = Instant.now();
+            JwtClaimsSet.Builder builder = JwtClaimsSet.builder()
+                    .issuer("ledgerguard")
+                    .issuedAt(now)
+                    .expiresAt(now.plusSeconds(900))
+                    .subject(userId.toString())
+                    .claim("role", "CUSTOMER")
+                    .id(UUID.randomUUID().toString());
+            if (invalidCv != null) {
+                builder.claim("cv", invalidCv);
+            }
+            JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();
+            String token = jwtEncoder.encode(JwtEncoderParameters.from(header, builder.build())).getTokenValue();
+
+            assertThatThrownBy(() -> jwtDecoder.decode(token))
+                    .isInstanceOf(JwtValidationException.class);
+        }
     }
 }

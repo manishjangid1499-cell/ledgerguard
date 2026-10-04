@@ -6,6 +6,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { CopyButton } from '../components/CopyButton';
 import { formatDateTime, formatRoleLabel } from '../utils/display';
 import { getErrorMessage } from '../api/errorMessage';
+import { ChangePasswordForm } from '../../auth/components/ChangePasswordForm';
 
 export const ProfilePage = () => {
   const { data: user, isLoading, error } = useQuery({
@@ -73,6 +74,16 @@ export const ProfilePage = () => {
             </Box>
           </>
         )}
+      </Paper>
+
+      <Paper variant="outlined" sx={{ p: { xs: 2.5, md: 4 }, mt: 3 }}>
+        <Typography variant="h6" component="h2" sx={{ fontWeight: 600, mb: 0.5, fontSize: '1.125rem' }}>
+          Change password
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          Ensure your account uses a secure password of at least 12 characters. Changing your password will invalidate all active sessions.
+        </Typography>
+        <ChangePasswordForm />
       </Paper>
     </Container>
   );

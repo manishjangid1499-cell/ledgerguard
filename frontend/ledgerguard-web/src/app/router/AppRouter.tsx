@@ -6,6 +6,8 @@ import { AppLayout } from '../../shared/layout/AppLayout';
 import { LandingPage } from '../../shared/pages/LandingPage';
 import { LoginPage } from '../../auth/pages/LoginPage';
 import { RegisterPage } from '../../auth/pages/RegisterPage';
+import { ForgotPasswordPage } from '../../auth/pages/ForgotPasswordPage';
+import { ResetPasswordPage } from '../../auth/pages/ResetPasswordPage';
 import { NotFoundPage } from '../../shared/pages/NotFoundPage';
 import { ProtectedRoute } from './ProtectedRoute';
 import { PublicOnlyRoute } from './PublicOnlyRoute';
@@ -38,7 +40,13 @@ export const AppRouter: React.FC = () => {
           <Route element={<AuthLayout />}>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           </Route>
+        </Route>
+
+        {/* Password Reset Route (accessible to both authenticated and unauthenticated users) */}
+        <Route element={<AuthLayout />}>
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
         </Route>
 
         {/* Protected Routes (redirects unauthenticated users to /login) */}

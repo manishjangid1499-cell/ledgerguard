@@ -38,6 +38,9 @@ public class User {
     @Column(name = "status", nullable = false, length = 50)
     private UserStatus status;
 
+    @Column(name = "credential_version", nullable = false)
+    private int credentialVersion = 1;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -48,19 +51,24 @@ public class User {
         // Required by JPA
     }
 
-    public User(UUID id, String fullName, String email, String passwordHash, UserRole role, UserStatus status) {
+    public User(UUID id, String fullName, String email, String passwordHash, UserRole role, UserStatus status, int credentialVersion) {
         this.id = id != null ? id : UUID.randomUUID();
         this.fullName = fullName;
         this.email = email;
         this.passwordHash = passwordHash;
         this.role = role;
         this.status = status != null ? status : UserStatus.ACTIVE;
+        this.credentialVersion = credentialVersion > 0 ? credentialVersion : 1;
         this.createdAt = Instant.now();
         this.updatedAt = this.createdAt;
     }
 
+    public User(UUID id, String fullName, String email, String passwordHash, UserRole role, UserStatus status) {
+        this(id, fullName, email, passwordHash, role, status, 1);
+    }
+
     public User(UUID id, String email, String passwordHash, UserRole role, UserStatus status) {
-        this(id, null, email, passwordHash, role, status);
+        this(id, null, email, passwordHash, role, status, 1);
     }
 
     public static User create(String fullName, String email, String passwordHash, UserRole role) {
@@ -133,8 +141,20 @@ public class User {
         return this.status == UserStatus.ACTIVE;
     }
 
+    public int getCredentialVersion() {
+        return credentialVersion;
+    }
+
+    public void incrementCredentialVersion() {
+        if (this.credentialVersion >= Integer.MAX_VALUE) {
+            throw new IllegalStateException("Credential version overflow: maximum credential updates reached for user.");
+        }
+        this.credentialVersion++;
+    }
+
     public void updatePassword(String newPasswordHash) {
         this.passwordHash = Objects.requireNonNull(newPasswordHash, "passwordHash cannot be null");
+        incrementCredentialVersion();
     }
 
     public void updateFullName(String newFullName) {

@@ -80,7 +80,7 @@ public class AuthService {
     public AuthResult login(LoginRequest request) {
         String normalizedEmail = normalizeEmail(request.email());
 
-        User user = userRepository.findByEmail(normalizedEmail)
+        User user = userRepository.findByEmailWithLock(normalizedEmail)
                 .orElseThrow(() -> new InvalidCredentialsException("Invalid email or password."));
 
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash()) || !user.isActive()) {
@@ -129,13 +129,7 @@ public class AuthService {
     }
 
     private void validatePasswordPolicy(String password) {
-        if (password == null || password.length() < MIN_PASSWORD_CHAR_LENGTH) {
-            throw new InvalidPasswordException("Password must be at least " + MIN_PASSWORD_CHAR_LENGTH + " characters.");
-        }
-        byte[] utf8Bytes = password.getBytes(StandardCharsets.UTF_8);
-        if (utf8Bytes.length > MAX_PASSWORD_UTF8_BYTES) {
-            throw new InvalidPasswordException("Password exceeds maximum allowed BCrypt byte length of " + MAX_PASSWORD_UTF8_BYTES + " UTF-8 bytes.");
-        }
+        PasswordPolicyValidator.validate(password);
     }
 
     private String validateAndNormalizeFullName(String fullName) {

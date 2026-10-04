@@ -192,7 +192,10 @@ class ReconciliationEngineIntegrationTest extends AbstractIntegrationTest {
                 .reduce((first, second) -> second)
                 .orElseThrow();
 
-        assertThat(latestRun.getStatus()).isEqualTo(ReconciliationRunStatus.COMPLETED);
+        assertThat(latestRun.getStatus())
+                .withFailMessage("Expected scheduled run %s to be COMPLETED, but was %s with failureReason: %s",
+                        latestRun.getId(), latestRun.getStatus(), latestRun.getFailureReason())
+                .isEqualTo(ReconciliationRunStatus.COMPLETED);
         assertThat(latestRun.getTriggerSource()).isEqualTo(ReconciliationTrigger.SCHEDULED);
     }
 

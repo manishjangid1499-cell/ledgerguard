@@ -149,13 +149,13 @@ The script `scripts/restore-db.sh` automates fail-closed checksum verification, 
 ### 3.3 Mode A Invariant Suite (Embedded in `restore-db.sh`)
 Mode A executes directly after restore and validates the following invariants:
 
-1. **Schema Completeness:** Verifies that all 20 authoritative tables exist in `public`:
-   `users`, `refresh_tokens`, `ledger_accounts`, `journal_transactions`, `journal_entries`, `ledger_balance_snapshots`, `idempotency_records`, `transfers`, `payments`, `refunds`, `balance_holds`, `outbox_events`, `funding_operations`, `payouts`, `provider_events`, `reconciliation_runs`, `reconciliation_items`, `reconciliation_cases`, `audit_events`, `flyway_schema_history`.
+1. **Schema Completeness:** Verifies that all 21 authoritative tables exist in `public`:
+   `users`, `refresh_tokens`, `ledger_accounts`, `journal_transactions`, `journal_entries`, `ledger_balance_snapshots`, `idempotency_records`, `transfers`, `payments`, `refunds`, `balance_holds`, `outbox_events`, `funding_operations`, `payouts`, `provider_events`, `reconciliation_runs`, `reconciliation_items`, `reconciliation_cases`, `audit_events`, `password_reset_tokens`, `flyway_schema_history`.
 2. **Flyway History Verification:**
-   * Exact set {1..19} all present and marked `success = true`.
-   * Total migration count equals `19`.
-   * Highest numeric migration version is `19`.
-   * Zero migrations exist with version $> 19$ (no V20).
+   * Exact set {1..20} all present and marked `success = true`.
+   * Total migration count equals `20`.
+   * Highest numeric migration version is `20`.
+   * Zero migrations exist with version $> 20$ (no V21).
 3. **POSTED Journal Structure:**
    * For every `POSTED` transaction: $\text{entries} \ge 2$, $\text{debits} \ge 1$, $\text{credits} \ge 1$.
    * Per-transaction $\sum \text{Debits} = \sum \text{Credits}$ (evaluated with `amount_minor::numeric`).

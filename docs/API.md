@@ -182,6 +182,71 @@ All API error responses use `application/problem+json` and follow the standard R
   }
   ```
 
+### 4.6 `POST /api/auth/forgot-password`
+- **Access**: Public
+- **Request Body**:
+  ```json
+  {
+    "email": "user@example.com"
+  }
+  ```
+- **Response (200 OK)**:
+  ```json
+  {
+    "message": "If an eligible account exists, you will receive a password reset link."
+  }
+  ```
+- **Security Policy**:
+  - Always returns the identical generic response regardless of whether the email exists, belongs to an ineligible role (e.g., `OPS`), or is disabled, preventing account enumeration.
+  - Generates a cryptographically secure 256-bit URL-safe token stored as a SHA-256 hash with a 15-minute expiration for active `CUSTOMER` or `MERCHANT` accounts.
+  - Enforces per-email request throttling (1-minute cooldown) and asynchronous email dispatch outside database transactions.
+
+### 4.7 `POST /api/auth/reset-password`
+- **Access**: Public
+- **Request Body**:
+  ```json
+  {
+    "token": "4f8a...256bit-token",
+    "newPassword": "NewSecurePassword123!"
+  }
+  ```
+- **Response (200 OK)**:
+  - **Set-Cookie Header**: Clears `ledgerguard_refresh_token` cookie (`Max-Age=0`).
+  - **JSON Body**:
+    ```json
+    {
+      "message": "Password has been reset successfully. Please log in with your new password."
+    }
+    ```
+- **Security Policy**:
+  - Validates token hash, 15-minute expiration window, and single-use status.
+  - Re-verifies user is `ACTIVE` and role is `CUSTOMER` or `MERCHANT`.
+  - Enforces password policy ($\ge 12$ characters, $\le 72$ UTF-8 bytes) and rejects the current password.
+  - Atomically increments user's `credential_version`, invalidates all outstanding reset tokens for the user, and revokes all active refresh tokens.
+
+### 4.8 `POST /api/auth/change-password`
+- **Access**: Authenticated (`Authorization: Bearer <token>`)
+- **Request Body**:
+  ```json
+  {
+    "currentPassword": "CurrentSecurePassword123!",
+    "newPassword": "NewSecurePassword456!"
+  }
+  ```
+- **Response (200 OK)**:
+  - **Set-Cookie Header**: Clears `ledgerguard_refresh_token` cookie (`Max-Age=0`).
+  - **JSON Body**:
+    ```json
+    {
+      "message": "Password has been changed successfully. Please log in again."
+    }
+    ```
+- **Security Policy**:
+  - Verifies current password matches existing BCrypt hash.
+  - Enforces password policy ($\ge 12$ characters, $\le 72$ UTF-8 bytes) and rejects the current password as the new password.
+  - Increments user's `credential_version`, immediately invalidating all outstanding access JWTs.
+  - Atomically invalidates all outstanding password reset tokens and revokes all active refresh tokens for the user.
+
 ---
 
 ## 5. Transfer Endpoints (`/api/transfers`)
