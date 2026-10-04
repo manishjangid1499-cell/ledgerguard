@@ -23,8 +23,8 @@
 - **Backend Breakdown:** API 807, PSP simulator 18, notification worker 73, failure lab 34, E2E 19; zero failures, errors or skips
 - **Frontend Verification:** 99 passing tests; lint and production build passed; React `act(...)` warnings remain test-maintenance work
 - **CI / CodeQL:** Passed for commit `5ba057c2461617ec29b827552c100903b39f7149`
-- **API Contract:** 31 OpenAPI operations
-- **API Database Migrations:** V1 through V19
+- **API Contract:** 34 OpenAPI operations
+- **API Database Migrations:** V1 through V20
 - **Last Verified Baseline:** 2026-10-03
 - **Git Branch:** main
 - **Deployment Checks:** HTTPS, role-based login, simulated merchant payments, reconciliation and email notification delivery

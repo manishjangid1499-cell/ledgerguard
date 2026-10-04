@@ -257,6 +257,22 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .body(problemDetail);
     }
 
+    @ExceptionHandler(com.ledgerguard.identity.application.InvalidPasswordResetTokenException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidPasswordResetToken(com.ledgerguard.identity.application.InvalidPasswordResetTokenException ex, WebRequest request) {
+        log.warn("Password reset rejected: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                ex.getMessage()
+        );
+        problemDetail.setTitle("Invalid reset token");
+        enrichProblemDetail(problemDetail, ApiErrorCode.VALIDATION_FAILED, request);
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problemDetail);
+    }
+
     @ExceptionHandler(com.ledgerguard.idempotency.domain.IdempotencyConflictException.class)
     public ResponseEntity<ProblemDetail> handleIdempotencyConflict(com.ledgerguard.idempotency.domain.IdempotencyConflictException ex, WebRequest request) {
         log.warn("Idempotency conflict: {}", ex.getMessage());

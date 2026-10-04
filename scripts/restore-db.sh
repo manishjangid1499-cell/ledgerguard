@@ -279,26 +279,26 @@ WHERE table_schema = 'public'
     'journal_entries', 'ledger_balance_snapshots', 'idempotency_records',
     'transfers', 'payments', 'refunds', 'balance_holds', 'outbox_events',
     'funding_operations', 'payouts', 'provider_events', 'reconciliation_runs',
-    'reconciliation_items', 'reconciliation_cases', 'audit_events',
+    'reconciliation_items', 'reconciliation_cases', 'audit_events', 'password_reset_tokens',
     'flyway_schema_history'
   );"
-run_check "Schema Completeness (20 Tables)" "$SCHEMA_CHECK_SQL" "20" || exit 1
+run_check "Schema Completeness (21 Tables)" "$SCHEMA_CHECK_SQL" "21" || exit 1
 
 # B. Flyway History: Exact set {1..19} all success=true, count=19, no versions > 19
 FLYWAY_SET_SQL="
-WITH expected AS (SELECT generate_series(1, 19)::text AS v),
+WITH expected AS (SELECT generate_series(1, 20)::text AS v),
      actual AS (SELECT version FROM flyway_schema_history WHERE success = true AND version ~ '^[0-9]+$')
 SELECT count(*) FROM (
     SELECT v FROM expected EXCEPT SELECT version FROM actual
     UNION ALL
-    SELECT version FROM actual WHERE version::int > 19
+    SELECT version FROM actual WHERE version::int > 20
 ) diff;"
 FLYWAY_COUNT_SQL="SELECT count(*) FROM flyway_schema_history WHERE success = true AND version ~ '^[0-9]+$';"
 FLYWAY_MAX_SQL="SELECT max(version::int) FROM flyway_schema_history WHERE type = 'SQL' AND version ~ '^[0-9]+$';"
 
-run_check "Flyway Exact Set {1..19} Success" "$FLYWAY_SET_SQL" "0" || exit 1
-run_check "Flyway Total Migration Count = 19" "$FLYWAY_COUNT_SQL" "19" || exit 1
-run_check "Flyway Max Numeric Version = 19" "$FLYWAY_MAX_SQL" "19" || exit 1
+run_check "Flyway Exact Set {1..20} Success" "$FLYWAY_SET_SQL" "0" || exit 1
+run_check "Flyway Total Migration Count = 20" "$FLYWAY_COUNT_SQL" "20" || exit 1
+run_check "Flyway Max Numeric Version = 20" "$FLYWAY_MAX_SQL" "20" || exit 1
 
 # C. POSTED Journal Structure: >=2 entries, >=1 debit, >=1 credit, balanced sum
 JOURNAL_STRUCTURE_SQL="

@@ -10,10 +10,11 @@ import {
   IconButton,
   Stack,
   Typography,
+  Link,
 } from '@mui/material';
 import Visibility from '@mui/icons-material/Visibility';
 import VisibilityOff from '@mui/icons-material/VisibilityOff';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { LoginCredentials } from '../types/auth.types';
 import { ApiError } from '../../shared/types/api.types';
@@ -155,6 +156,26 @@ export const LoginForm: React.FC = () => {
               },
             }}
           />
+        </Box>
+
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: -0.5 }}>
+          <Link
+            component={RouterLink}
+            to="/forgot-password"
+            variant="body2"
+            sx={{
+              color: 'secondary.main',
+              fontWeight: 500,
+              fontSize: '0.8125rem',
+              textDecoration: 'none',
+              '&:hover': {
+                textDecoration: 'underline',
+                color: 'secondary.dark',
+              },
+            }}
+          >
+            Forgot password?
+          </Link>
         </Box>
 
         <Button

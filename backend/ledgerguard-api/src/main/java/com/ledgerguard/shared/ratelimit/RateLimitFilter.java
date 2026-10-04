@@ -32,7 +32,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
             "/api/auth/register",
             "/api/auth/login",
             "/api/auth/refresh",
-            "/api/auth/logout"
+            "/api/auth/logout",
+            "/api/auth/forgot-password",
+            "/api/auth/reset-password"
     );
 
     private static final Pattern REFUND_PATH_PATTERN = Pattern.compile("^/api/payments/[^/]+/refund$");

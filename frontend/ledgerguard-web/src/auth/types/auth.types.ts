@@ -18,3 +18,21 @@ export interface RegisterPayload {
   password: string;
   role: 'CUSTOMER' | 'MERCHANT';
 }
+
+export interface ForgotPasswordPayload {
+  email: string;
+}
+
+export interface ResetPasswordPayload {
+  token: string;
+  newPassword: string;
+}
+
+export interface ChangePasswordPayload {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface MessageResponse {
+  message: string;
+}

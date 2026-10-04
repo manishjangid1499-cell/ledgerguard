@@ -69,7 +69,8 @@ class ConcurrentRefreshTokenRotationTest extends AbstractIntegrationTest {
         Future<?> f1 = executor.submit(() -> {
             readyLatch.countDown();
             try {
-                startLatch.await();
+                boolean started = startLatch.await(5, TimeUnit.SECONDS);
+                assertThat(started).isTrue();
                 MvcResult res = mockMvc.perform(post("/api/auth/refresh")
                                 .cookie(new Cookie(AuthController.REFRESH_COOKIE_NAME, rawToken)))
                         .andReturn();
@@ -79,14 +80,15 @@ class ConcurrentRefreshTokenRotationTest extends AbstractIntegrationTest {
                     failureCount.incrementAndGet();
                 }
             } catch (Exception e) {
-                // Handled
+                throw new RuntimeException(e);
             }
         });
 
         Future<?> f2 = executor.submit(() -> {
             readyLatch.countDown();
             try {
-                startLatch.await();
+                boolean started = startLatch.await(5, TimeUnit.SECONDS);
+                assertThat(started).isTrue();
                 MvcResult res = mockMvc.perform(post("/api/auth/refresh")
                                 .cookie(new Cookie(AuthController.REFRESH_COOKIE_NAME, rawToken)))
                         .andReturn();
@@ -96,16 +98,19 @@ class ConcurrentRefreshTokenRotationTest extends AbstractIntegrationTest {
                     failureCount.incrementAndGet();
                 }
             } catch (Exception e) {
-                // Handled
+                throw new RuntimeException(e);
             }
         });
 
-        readyLatch.await(5, TimeUnit.SECONDS);
+        boolean allReady = readyLatch.await(5, TimeUnit.SECONDS);
+        assertThat(allReady).isTrue();
         startLatch.countDown(); // Release both threads at the exact same instant
 
         f1.get(10, TimeUnit.SECONDS);
         f2.get(10, TimeUnit.SECONDS);
         executor.shutdown();
+        boolean terminated = executor.awaitTermination(15, TimeUnit.SECONDS);
+        assertThat(terminated).isTrue();
 
         assertThat(successCount.get()).isEqualTo(1);
         assertThat(failureCount.get()).isEqualTo(1);

@@ -45,6 +45,12 @@ public class ProductionOpsProvisioningService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.ledgerguard.identity.application.RefreshTokenService refreshTokenService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.ledgerguard.identity.domain.PasswordResetTokenRepository passwordResetTokenRepository;
+
     public ProductionOpsProvisioningService(UserRepository userRepository,
                                             PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
@@ -99,10 +105,19 @@ public class ProductionOpsProvisioningService {
             }
 
             if (properties.isRotatePassword()) {
+                if (org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()) {
+                    existing = userRepository.findByIdWithLock(existing.getId()).orElse(existing);
+                }
                 String passwordHash = passwordEncoder.encode(rawPassword);
                 existing.updatePassword(passwordHash);
                 existing.updateFullName(normalizedFullName);
                 userRepository.saveAndFlush(existing);
+                if (refreshTokenService != null) {
+                    refreshTokenService.revokeAllActiveForUserId(existing.getId());
+                }
+                if (passwordResetTokenRepository != null) {
+                    passwordResetTokenRepository.invalidateAllActiveForUserId(existing.getId(), java.time.Instant.now());
+                }
                 log.info("[OPS PROVISION] Successfully rotated password for existing OPS user: email={}", normalizedEmail);
                 return new ProvisioningResult(ProvisioningOutcome.PASSWORD_ROTATED, existing.getId(), normalizedEmail);
             }

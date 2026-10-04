@@ -77,11 +77,11 @@ public class OpenApiConfig {
         if (operation == null) return;
 
         // 1. Public Authentication Endpoints
-        if (method.equals("POST") && (path.equals("/api/auth/register") || path.equals("/api/auth/login"))) {
+        if (method.equals("POST") && (path.equals("/api/auth/register") || path.equals("/api/auth/login") || path.equals("/api/auth/forgot-password") || path.equals("/api/auth/reset-password"))) {
             operation.setSecurity(Collections.emptyList());
             operation.addExtension("x-auth-type", "PUBLIC");
             operation.setDescription((operation.getDescription() != null ? operation.getDescription() + "\n\n" : "")
-                    + "**Access**: Public (Unauthenticated). Permitted registration roles: `CUSTOMER`, `MERCHANT` (`OPS` forbidden).");
+                    + "**Access**: Public (Unauthenticated).");
         }
         // 2. Refresh Cookie Endpoints
         else if (method.equals("POST") && (path.equals("/api/auth/refresh") || path.equals("/api/auth/logout"))) {
@@ -90,12 +90,12 @@ public class OpenApiConfig {
             operation.setDescription((operation.getDescription() != null ? operation.getDescription() + "\n\n" : "")
                     + "**Access**: Authenticated via `ledgerguard_refresh_token` HttpOnly cookie.");
         }
-        // 3. Authenticated User Profile
-        else if (method.equals("GET") && path.equals("/api/auth/me")) {
+        // 3. Authenticated User Profile & Password Change
+        else if ((method.equals("GET") && path.equals("/api/auth/me")) || (method.equals("POST") && path.equals("/api/auth/change-password"))) {
             operation.setSecurity(List.of(new SecurityRequirement().addList(BEARER_AUTH)));
             operation.addExtension("x-auth-type", "BEARER_JWT");
             operation.setDescription((operation.getDescription() != null ? operation.getDescription() + "\n\n" : "")
-                    + "**Access**: Authenticated (Any valid JWT Bearer token).");
+                    + "**Access**: Authenticated (Any active user with valid Bearer JWT).");
         }
         // 4. Customer-Only Endpoints
         else if (

@@ -39,7 +39,7 @@ class DatabaseSchemaAndConstraintTest extends AbstractIntegrationTest {
         );
 
         assertThat(columns).containsExactlyInAnyOrder(
-                "id", "full_name", "email", "password_hash", "role", "status", "created_at", "updated_at"
+                "id", "full_name", "email", "password_hash", "role", "status", "credential_version", "created_at", "updated_at"
         );
 
         var fullName = jdbcTemplate.queryForMap("""

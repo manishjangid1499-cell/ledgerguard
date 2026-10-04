@@ -393,7 +393,7 @@ Comprehensive disaster recovery procedures and automation scripts are establishe
 
 ## API & Swagger Documentation
 
-LedgerGuard exposes **31 authoritative REST operations** across 9 controllers, documented with OpenAPI 3.1:
+LedgerGuard exposes **34 authoritative REST operations** across 9 controllers, documented with OpenAPI 3.1:
 
 - **Interactive Swagger UI (Runtime)**: [http://localhost:8080/swagger-ui/index.html](http://localhost:8080/swagger-ui/index.html)
 - **Live OpenAPI 3.1 JSON (Runtime)**: [http://localhost:8080/v3/api-docs](http://localhost:8080/v3/api-docs)
@@ -589,7 +589,7 @@ For operational procedures and OPS provisioning, see [docs/RUNBOOKS.md](docs/RUN
 | :--- | :--- |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Deep system architecture, domain modularization, and sequence models |
 | [`docs/API.md`](docs/API.md) | Comprehensive API specification, error catalogs, and payload schemas |
-| [`docs/openapi.json`](docs/openapi.json) | Exported OpenAPI 3.1 specification for all 31 REST operations |
+| [`docs/openapi.json`](docs/openapi.json) | Exported OpenAPI 3.1 specification for all 34 REST operations |
 | [`docs/RUNBOOKS.md`](docs/RUNBOOKS.md) | Disaster recovery, point-in-time restore, cutover drills, and operations |
 | [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) | Concurrency contention analysis, pool sizing, and performance reports |
 | [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md) | Authoritative 45-phase development constitution (Phases 0–44) |

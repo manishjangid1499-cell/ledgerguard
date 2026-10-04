@@ -35,14 +35,15 @@ LedgerGuard defines three principal roles:
 
 ### Access & Refresh Token Design
 - **Access Tokens**: Short-lived JSON Web Tokens (JWT) signed with HMAC-SHA256 (`HS256`) using a 256-bit+ secret key configured via `LEDGERGUARD_JWT_SECRET`.
-  - Claims: `iss = ledgerguard`, `sub = <User UUID>`, `role = <CUSTOMER|MERCHANT|OPS>`, `jti = <Token UUID>`, `iat`, `exp` (default TTL: 15 minutes / 900 seconds).
+  - Claims: `iss = ledgerguard`, `sub = <User UUID>`, `role = <CUSTOMER|MERCHANT|OPS>`, `cv = <credential_version>`, `jti = <Token UUID>`, `iat`, `exp` (default TTL: 15 minutes / 900 seconds).
   - Access tokens never contain password hashes, raw refresh tokens, or PII.
+  - **Credential Version & Instant Revocation**: Every access JWT contains the user's authoritative `cv` (credential version). On every authenticated request, `JwtCredentialVersionValidator` validates that `cv` matches the database `users.credential_version` and that the account is `ACTIVE`. When a user changes their password, completes password recovery, or is disabled, `credential_version` is incremented, immediately revoking all outstanding access JWTs across the platform without distributed blacklists.
 - **Refresh Tokens**: Long-lived, cryptographically random strings (256-bit entropy generated via `SecureRandom` encoded with Base64 URL-safe format).
   - Storage: Stored only as SHA-256 hashes (`token_hash`) in PostgreSQL `refresh_tokens` table. Raw refresh tokens are never persisted.
   - TTL: Default 7 days (604,800 seconds).
   - Revocation & Rotation: Refresh tokens are single-use. Upon rotation (`POST /api/auth/refresh`), the active token is atomically marked revoked (`revoked_at = NOW()`) and a fresh token is issued.
   - Concurrency & Double-Spend Protection: Refresh token rotation uses PostgreSQL row-level pessimistic locking (`SELECT ... FOR UPDATE` via `@Lock(LockModeType.PESSIMISTIC_WRITE)`). If two concurrent requests use the same refresh token, exactly one succeeds and the other fails safely with `401 Unauthorized`.
-  - Disabled User Enforcement & Architectural Limitation: Disabled accounts (`status = DISABLED`) are strictly prohibited from logging in (`POST /api/auth/login` -> 401) and cannot rotate or refresh tokens (`POST /api/auth/refresh` -> 401). Because LedgerGuard uses short-lived stateless access JWTs (TTL: 15 minutes) and avoids distributed token-blacklisting infrastructure (e.g. Redis), an access token issued *before* an account is disabled remains valid until its natural expiration. After expiry, the disabled user cannot refresh or obtain new tokens.
+  - Account State Enforcement: Disabled accounts (`status = DISABLED`) are rejected during login (`POST /api/auth/login` -> 401), refresh rotation (`POST /api/auth/refresh` -> 401), and on every protected resource request via `JwtCredentialVersionValidator`. Outstanding refresh tokens and reset tokens are revoked upon account state change.
 
 ### Cookie & Storage Strategy
 - Refresh tokens are transmitted via a dedicated HTTP cookie:
@@ -125,7 +126,7 @@ All authentication and authorization failures return standardized RFC 9457 Probl
 - **Token-Bucket Admission Control (Phase 27)**: Implemented using Bucket4j 8.19.0 (`bucket4j_jdk17-core`) paired with a bounded in-memory Caffeine cache (`maxEntries = 10000`, `idleTtl = 1h`). Filter positioned after Spring Security `AuthorizationFilter`.
 - **Security Precedence**: Authentication (401) and role-based authorization (403) strictly precede token bucket evaluation. Unauthenticated callers and forbidden access attempts are rejected prior to filter execution and never consume token quota.
 - **Keying & Partitioning**:
-  - `PUBLIC_AUTH` (`/api/auth/register`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`): Keyed strictly by client remote IP (`PUBLIC_AUTH:ip:<ip>`), 10 tokens / 1 min greedy capacity. Mitigates credential-stuffing and brute-force attacks against BCrypt hashing.
+  - `PUBLIC_AUTH` (`/api/auth/register`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`, `/api/auth/forgot-password`, `/api/auth/reset-password`): Keyed strictly by client remote IP (`PUBLIC_AUTH:ip:<ip>`), 10 tokens / 1 min greedy capacity. Mitigates credential-stuffing and brute-force attacks against BCrypt hashing.
   - `FINANCIAL_WRITE` (`POST /api/transfers`, `POST /api/payments`, `POST /api/payments/*/refund`, `POST /api/funding`, `POST /api/payouts`): Keyed by authenticated JWT subject UUID (`FINANCIAL_WRITE:user:<uuid>`), 20 tokens / 1 min greedy capacity.
   - `OPS` (`/api/ops/**`, `/api/reconciliation/**`): Keyed by authenticated JWT subject UUID (`OPS:user:<uuid>`), 30 tokens / 1 min greedy capacity.
   - `AUTHENTICATED_GENERAL`: Keyed by authenticated JWT subject UUID (`AUTHENTICATED_GENERAL:user:<uuid>`), 50 tokens / 1 min greedy capacity.

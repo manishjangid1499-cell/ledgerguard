@@ -3,6 +3,7 @@ package com.ledgerguard.identity.application;
 import com.ledgerguard.identity.domain.RefreshToken;
 import com.ledgerguard.identity.domain.RefreshTokenRepository;
 import com.ledgerguard.identity.domain.User;
+import com.ledgerguard.identity.domain.UserRepository;
 import com.ledgerguard.shared.security.JwtProperties;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,17 +15,22 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.Optional;
+import java.util.UUID;
 
 @Service
 public class RefreshTokenService {
 
     private final RefreshTokenRepository refreshTokenRepository;
+    private final UserRepository userRepository;
     private final JwtProperties jwtProperties;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public RefreshTokenService(RefreshTokenRepository refreshTokenRepository,
+                               UserRepository userRepository,
                                JwtProperties jwtProperties) {
         this.refreshTokenRepository = refreshTokenRepository;
+        this.userRepository = userRepository;
         this.jwtProperties = jwtProperties;
     }
 
@@ -52,27 +58,45 @@ public class RefreshTokenService {
         }
 
         String tokenHash = hashToken(rawRefreshToken);
-        Instant now = Instant.now();
 
+        // 1. Resolve user ID first without locking
+        UUID userId = refreshTokenRepository.findUserIdByTokenHash(tokenHash)
+                .orElseThrow(() -> new InvalidRefreshTokenException("Invalid refresh token."));
+
+        // 2. Consistent lock ordering: Lock User first
+        User user = userRepository.findByIdWithLock(userId)
+                .orElseThrow(() -> new InvalidRefreshTokenException("Invalid refresh token."));
+
+        if (!user.isActive()) {
+            throw new InvalidRefreshTokenException("User account is disabled.");
+        }
+
+        // 3. Reload and lock refresh token after acquiring user lock
         RefreshToken existingToken = refreshTokenRepository.findByTokenHashWithLock(tokenHash)
                 .orElseThrow(() -> new InvalidRefreshTokenException("Invalid refresh token."));
 
-        if (!existingToken.isValid(now) || !existingToken.getUser().isActive()) {
+        // Obtain fresh timestamp after acquiring user and token locks
+        Instant now = Instant.now();
+
+        if (!existingToken.isValid(now) || !existingToken.getUser().getId().equals(user.getId())) {
             throw new InvalidRefreshTokenException("Invalid refresh token.");
         }
 
-        // Revoke the old token
-        existingToken.revoke(now);
-        refreshTokenRepository.save(existingToken);
+        if (!user.isActive()) {
+            throw new InvalidRefreshTokenException("User account is disabled.");
+        }
 
-        // Issue and persist new refresh token for the same user
-        User user = existingToken.getUser();
+        // 4. Revoke old token and flush
+        existingToken.revoke(now);
+        refreshTokenRepository.saveAndFlush(existingToken);
+
+        // 5. Issue and persist new refresh token for the same user
         String newRawToken = generateSecureRandomToken();
         String newTokenHash = hashToken(newRawToken);
         Instant newExpiresAt = now.plus(jwtProperties.getRefreshTokenTtl());
 
         RefreshToken newToken = RefreshToken.create(user, newTokenHash, newExpiresAt);
-        refreshTokenRepository.save(newToken);
+        refreshTokenRepository.saveAndFlush(newToken);
 
         return new RotatedToken(newRawToken, user);
     }
@@ -84,16 +108,28 @@ public class RefreshTokenService {
         }
 
         String tokenHash = hashToken(rawRefreshToken);
-        Instant now = Instant.now();
 
-        refreshTokenRepository.findByTokenHashWithLock(tokenHash)
-                .ifPresent(token -> {
+        Optional<UUID> userIdOpt = refreshTokenRepository.findUserIdByTokenHash(tokenHash);
+        if (userIdOpt.isPresent()) {
+            UUID userId = userIdOpt.get();
+            userRepository.findByIdWithLock(userId).ifPresent(u -> {
+                Instant now = Instant.now();
+                refreshTokenRepository.findByTokenHashWithLock(tokenHash).ifPresent(token -> {
                     if (token.isValid(now)) {
                         token.revoke(now);
-                        refreshTokenRepository.save(token);
+                        refreshTokenRepository.saveAndFlush(token);
                     }
-                    refreshTokenRepository.revokeAllActiveForUserId(token.getUser().getId(), now);
                 });
+                refreshTokenRepository.revokeAllActiveForUserId(userId, now);
+            });
+        }
+    }
+
+    @Transactional
+    public void revokeAllActiveForUserId(UUID userId) {
+        if (userId != null) {
+            refreshTokenRepository.revokeAllActiveForUserId(userId, Instant.now());
+        }
     }
 
     public String hashToken(String rawToken) {

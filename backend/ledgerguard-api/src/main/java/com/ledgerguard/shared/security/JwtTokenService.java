@@ -32,6 +32,7 @@ public class JwtTokenService {
                 .expiresAt(expiresAt)
                 .subject(user.getId().toString())
                 .claim("role", user.getRole().name())
+                .claim("cv", user.getCredentialVersion())
                 .id(UUID.randomUUID().toString())
                 .build();
 

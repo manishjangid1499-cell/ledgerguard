@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Password recovery and reset flow via `POST /api/auth/forgot-password` and `POST /api/auth/reset-password`, featuring cryptographically secure 256-bit URL-safe tokens, SHA-256 hash storage, 15-minute TTL, single-use consumption, per-email throttling, and transaction-committed email delivery.
+- Authenticated password change flow via `POST /api/auth/change-password` with current password verification, authoritative length/byte constraints, and rejection of identical replacement passwords.
+- Database migration V20 introducing `credential_version` on `users` and the `password_reset_tokens` table with foreign keys and lookup indexes.
+- Instant access JWT revocation via `credential_version` (`cv`) claims evaluated by `JwtCredentialVersionValidator` on every protected request.
+- Frontend password recovery and self-service credential update UI, including `ForgotPasswordPage`, `ResetPasswordPage` (in-memory token capture, referrer scrubbing), `ChangePasswordForm` in user profile, and comprehensive unit test coverage.
+
 ### Fixed
 - Fix fresh-database provisioning of the three required INR system accounts.
 - Preserve existing valid accounts, balances and journal history during upgrade.

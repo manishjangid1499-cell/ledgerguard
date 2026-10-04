@@ -32,13 +32,16 @@ public class AuthController {
     private static final String AUTH_PATH = "/api/auth";
 
     private final AuthService authService;
+    private final com.ledgerguard.identity.application.PasswordRecoveryService passwordRecoveryService;
     private final JwtProperties jwtProperties;
     private final boolean secureCookie;
 
     public AuthController(AuthService authService,
+                          com.ledgerguard.identity.application.PasswordRecoveryService passwordRecoveryService,
                           JwtProperties jwtProperties,
                           @Value("${ledgerguard.security.cookie.secure:true}") boolean secureCookie) {
         this.authService = authService;
+        this.passwordRecoveryService = passwordRecoveryService;
         this.jwtProperties = jwtProperties;
         this.secureCookie = secureCookie;
     }
@@ -73,6 +76,33 @@ public class AuthController {
         authService.logout(refreshToken);
         clearRefreshCookie(response);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<com.ledgerguard.identity.api.dto.GenericMessageResponse> forgotPassword(
+            @Valid @RequestBody com.ledgerguard.identity.api.dto.ForgotPasswordRequest request) {
+        com.ledgerguard.identity.api.dto.GenericMessageResponse response = passwordRecoveryService.forgotPassword(request);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<com.ledgerguard.identity.api.dto.GenericMessageResponse> resetPassword(
+            @Valid @RequestBody com.ledgerguard.identity.api.dto.ResetPasswordRequest request,
+            HttpServletResponse response) {
+        com.ledgerguard.identity.api.dto.GenericMessageResponse result = passwordRecoveryService.resetPassword(request);
+        clearRefreshCookie(response);
+        return ResponseEntity.ok(result);
+    }
+
+    @PostMapping("/change-password")
+    public ResponseEntity<com.ledgerguard.identity.api.dto.GenericMessageResponse> changePassword(
+            @AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody com.ledgerguard.identity.api.dto.ChangePasswordRequest request,
+            HttpServletResponse response) {
+        UUID authenticatedUserId = UUID.fromString(jwt.getSubject());
+        com.ledgerguard.identity.api.dto.GenericMessageResponse result = passwordRecoveryService.changePassword(authenticatedUserId, request);
+        clearRefreshCookie(response);
+        return ResponseEntity.ok(result);
     }
 
     @GetMapping("/me")

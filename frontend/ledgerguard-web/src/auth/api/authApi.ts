@@ -1,6 +1,14 @@
 import { apiClient, executeSingleFlightRefresh } from '../../shared/api/apiClient';
 import { UserSummary } from '../../shared/types/user.types';
-import { AuthResponse, LoginCredentials, RegisterPayload } from '../types/auth.types';
+import {
+  AuthResponse,
+  LoginCredentials,
+  RegisterPayload,
+  ForgotPasswordPayload,
+  ResetPasswordPayload,
+  ChangePasswordPayload,
+  MessageResponse,
+} from '../types/auth.types';
 
 export const authApi = {
   async register(payload: RegisterPayload): Promise<UserSummary> {
@@ -30,6 +38,27 @@ export const authApi = {
   async getMe(): Promise<UserSummary> {
     return apiClient<UserSummary>('/api/auth/me', {
       method: 'GET',
+    });
+  },
+
+  async forgotPassword(payload: ForgotPasswordPayload): Promise<MessageResponse> {
+    return apiClient<MessageResponse>('/api/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async resetPassword(payload: ResetPasswordPayload): Promise<MessageResponse> {
+    return apiClient<MessageResponse>('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async changePassword(payload: ChangePasswordPayload): Promise<MessageResponse> {
+    return apiClient<MessageResponse>('/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   },
 };

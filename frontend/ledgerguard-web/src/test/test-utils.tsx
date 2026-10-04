@@ -34,6 +34,7 @@ interface CustomRenderOptions extends Omit<RenderOptions, 'wrapper'> {
   queryClient?: QueryClient;
   user?: UserSummary | null;
   authStatus?: 'loading' | 'authenticated' | 'unauthenticated';
+  logout?: () => Promise<void>;
 }
 
 export function renderWithProviders(
@@ -45,6 +46,7 @@ export function renderWithProviders(
     queryClient = createTestQueryClient(),
     user = mockMerchantUser,
     authStatus = 'authenticated',
+    logout = async () => {},
     ...renderOptions
   } = options;
 
@@ -53,7 +55,7 @@ export function renderWithProviders(
     user,
     login: async () => {},
     register: async () => mockMerchantUser,
-    logout: async () => {},
+    logout,
   };
 
   function Wrapper({ children }: { children: ReactNode }) {

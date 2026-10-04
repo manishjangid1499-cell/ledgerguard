@@ -11,6 +11,8 @@ const AUTH_EXCLUSIONS = [
   '/api/auth/register',
   '/api/auth/refresh',
   '/api/auth/logout',
+  '/api/auth/forgot-password',
+  '/api/auth/reset-password',
 ];
 
 interface RequestOptions extends RequestInit {
@@ -86,7 +88,7 @@ export async function apiClient<T>(endpoint: string, options: RequestOptions = {
   }
 
   const token = tokenStore.getAccessToken();
-  if (token && !headers.has('Authorization')) {
+  if (token && !isAuthExclusion && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`);
   }
 
