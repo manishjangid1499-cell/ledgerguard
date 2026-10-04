@@ -270,7 +270,7 @@ run_check() {
     return 0
 }
 
-# A. Required Schema: Verify all 20 tables exist
+# A. Required Schema: Verify all 21 required tables exist
 SCHEMA_CHECK_SQL="
 SELECT count(*) FROM information_schema.tables
 WHERE table_schema = 'public'
@@ -284,7 +284,7 @@ WHERE table_schema = 'public'
   );"
 run_check "Schema Completeness (21 Tables)" "$SCHEMA_CHECK_SQL" "21" || exit 1
 
-# B. Flyway History: Exact set {1..19} all success=true, count=19, no versions > 19
+# B. Flyway History: Exact set {1..20} all success=true, count=20, no versions > 20
 FLYWAY_SET_SQL="
 WITH expected AS (SELECT generate_series(1, 20)::text AS v),
      actual AS (SELECT version FROM flyway_schema_history WHERE success = true AND version ~ '^[0-9]+$')

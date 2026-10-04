@@ -37,13 +37,13 @@ LedgerGuard defines three principal roles:
 - **Access Tokens**: Short-lived JSON Web Tokens (JWT) signed with HMAC-SHA256 (`HS256`) using a 256-bit+ secret key configured via `LEDGERGUARD_JWT_SECRET`.
   - Claims: `iss = ledgerguard`, `sub = <User UUID>`, `role = <CUSTOMER|MERCHANT|OPS>`, `cv = <credential_version>`, `jti = <Token UUID>`, `iat`, `exp` (default TTL: 15 minutes / 900 seconds).
   - Access tokens never contain password hashes, raw refresh tokens, or PII.
-  - **Credential Version & Instant Revocation**: Every access JWT contains the user's authoritative `cv` (credential version). On every authenticated request, `JwtCredentialVersionValidator` validates that `cv` matches the database `users.credential_version` and that the account is `ACTIVE`. When a user changes their password, completes password recovery, or is disabled, `credential_version` is incremented, immediately revoking all outstanding access JWTs across the platform without distributed blacklists.
+  - **Credential Version & Instant Revocation**: Every access JWT contains the user's authoritative `cv` (credential version). On every authenticated request, `JwtCredentialVersionValidator` validates that `cv` matches the database `users.credential_version` and that the account is `ACTIVE`. Successful password change or reset increments `credential_version`, causing previously issued access JWTs to fail subsequent validation. The validator also rejects accounts whose current status is not ACTIVE. Requests that already passed authentication may finish.
 - **Refresh Tokens**: Long-lived, cryptographically random strings (256-bit entropy generated via `SecureRandom` encoded with Base64 URL-safe format).
   - Storage: Stored only as SHA-256 hashes (`token_hash`) in PostgreSQL `refresh_tokens` table. Raw refresh tokens are never persisted.
   - TTL: Default 7 days (604,800 seconds).
   - Revocation & Rotation: Refresh tokens are single-use. Upon rotation (`POST /api/auth/refresh`), the active token is atomically marked revoked (`revoked_at = NOW()`) and a fresh token is issued.
   - Concurrency & Double-Spend Protection: Refresh token rotation uses PostgreSQL row-level pessimistic locking (`SELECT ... FOR UPDATE` via `@Lock(LockModeType.PESSIMISTIC_WRITE)`). If two concurrent requests use the same refresh token, exactly one succeeds and the other fails safely with `401 Unauthorized`.
-  - Account State Enforcement: Disabled accounts (`status = DISABLED`) are rejected during login (`POST /api/auth/login` -> 401), refresh rotation (`POST /api/auth/refresh` -> 401), and on every protected resource request via `JwtCredentialVersionValidator`. Outstanding refresh tokens and reset tokens are revoked upon account state change.
+  - Account State Enforcement: Disabled accounts (`status = DISABLED`) are rejected during login (`POST /api/auth/login` -> 401), refresh rotation (`POST /api/auth/refresh` -> 401), and on every protected resource request via `JwtCredentialVersionValidator`. Successful password change or reset revokes active refresh tokens and invalidates outstanding reset tokens. Public password recovery is restricted to ACTIVE Customer and Merchant accounts; no administrative account-status mutation workflow is provided.
 
 ### Cookie & Storage Strategy
 - Refresh tokens are transmitted via a dedicated HTTP cookie:
@@ -110,10 +110,10 @@ All authentication and authorization failures return standardized RFC 9457 Probl
 - **Scope Alignment / Account Freeze Deferral (Human-Approved Option A)**:
   - Phase 28 freeze/unfreeze was deferred by human architectural decision.
   - Current ACTIVE/DISABLED state is authentication status only. There is no administrative account-freeze workflow.
-  - Existing access JWTs are not immediately revoked by user status changes; access JWT TTL remains approximately 15 minutes and tokens expire naturally.
-  - No per-request user DB lookup was introduced because that would conflict with Phase 27 overload/backpressure guarantees.
-  - Account freeze and unfreeze administrative endpoints and stateful token revocation filters were deferred from Phase 28 per human approval.
-  - Existing disabled user enforcement in Section 3 remains authoritative: accounts with `status = DISABLED` are rejected on login (401) and cannot rotate refresh tokens (401).
+  - Historically, Phase 28 relied on access-token expiry. Password recovery subsequently introduced database-backed credential-version and ACTIVE-status validation for access JWTs.
+  - Current access-JWT validation performs a user database lookup. This adds database work to authenticated requests and must be considered when assessing capacity.
+  - Administrative freeze/unfreeze endpoints remain deferred. Credential-version validation is now implemented for password security; it does not introduce an account-freeze API.
+  - Section 3 describes current enforcement: DISABLED accounts are rejected during login, refresh rotation and access-JWT validation.
 - **Sensitive Data Logging Policy**:
   - Passwords, JWT secrets, full payment card numbers, bank account numbers, and webhook secrets are strictly prohibited from log files.
   - An exhaustive codebase audit across all microservices verified that sensitive parameters (`password`, `jwtSecret`, `webhookSecret`, `tokenHash`) are never printed in logger statements or serialized into public error representations.

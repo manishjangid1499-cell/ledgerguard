@@ -1,34 +1,36 @@
 # LedgerGuard Project Status
 
-> **Current main-branch snapshot (2026-10-03):** Complete Customer, Merchant
-> and OPS workspaces are deployed at https://ledgerguard.duckdns.org.
-> The deployed API and notification worker include the post-v1.1.0
-> system-account provisioning and Kafka startup fixes from commit `5ba057c`.
-> Current verification: 951 backend tests and 99 frontend tests
-> (1,050 automated tests total), with successful lint and production build.
-> Frontend merchant tests emitted React `act(...)` warnings.
-> Published v1.1.0 and v1.0.0 remain preserved historical release baselines.
+> **Current deployment snapshot (2026-10-05 IST):** Customer, Merchant
+> and OPS workspaces are live at https://ledgerguard.duckdns.org.
+> API and frontend commit `bff0b02` includes password recovery and
+> secure password change. Database migration V20 applied successfully.
+> Backend verification on 2026-10-04: 972 passing tests.
+> Frontend verification on 2026-10-05: 119 passing tests.
+> Combined baseline: 1,091 automated tests.
+> Published v1.1.0 and v1.0.0 remain historical release baselines.
 > All financial workflows are simulated; no real money is processed.
 
 ## 1. Project Information
 
 - **Project Name:** LedgerGuard — Payment Integrity & Ledger Platform
 - **Published Release Baseline:** v1.1.0 (2026-09-30); preserved unchanged
-- **Status:** LIVE PORTFOLIO DEPLOYMENT — POST-RELEASE FIXES VERIFIED
-- **Current State:** Complete Customer, Merchant and OPS workspaces with system-account and Kafka startup fixes
+- **Status:** LIVE PORTFOLIO DEPLOYMENT — PASSWORD RECOVERY DEPLOYED
+- **Current State:** Customer, Merchant and OPS workspaces with email password recovery and authenticated password change
 - **Live Demo:** https://ledgerguard.duckdns.org
-- **Deployed API / Notification Worker Commit:** `5ba057c2461617ec29b827552c100903b39f7149`
-- **Verification Date:** 2026-10-03
-- **Verified Metrics:** 951 backend tests, 99 frontend tests (1,050 automated tests total)
-- **Backend Breakdown:** API 807, PSP simulator 18, notification worker 73, failure lab 34, E2E 19; zero failures, errors or skips
-- **Frontend Verification:** 99 passing tests; lint and production build passed; React `act(...)` warnings remain test-maintenance work
-- **CI / CodeQL:** Passed for commit `5ba057c2461617ec29b827552c100903b39f7149`
+- **Deployed API / Frontend Commit:** `bff0b027dfd03deb61df74d6bd7756fad631f4be`
+- **Deployed Notification Worker Commit:** `5ba057c2461617ec29b827552c100903b39f7149`
+- **Backend Verification Date:** 2026-10-04
+- **Frontend Verification Date:** 2026-10-05
+- **Verified Metrics:** 972 backend tests, 119 frontend tests (1,091 automated tests total)
+- **Backend Breakdown:** API 828, PSP simulator 18, notification worker 73, failure lab 34, E2E 19; zero failures, errors or skips
+- **Frontend Verification:** 119 passing tests across 5 test files; lint and production build passed during implementation verification on 2026-10-04
+- **CI / CodeQL:** Passed for feature commit `d823adf6c362669add3861ac736e0d611692fe21`, merged through PR #100
 - **API Contract:** 34 OpenAPI operations
-- **API Database Migrations:** V1 through V20
-- **Last Verified Baseline:** 2026-10-03
+- **API Database Migrations:** V1 through V20; V20 verified on the live database
 - **Git Branch:** main
-- **Deployment Checks:** HTTPS, role-based login, simulated merchant payments, reconciliation and email notification delivery
-- **Operational Safeguards:** Certificate renewal and daily database backups configured; isolated archive restoration and one off-server backup copy verified
+- **Live Checks (2026-10-05 IST):** Operator-confirmed reset email delivery, password reset/change, new-password login, old-password rejection, used-link rejection, merchant payment/email delivery and OPS dashboard access
+- **Upgrade Backup:** Pre-upgrade archive passed table-of-contents inspection and SHA-256 verification; this archive was not restore-tested during the upgrade
+- **Operational Safeguards:** Certificate renewal and daily backups configured; an earlier isolated restoration and off-server backup copy verified
 - **Operational Limitations:** Single VM; ongoing monitoring and regular off-server backup copies remain operator responsibilities
 - **Historical Development Program:** 45 / 45 phases completed (100%)
 - **Completed Phases:**
@@ -187,9 +189,9 @@
 - **Phase 28 Administrative Account Freeze / Unfreeze Scope Adjustment (Human-Approved Option A)**:
   - Phase 28 freeze/unfreeze was deferred by human architectural decision.
   - Current ACTIVE/DISABLED state is authentication status only. There is no administrative account-freeze workflow.
-  - Existing access JWTs are not immediately revoked by user status changes; access JWT TTL remains approximately 15 minutes and tokens expire naturally.
-  - No per-request user DB lookup was introduced because that would conflict with Phase 27 overload/backpressure guarantees.
-  - Account freeze and unfreeze endpoints (`POST /api/ops/users/{id}/freeze`, `POST /api/ops/users/{id}/unfreeze`) and associated stateful JWT revocation mechanisms (token denylist, disabled-user cache, per-request DB lookup filter) were deferred from Phase 28 per human approval.
+  - Historically, Phase 28 relied on access-token expiry. Password recovery subsequently introduced database-backed credential-version and ACTIVE-status validation for access JWTs.
+  - Current access-JWT validation performs a user database lookup. This adds database work to authenticated requests and must be considered when assessing capacity.
+  - Administrative freeze/unfreeze endpoints remain deferred. Credential-version validation is now implemented for password security; it does not introduce an account-freeze API.
   - The Phase 28 scope focused strictly on database-enforced immutable operational audit logging (`audit_events` for reconciliation workflows), transactional audit atomicity, control character input hardening, security header hardening (explicit CSP and HSTS), and PII/secret logging auditing.
 
 ---

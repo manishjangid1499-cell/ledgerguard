@@ -302,7 +302,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/FAILURE_MODEL.md](doc
 
 ## Security Architecture
 
-- **Stateless Authentication**: Short-lived HS256 JWT access tokens (15-minute TTL) verified via Nimbus JOSE/JWT.
+- **JWT Authentication**: Short-lived HS256 access tokens (15-minute TTL) verified via Nimbus JOSE/JWT. Database-backed validation checks the account is ACTIVE and the token credential version matches the user.
+- **Password Recovery & Change**: Eligible Customer and Merchant accounts can request expiring, single-use email reset links; only token hashes are persisted. Authenticated users can change their password by confirming the current password. Successful reset or change invalidates existing access and refresh credentials.
 - **Atomic Refresh Token Rotation**: High-entropy opaque refresh tokens stored as SHA-256 hashes in PostgreSQL with a configured maximum lifetime (`expires_at`, default 7 days), delivered via `HttpOnly`, `SameSite=Strict`, `Secure` session-scoped cookies by default (without persistent `Max-Age` or `Expires`), using pessimistic row locking to prevent token reuse races.
 - **Role-Based Access Control (RBAC)**: Strict segregation between `ROLE_CUSTOMER`, `ROLE_MERCHANT`, and `ROLE_OPS` enforced via Spring Security `@PreAuthorize`.
 - **Token-Bucket Rate Limiting**: Bucket4j and Caffeine caching enforce admission quotas after security authorization:
@@ -329,24 +330,24 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/FAILURE_MODEL.md](doc
 
 ### Test Suite Baseline
 
-Verified on 2026-10-03 using Java 21. Backend totals include Surefire and Failsafe XML reports across 5 Maven modules.
+Backend verification completed on 2026-10-04 using Java 21. Totals below were collected from Surefire and Failsafe XML reports across five Maven modules.
 
 | Module | Passing tests |
 | --- | ---: |
-| LedgerGuard API | 807 |
+| LedgerGuard API | 828 |
 | PSP simulator | 18 |
 | Notification worker | 73 |
 | Failure lab | 34 |
 | E2E tests | 19 |
-| **Backend total** | **951** |
+| **Backend total** | **972** |
 
-Backend verification completed with **0 failures, 0 errors and 0 skipped tests**.
+Backend reports contain **0 failures, 0 errors and 0 skipped tests**.
 
-The React workspace has **99 passing unit and component tests**, bringing the combined baseline to **1,050 automated tests**. Frontend lint and the production build also passed.
+Frontend verification on 2026-10-05 passed **119 tests across 5 test files**, bringing the combined baseline to **1,091 automated tests**.
 
-The frontend test run emitted React `act(...)` warnings in merchant refund and withdrawal tests. These remain test-maintenance work.
+Frontend lint and the production build passed during password-recovery implementation verification on 2026-10-04.
 
-Historical release and phase-specific verification figures are preserved separately.
+Historical release and phase-specific figures are preserved separately.
 
 ### Money Integrity Failure Lab
 A standalone automated chaos testing engine (`backend/failure-lab`) that deliberately injects hostile operating conditions:
@@ -386,7 +387,7 @@ The financial oracle checked journal balance, snapshot parity and participating-
 Comprehensive disaster recovery procedures and automation scripts are established in Phase 40:
 - **Logical Backup Automation (`scripts/backup-db.sh`)**: Generates compressed PostgreSQL custom-format archives (`pg_dump -Fc --no-owner --no-privileges`) with automated SHA-256 sidecar checksums and pre-success table-of-contents validation.
 - **Verified Database Cutover (`scripts/restore-db.sh`)**: Restores into isolated recovery targets, verifies role ownership (`ledgerguard_app`), and runs an automated Mode A financial invariant verification suite before traffic cutover.
-- **Mode A Invariant Verification**: Validates 20 schema tables, Flyway history (API migrations V1..V19), zero-sum double-entry balance, snapshot parity against normal balance rules, trigger enablement, and outbox trace integrity.
+- **Mode A Invariant Verification**: Validates 21 required schema tables, Flyway history (API migrations V1..V20), zero-sum double-entry balance, snapshot parity against normal balance rules, trigger enablement, and outbox trace integrity.
 - Detailed operational runbooks, Kafka lag remediation, and incident response checklists are documented in [docs/RUNBOOKS.md](docs/RUNBOOKS.md).
 
 ---
@@ -404,7 +405,7 @@ LedgerGuard exposes **34 authoritative REST operations** across 9 controllers, d
 
 | Domain | Capabilities | Access |
 | --- | --- | --- |
-| Authentication | Register, login, rotate refresh tokens, logout and identity | Public auth routes; authenticated identity |
+| Authentication | Register, login, rotate refresh tokens, logout, identity, email password recovery and password change | Public registration/login/recovery; authenticated identity and password change |
 | Wallets and transfers | Own wallet, customer peer transfers and participant history | Customer / Merchant, with operation-specific restrictions |
 | Payments and refunds | Merchant payments, role-scoped totals, details and refunds | Customers pay; authorized merchants refund |
 | Funding and payouts | Simulated provider operations and owner-scoped status | Customer funding; Customer / Merchant payouts |
@@ -421,7 +422,7 @@ The complete method/path inventory, request examples and error contracts are in 
 - **Application Framework**: Spring Boot 4.1.1 (Spring Framework 7.0.9)
 - **Security & Identity**: Spring Security, Nimbus JOSE/JWT (HS256), BCrypt
 - **API Documentation**: Springdoc OpenAPI 3.1.1 (`springdoc-openapi-starter-webmvc-ui`)
-- **Database & Persistence**: PostgreSQL 17.11, Spring Data JPA / Hibernate, Flyway Migration Engine (API migrations V1–V19)
+- **Database & Persistence**: PostgreSQL 17.11, Spring Data JPA / Hibernate, Flyway Migration Engine (API migrations V1–V20)
 - **Messaging Spine**: Apache Kafka 4.3.1 (KRaft mode, no ZooKeeper)
 - **Fault Tolerance**: Resilience4j 2.4.0 (CircuitBreaker, Bulkhead, Retry)
 - **Rate Limiting**: Bucket4j 8.19.0, Caffeine 3.x
@@ -613,13 +614,19 @@ LedgerGuard is a portfolio and educational financial-infrastructure system. It o
 | Item | Verified snapshot |
 | --- | --- |
 | Public demo | https://ledgerguard.duckdns.org; simulated money only |
-| Deployed API and notification worker | `5ba057c2461617ec29b827552c100903b39f7149` |
-| Latest E2E infrastructure fix | `4d911cc`: prevent Kafka topic provisioning startup race; no application redeployment required |
-| Verification | Full local clean backend verification passed on 2026-10-04; CI and CodeQL passed for `4d911cc` |
-| Test-count baseline | 2026-10-03: 951 backend + 99 frontend = 1,050 tests; detailed totals above |
+| Deployed API and frontend | `bff0b027dfd03deb61df74d6bd7756fad631f4be` — password recovery and secure password change |
+| Deployed notification worker | `5ba057c2461617ec29b827552c100903b39f7149` |
+| API database migrations | V1 through V20; V20 applied successfully on the live deployment |
+| Backend verification | 2026-10-04: 972 tests; zero failures, errors or skips |
+| Frontend verification | 2026-10-05: 119 passing tests across 5 test files |
+| Combined test baseline | 1,091 automated tests |
+| CI and CodeQL | Passed for password-recovery feature commit `d823adf6c362669add3861ac736e0d611692fe21`, merged through PR #100 |
 | Published release | `v1.1.0` remains the preserved 2026-09-30 release baseline |
-| Deployment checks | HTTPS, role-based login, simulated merchant payment, reconciliation and email delivery checked on 2026-10-03 |
-| Operational safeguards | Certificate renewal and daily backups configured; isolated restoration and one off-server backup copy verified |
-| Limitations | Single VM; ongoing monitoring and regular off-server copies remain operator responsibilities |
+| Live checks | 2026-10-05 IST: operator-confirmed reset email delivery, password reset/change, old-password rejection, used-link rejection, merchant payment/email delivery and OPS dashboard access |
+| Upgrade backup | Pre-upgrade database archive passed table-of-contents inspection and SHA-256 verification; this archive was not restore-tested during the upgrade |
+| Operational safeguards | Certificate renewal and daily backups configured; an earlier isolated restoration and off-server backup copy were verified |
+| Limitations | Single VM; monitoring and regular off-server backup copies remain operator responsibilities |
 
-Current repository verification and deployed application revisions are deliberately recorded separately. Historical release metrics are preserved in [docs/STATUS.md](docs/STATUS.md) and [docs/TESTING.md](docs/TESTING.md). Frontend refund/withdrawal test `act(...)` warnings remain maintenance work.
+Password recovery uses expiring, single-use email links. Successful password reset or change invalidates existing access and refresh credentials.
+
+Repository revisions, deployed component revisions and historical release records are recorded separately. Historical verification figures remain in [docs/STATUS.md](docs/STATUS.md) and [docs/TESTING.md](docs/TESTING.md).

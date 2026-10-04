@@ -1,14 +1,15 @@
 # LedgerGuard Testing Strategy & Invariant Verification
 
-> **Current Verification Status (2026-10-03):** **951 passing backend tests**
-> across 5 modules: `ledgerguard-api` 807, `psp-simulator` 18,
-> `notification-worker` 73, `failure-lab` 34 and `e2e-tests` 19
-> (8 unit tests + 11 integration tests), with zero failures, errors or skips.
-> The frontend has **99 passing tests**, giving **1,050 automated tests total**.
-> Frontend lint and production build passed. Merchant refund and withdrawal
-> tests emitted React `act(...)` warnings; these remain test-maintenance work.
-> Historical release and phase-specific counts below are preserved as
-> point-in-time verification records.
+> **Current Verification Status:** Backend verification completed on
+> **2026-10-04** with **972 passing tests** across five modules:
+> `ledgerguard-api` 828, `psp-simulator` 18, `notification-worker` 73,
+> `failure-lab` 34 and `e2e-tests` 19, with zero failures, errors or skips.
+> Frontend verification on **2026-10-05** passed **119 tests across
+> 5 test files**, giving **1,091 automated tests total**.
+> Frontend lint and production build passed during implementation
+> verification on 2026-10-04.
+> Historical release and phase-specific counts below are preserved
+> as point-in-time verification records.
 
 ## 1. Testing Philosophy & Invariant Priority
 
