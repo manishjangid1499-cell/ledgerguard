@@ -10,11 +10,9 @@
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat&logo=docker&logoColor=white)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**LedgerGuard** is a correctness-first payment and ledger platform designed to address the central challenges of financial backend systems: race conditions, double-spending, distributed failure ambiguity, dual-write divergence, and forensic auditability. Rather than treating monetary balances as mutable database counters or thin wrappers around third-party APIs, LedgerGuard implements an immutable double-entry accounting engine where balances are strictly derived from append-only journal entries backed by PostgreSQL ACID transactions.
+**LedgerGuard** is a simulated payment and ledger platform with Customer, Merchant and Operations workspaces. It supports wallet funding, peer transfers, merchant payments, partial refunds and payouts, with tools for investigating financial discrepancies.
 
-The platform provides complete financial flows across dedicated **Customer**, **Merchant**, and **Operations (OPS)** workspaces. Customers can fund simulated wallets, execute peer-to-peer transfers, pay merchants, and request simulated payouts. Merchants receive payments with transparent platform fee deduction, manage pro-rata refunds, and request simulated payouts from available wallet funds. Operations teams monitor platform health through an operations command center, run multi-level reconciliation jobs, claim and resolve discrepancy cases with audit notes, and repair desynchronized balance snapshots under pessimistic lock.
-
-Under the hood, LedgerGuard models realistic distributed payment infrastructure. Financial operations enforce required idempotency keys with SHA-256 request fingerprints, deterministic row locking, and durable balance holds. Domain events propagate reliably via a PostgreSQL transactional outbox pattern to Apache Kafka for asynchronous notification processing. External payment service provider (PSP) interactions employ a standalone PSP simulator with resilient HTTP clients and a state machine that enforces the core distributed systems principle that `UNKNOWN != FAILED`, ensuring funds are never prematurely credited, debited, or lost during network interruptions.
+The Java backend keeps financial posting inside PostgreSQL transactions using a double-entry journal, ordered row locking and request idempotency. A transactional outbox feeds Kafka notifications, while a PSP simulator exercises ambiguous provider outcomes and recovery. **No real money is processed.**
 
 ---
 
@@ -33,7 +31,6 @@ All wallet amounts and provider operations are simulated. No real money is proce
 ## Quick Navigation
 
 - [Live Demo](#live-demo)
-
 - [Product Tour](#product-tour)
 - [Engineering Highlights](#engineering-highlights)
 - [Roles and Workflows](#roles-and-workflows)
@@ -60,14 +57,12 @@ All wallet amounts and provider operations are simulated. No real money is proce
 
 ## Engineering Highlights
 
-- **Immutable, Balanced Double-Entry Journal**: Every financial transaction enforces zero-sum debit/credit balance ($\sum \text{Debits} = \sum \text{Credits}$) in integer minor units, backed by PostgreSQL database immutability triggers that forbid updates and deletions.
-- **Deterministic Locking & Concurrency Protection**: Multi-account operations acquire row locks in stable primary-key order (`ORDER BY ledger_account_id ASC`), reducing circular-wait deadlock risk and preventing double-spending or unauthorized overdrafts under heavy concurrency.
-- **Required Idempotency Keys & Request Fingerprints**: Financial write operations require unique client idempotency keys with SHA-256 payload fingerprinting and database constraints, ensuring at-most-once execution semantics across network retries.
-- **Transactional Outbox with Kafka**: Domain events commit atomically with business data in PostgreSQL, then publish asynchronously to Apache Kafka using `SELECT ... FOR UPDATE SKIP LOCKED` bounded batch polling, avoiding dual-write discrepancies.
-- **`UNKNOWN != FAILED` State Machine Handling**: Network timeouts and provider ambiguities transition external operations to `UNKNOWN` rather than `FAILED`, preventing premature reversals or duplicate disbursements while background pollers recover authoritative status.
-- **Balance Holds for In-Flight Payouts**: Outbound fund disbursements pre-reserve balance holds, separating spendable available balance from posted ledger totals to protect funds during external processing without mutating journal history.
-- **Multi-Level Reconciliation & Snapshot Repair**: Automated three-level reconciliation audits double-entry balance, snapshot parity, and simulated provider records, with case-scoped snapshot re-derivation from immutable journals under pessimistic lock.
-- **Role-Scoped Workspaces**: Strict role-based access control segregates Customer, Merchant, and Operations (OPS) capabilities across the API and frontend interfaces.
+- **Double-entry ledger:** Integer paise amounts, balanced postings and immutable posted history.
+- **Concurrency controls:** Ordered row locks, available-balance checks and durable payout holds.
+- **Request and event deduplication:** Database-backed idempotency plus transactional outbox/inbox processing.
+- **Ambiguous outcome recovery:** `UNKNOWN != FAILED`; verified provider outcomes drive settlement.
+- **Operational investigation:** Three-level reconciliation, case ownership, audit notes and explicit snapshot repair.
+- **Verification:** Real PostgreSQL/Kafka integration tests, failure injection and measured transfer contention.
 
 ---
 
@@ -114,191 +109,147 @@ All wallet amounts and provider operations are simulated. No real money is proce
 
 ## Why This Project Exists
 
-In modern fintech systems, standard web architectures frequently suffer from subtle, catastrophic failure modes:
-1. **Concurrency Race Conditions**: Two simultaneous withdrawal requests reading the same balance snapshot simultaneously, resulting in double-spending and unauthorized overdrafts.
-2. **Dual-Write Vulnerabilities**: Committing a database record and then attempting to publish a Kafka message over the network; if the broker drops the connection or the worker crashes, the database and message bus permanently diverge.
-3. **The Distributed Ambiguity Fallacy (`UNKNOWN != FAILED`)**: Treating a third-party banking timeout or HTTP 500 as a failure and immediately refunding the customer, only for the payment to settle upstream seconds later, resulting in duplicate fund disbursements.
-4. **Mutable Balance Drift**: Updating balance rows directly with `UPDATE accounts SET balance = balance + ?`, leaving no auditable forensic trail when numbers fail to tally at end-of-day reconciliation.
-
-LedgerGuard solves each of these foundational problems through strict transactional and architectural patterns that use established financial-system correctness principles.
-
----
+The project explores four financial failure modes: concurrent overspending, database/message dual writes, ambiguous provider outcomes and derived-balance drift. Its design keeps core posting in one database transaction and uses durable recovery outside that boundary.
 
 ## Core Correctness Guarantees
 
-The fundamental principle governing every transaction in LedgerGuard:
+| Invariant | Enforcement |
+| --- | --- |
+| Every posted journal has equal debits and credits | PostgreSQL posting triggers validate amounts and journal structure |
+| Posted history is append-only during normal application operation | Database immutability triggers; corrections use new journals |
+| Concurrent writes respect available funds | Stable snapshot lock ordering and checks that include active holds |
+| Retried requests do not repeat financial execution | Actor/operation-scoped idempotency keys and request fingerprints |
+| Financial data and events commit together | Outbox insertion inside the financial database transaction |
+| Ambiguous provider outcomes do not trigger premature credit or release | Explicit operation states, protected payout holds and verified settlement |
 
-$$\text{\bf MONEY MUST NEVER BE CREATED, DESTROYED, DUPLICATED, OR SILENTLY LOST.}$$
-
-1. **Balanced Double-Entry Rule**: For every posted journal transaction across all accounts:
-   $$\sum \text{DEBITS} = \sum \text{CREDITS}$$
-   Enforced at the database engine level via PostgreSQL trigger `trg_journal_transactions_balance_check`.
-2. **Permanent Ledger Immutability**: Database triggers reject updates and deletes to posted journal transactions and their entries during normal application operation (enforced by triggers `trg_journal_transactions_immutability` and `trg_journal_entries_immutability`). Adjustments are made strictly through new compensating journal entries.
-3. **Deterministic Lock Ordering**: All multi-account financial operations acquire row-level write locks (`SELECT ... FOR UPDATE`) in stable primary key order (`ORDER BY ledger_account_id ASC`). This serializes competing access to affected financial rows, prevents lost-update and concurrent-overspend races on protected rows, and reduces circular-wait deadlock risk (Phase 39 controlled contention tests observed 0 deadlocks).
-4. **Authoritative Request Idempotency**: Financial write endpoints (`POST /api/transfers`, `POST /api/payments`, `POST /api/payments/{paymentId}/refund`, `POST /api/funding`, `POST /api/payouts`) use a required `Idempotency-Key` header with cryptographic SHA-256 request fingerprinting and database-backed replay/conflict handling to ensure at-most-once financial execution.
-5. **Transactional Outbox Event Persistence**: LedgerGuard avoids the direct DB-then-Kafka dual-write pattern. Domain events (`outbox_events`) are committed atomically within the local PostgreSQL financial database transaction, while Kafka publication executes asynchronously post-commit. Temporary broker or consumer outages may leave outbox rows delayed in `PENDING` status, but they never fabricate financial success or require financial rollback.
-6. **Ambiguity Dominance (`UNKNOWN != FAILED`)**: External payment timeouts and generic 500 errors transition to state `UNKNOWN` rather than `FAILED`. Inbound funding (top-ups) never credits customer wallets prematurely. Outbound payouts preserve the outgoing balance reservation (`balance_holds.status = 'ACTIVE'`) across `UNKNOWN` and `RECONCILIATION_REQUIRED`, consuming the hold on authoritative success or releasing it on authoritative failure.
+These controls are tested across normal, concurrent and injected-failure scenarios. They are not a proof of correctness for every possible execution or protection against privileged database intervention.
 
 ---
 
 ## Architecture
 
-### End-to-End System Topology
+### Runtime architecture
+
+The financial core is a **modular monolith**. The web server, PSP simulator and notification worker are separate deployables. The production Compose stack uses one PostgreSQL instance with three logical databases and a single Kafka broker; it is not a high-availability deployment.
 
 ```mermaid
 flowchart TD
-    subgraph Production_Runtime["Production / Deployable Runtime Topology"]
-        subgraph Client_Ingress["Client & Ingress Boundary"]
-            Browser["React SPA (ledgerguard-web)\n(TypeScript / Vite / Material UI)"]
-            Nginx["Nginx Reverse Proxy & Gateway (nginx-edge)\n(TLSv1.2/1.3, Rate Limiting, Static Cache)"]
-        end
-
-        subgraph Core_Monolith["Core Modular Monolith (ledgerguard-api:8080)"]
-            API_GW["REST Controllers & Security\n(Spring MVC / JWT / RBAC / RateLimitFilter)"]
-            Modules["Core Modules\nIdentity | Wallets & Holds | Transfers\nPayments & Refunds | Funding & Payouts\nTransactional Outbox | Reconciliation"]
-        end
-
-        subgraph Datastore_Spine["Persistence & Asynchronous Spine"]
-            Postgres[("Authoritative PostgreSQL 17\n- ledgerguard (Owner: ledgerguard_app)\n- psp_simulator (Owner: psp_simulator_app)\n- notification_worker (Owner: notification_worker_app)")]
-            Kafka{{"Apache Kafka 4.3.1 (KRaft)\n(Topic: ledgerguard.domain-events.v1)"}}
-        end
-
-        subgraph Async_Workers["Dedicated Background Services"]
-            NotifWorker["Notification Worker (notification-worker)\n(Idempotent Consumer Inbox)"]
-            PspSim["PSP Simulator (psp-simulator:8081)\n(External PSP Simulator / HMAC Webhooks)"]
-        end
-
-        subgraph Observability_Stack["Telemetry & Observability"]
-            Prometheus["Prometheus 3.2.1\n(Scrapes /actuator/prometheus @ 15s)"]
-            Grafana["Grafana 11.5.2\n(Dashboards: Financial Integrity & API Ops)"]
-        end
+    Browser["Browser: React application"]
+    Edge["Edge Nginx: TLS and routing"]
+    Web["Web container: SPA files"]
+    API["LedgerGuard API: financial core"]
+    PSP["PSP simulator"]
+    Kafka["Kafka: domain events"]
+    Worker["Notification worker"]
+    SMTP["Configured SMTP provider"]
+    subgraph PostgreSQL["One PostgreSQL instance; separate databases"]
+        LedgerDB[("ledgerguard")]
+        PSPDB[("psp_simulator")]
+        NotificationDB[("notification_worker")]
     end
-
-    subgraph Testing_Harness["Testing & Verification Harness (Non-Production)"]
-        FailureLab["Money Integrity Failure Lab (failure-lab:8083)\n(Chaos Scenarios & Financial Invariant Oracle)\n[Ephemeral Testcontainers PostgreSQL]"]
-    end
-
-    Browser -->|HTTPS :443| Nginx
-    Nginx -->|API reverse proxy| API_GW
-    Nginx -->|Static assets| Browser
-    API_GW --> Modules
-    Modules -->|ACID DB Transactions| Postgres
-    Modules -->|Outbox publisher| Kafka
-    Modules -->|Resilient provider call| PspSim
-    PspSim -->|Signed provider webhook| API_GW
-    Kafka -->|Async Events| NotifWorker
-    NotifWorker -->|Inbox Deduplication| Postgres
-    Prometheus -->|Scrape| API_GW
-    Grafana -->|Query Datasource| Prometheus
-    FailureLab -.->|Adversarial verification| Postgres
+    Browser -->|HTTPS requests| Edge
+    Edge -->|SPA and assets| Web
+    Edge -->|API requests| API
+    API -->|Financial transactions and outbox| LedgerDB
+    API -->|Provider HTTP calls| PSP
+    PSP -->|Signed webhooks| API
+    PSP -->|Provider records| PSPDB
+    API -->|Outbox publication| Kafka
+    Kafka -->|Domain events| Worker
+    Worker -->|Inbox and delivery records| NotificationDB
+    Worker -->|Email dispatch when enabled| SMTP
 ```
 
-### Financial Atomic Posting Flow
+Prometheus scrapes the API over the internal network; Grafana queries Prometheus. Their host ports bind to loopback by default. The Failure Lab runs separately against ephemeral test targets, not the live deployment database. See [architecture details](docs/ARCHITECTURE.md) for component boundaries and operational constraints.
+
+### Atomic transfer and payment posting
+
+This sequence describes synchronous internal transfers and merchant payments. External funding and payouts use separate submission and settlement transactions around provider calls.
 
 ```mermaid
 sequenceDiagram
-    autonumber
-    actor Client as Client (Customer / Merchant)
-    participant API as Financial Service (Transfer / Payment)
-    participant Idemp as Idempotency Table
-    participant Lock as Account Row Locks
-    participant Ledger as Journal & Entries Table
-    participant TrgBal as Trigger: trg_fn_enforce_journal_transaction_balance
-    participant TrgSnap as Trigger: trg_fn_update_balance_snapshots_on_posting
-    participant Outbox as Outbox Events Table
-    participant DB as PostgreSQL Transaction Boundary
-    participant Kafka as Apache Kafka
-    participant Worker as Notification Worker
-
-    Client->>API: Financial Request (Payload + Idempotency-Key)
-    activate API
-    API->>Idemp: Check fingerprint / acquire atomic lock
-    alt Idempotency conflict / in-progress
-        API-->>Client: 409 Conflict / cached idempotent replay
-    end
-
-    rect rgb(240, 245, 255)
-        note over Lock,DB: Single ACID Database Transaction Boundary (@Transactional)
-        API->>Lock: Deterministic Row Locks (SELECT ... FOR UPDATE ORDER BY ledger_account_id ASC)
-        note over Lock: Serializes access, prevents lost updates and overspending
-        note over Lock: Stable lock ordering reduces deadlock risk
-        API->>Ledger: INSERT journal_transactions (status: DRAFT)
-        API->>Ledger: INSERT journal_entries (DEBITS and CREDITS)
-        note over Ledger: Immutable journal is the source of truth
-        note over Ledger: Every posted journal enforces equal debits and credits
-        API->>Ledger: UPDATE journal_transactions SET status = 'POSTED'
-        activate TrgBal
-        TrgBal-->>Ledger: Enforce >=2 legs, 1 debit, 1 credit, zero-sum balance
-        deactivate TrgBal
-        activate TrgSnap
-        TrgSnap-->>Ledger: Synchronously update derived balance snapshot table under normal-balance rules
-        deactivate TrgSnap
-        API->>Outbox: INSERT outbox_events (status: PENDING, with W3C traceparent)
-        API->>DB: COMMIT TRANSACTION
-    end
-
-    API-->>Client: HTTP success / idempotent replay response after commit
-    deactivate API
-
-    rect rgb(255, 250, 240)
-        note over Outbox,Worker: Asynchronous Event Dispatch (Post-Commit Background Poller)
-        Outbox->>Kafka: Poller scans outbox (FOR UPDATE SKIP LOCKED) & publishes to Kafka topic
-        Kafka->>Worker: Consume domain event with idempotent inbox deduplication
+    actor Client
+    participant API as Financial service
+    participant DB as PostgreSQL
+    Client->>API: Request with Idempotency-Key
+    API->>DB: Begin transaction and claim actor-scoped key
+    alt Completed key with matching fingerprint
+        DB-->>API: Existing result reference
+        API-->>Client: Successful replay without a new posting
+    else Conflicting fingerprint or in-progress record
+        API-->>Client: 409 Conflict without a new posting
+    else New request
+        API->>DB: Lock affected snapshots in stable order
+        API->>DB: Validate ownership, status and available funds
+        API->>DB: Create DRAFT journal and debit/credit entries
+        API->>DB: Post journal
+        Note over DB: Triggers validate balance and update snapshots
+        API->>DB: Save business result, outbox event and completed key
+        API->>DB: Commit
+        DB-->>API: Commit succeeds
+        API-->>Client: Successful result
     end
 ```
 
-### External PSP State Machine & Ambiguous Outcome Recovery (`UNKNOWN != FAILED`)
+Any validation or posting failure rolls back the new financial transaction. The journal, derived snapshot update, business record and outbox event commit together. Kafka and email delivery are outside this financial commit.
+
+### From committed event to email
+
+```mermaid
+sequenceDiagram
+    participant Publisher as API outbox publisher
+    participant DB as PostgreSQL databases
+    participant Kafka
+    participant Worker as Notification worker
+    participant SMTP as SMTP provider
+    Publisher->>DB: Claim PENDING outbox rows with SKIP LOCKED
+    Publisher->>Kafka: Publish event keyed by aggregate ID
+    Kafka-->>Publisher: Broker acknowledgment
+    Publisher->>DB: Mark PUBLISHED and commit publisher transaction
+    Kafka->>Worker: Deliver domain event
+    Worker->>DB: Atomically claim event ID and create delivery records
+    DB-->>Worker: Notification transaction committed
+    Worker-->>Kafka: Commit consumed offset after processing
+    Worker->>DB: Dispatcher claims eligible delivery
+    Worker->>SMTP: Send email when enabled
+    SMTP-->>Worker: Accepted or error
+    Worker->>DB: Record delivery result or schedule retry
+```
+
+The ledger and notification records live in different databases; the shared PostgreSQL participant above is shorthand, not a cross-database transaction. A crash after Kafka acknowledgment but before the publisher database commit can cause an event to be published again. The worker deduplicates event IDs and creates delivery records in one local transaction.
+
+**`PUBLISHED` means Kafka publication, not email delivery.** SMTP acceptance also does not prove arrival in a recipient's inbox. Email delivery uses its own dispatcher, retries and status records; inbox deduplication does not guarantee exactly-once SMTP delivery. The worker provisions the dead-letter topic for events that exhaust listener recovery. Local development uses Mailpit; public email requires a configured SMTP provider.
+
+### Provider outcomes and recovery
+
+The diagram shows the principal recovery paths using actual persisted operation statuses. Validated webhooks and polling can settle in-flight operations; reconciliation case resolution itself does not settle money.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> CREATED: Initialize Operation Record
-
-    state Operation_Semantics {
-        [*] --> Note_Semantics
-        note right of Note_Semantics
-            Payout: Pre-reserves balance hold (ACTIVE) from available balance.
-            Funding: Inbound top-up; no wallet reservation; credited only upon SUCCEEDED.
-        end note
-    }
-
-    CREATED --> PROCESSING: Atomic Submission Claim (Pessimistic Lock)
-    CREATED --> FAILED: Pre-submission Local Validation Rejection (Payout Hold Released)
-
-    state PROCESSING {
-        [*] --> Dispatched
-        Dispatched --> Definite_Success: Provider HTTP 200 (SUCCESS)
-        Dispatched --> Definite_Failure: Provider HTTP 4xx / Terminal Rejection
-        Dispatched --> Ambiguous_Outcome: Network Timeout / 5xx / Connection Drop
-    }
-
-    Definite_Success --> SUCCEEDED: Authoritative Resolution (Payout: Hold Consumed; Funding: Wallet Credited)
-    Definite_Failure --> FAILED: Authoritative Failure (Payout: Hold Released; Funding: No Credit)
-
-    Ambiguous_Outcome --> UNKNOWN: Ambiguity Dominance Rule
-    note right of UNKNOWN
-        UNKNOWN != FAILED
-        Payout balance hold remains ACTIVE.
-        Funding wallet is NOT credited prematurely.
-        Funds are strictly protected pending resolution.
-    end note
-
-    UNKNOWN --> SUCCEEDED: Background Poller receives Provider Success
-    UNKNOWN --> FAILED: Background Poller receives Provider Terminal Failure
-    UNKNOWN --> RECONCILIATION_REQUIRED: Polling attempts exhausted (configured threshold reached)
-
-    state RECONCILIATION_REQUIRED {
-        [*] --> Flagged_For_Investigation
-        Flagged_For_Investigation --> Level3_Detection: Level 3 Recon Scan (Detection Only)
-        Level3_Detection --> Case_Opened: Logs discrepancy item & triggers ops case (No balance mutation)
-        Case_Opened --> Ops_Audit: Operator reviews simulated provider records & notes resolution in case
-    }
-
-    RECONCILIATION_REQUIRED --> SUCCEEDED: Late Webhook Confirms Success (Settles Journal & Consumes Hold)
-    RECONCILIATION_REQUIRED --> FAILED: Late Webhook Confirms Failure (Releases Hold)
-
+    [*] --> CREATED
+    CREATED --> PROCESSING: Claim provider submission
+    CREATED --> FAILED: Definite local failure before submission
+    PROCESSING --> SUCCEEDED: Verified provider success and local settlement
+    PROCESSING --> FAILED: Definite provider failure
+    PROCESSING --> UNKNOWN: Timeout or ambiguous response
+    PROCESSING --> RECONCILIATION_REQUIRED: Recovery exhausted or identity conflict
+    UNKNOWN --> SUCCEEDED: Verified success through recovery
+    UNKNOWN --> FAILED: Verified failure through recovery
+    UNKNOWN --> RECONCILIATION_REQUIRED: Recovery exhausted or identity conflict
+    RECONCILIATION_REQUIRED --> SUCCEEDED: Validated late success webhook
+    RECONCILIATION_REQUIRED --> FAILED: Validated late failure webhook
     SUCCEEDED --> [*]
     FAILED --> [*]
 ```
+
+| Outcome | Funding | Payout |
+| --- | --- | --- |
+| Created or processing | No wallet credit until verified success | Funds reserved by an active hold |
+| Unknown or reconciliation required | No premature wallet credit | Hold remains active |
+| Succeeded | Balanced journal credits the customer | Balanced journal debits the wallet; hold is consumed |
+| Failed | No success credit is posted | Hold is released, or was already expired before submission |
+
+HTTP status alone is not sufficient evidence of provider settlement. Responses must satisfy the implemented identity, amount, currency and outcome validation. See [failure and recovery behavior](docs/FAILURE_MODEL.md).
 
 ---
 
@@ -316,7 +267,7 @@ All balances are calculated and stored in **INR** minor units (paise) as signed 
 | **`PLATFORM_RESERVE`** | **Debit-Normal** | $\text{balance} = \sum \text{Debits} - \sum \text{Credits}$ | System account (Liquidity buffer) |
 
 ### Balance Snapshots & Holds
-- **Derived Snapshots**: The `ledger_balance_snapshots` table is maintained as an atomic projection updated exclusively by database trigger `trg_journal_transactions_update_snapshots` upon journal posting. Snapshots are fully reconstructible from append-only journal entries.
+- **Derived Snapshots**: The `ledger_balance_snapshots` table is maintained as an atomic projection updated by database trigger `trg_journal_transactions_update_snapshots` upon journal posting; authorized repair workflows can also reconstruct the projection from posted journals. Snapshots are fully reconstructible from append-only journal entries.
 - **Balance Holds (`balance_holds`)**: Temporary fund reservations that separate spendable capacity from historical ledger balances without mutating journal history:
   $$\text{availableBalance} = \text{postedBalance} - \sum(\text{ACTIVE holds})$$
   Overdraft prevention asserts $\text{availableBalance} \ge \text{requestedAmount}$ before granting financial operations.
@@ -340,10 +291,12 @@ All balances are calculated and stored in **INR** minor units (paise) as signed 
 
 ## Distributed Systems & Reliability Patterns
 
-- **Transactional Outbox (`SKIP LOCKED`)**: LedgerGuard avoids the direct DB-then-Kafka dual-write pattern by committing domain events (`outbox_events`) atomically within the local PostgreSQL financial transaction. Background workers poll pending events using `SELECT ... FOR UPDATE SKIP LOCKED` for concurrent non-blocking outbox claiming and asynchronous post-commit publishing to Apache Kafka.
-- **Consumer Inbox Deduplication**: Asynchronous consumers (`notification-worker`) deduplicate incoming messages in a database-backed inbox, ensuring idempotent execution despite Kafka at-least-once transport delivery.
-- **Resilient Provider Client**: Programmatic Resilience4j integration (`CircuitBreaker` $\to$ `Bulkhead` $\to$ `Retry` with exponential jitter $\to$ `RestClient`) handling simulated provider outages with circuit breaking, concurrency limits and bounded retries.
-- **Durable Status Recovery Poller**: Background polling worker that scans unresolved external operations with exponential backoff and queries authoritative provider status. Confirmed provider success or failure settles the operation automatically; unresolved or ambiguous outcomes progress to `RECONCILIATION_REQUIRED`. Level 3 reconciliation detects external discrepancies, allowing operators to investigate via operational review cases (`reconciliation_cases`) with mandatory audit notes, strictly prohibiting silent balance mutation or historical ledger rewrites.
+- **Outbox and inbox:** Durable publication and event-ID deduplication separate financial commits from notification processing; delivery may be repeated across failure boundaries.
+- **Provider resilience:** Circuit breaking, concurrency limits and bounded retries wrap simulated provider calls. Network calls execute outside financial database transactions.
+- **Status recovery:** Polling and validated webhooks recover authoritative provider outcomes. Unresolved operations enter reconciliation review without rewriting posted journals.
+- **Repair scope:** Operators can reconstruct derived snapshots through authorized case workflows. Resolving a review case does not itself settle a funding or payout operation.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/FAILURE_MODEL.md](docs/FAILURE_MODEL.md) for detailed boundaries and recovery paths.
 
 ---
 
@@ -402,21 +355,29 @@ A standalone automated chaos testing engine (`backend/failure-lab`) that deliber
 3. **`CORRUPTED_SNAPSHOT`**: Deliberate out-of-band balance snapshot drift injection, validating detection by Level 2 reconciliation and case-scoped repair from immutable journals.
 4. **`WEBHOOK_RACE`**: 5 concurrent duplicate HMAC-SHA256 signed webhooks, validating database deduplication and single economic effect.
 
-An independent SQL oracle (`FinancialInvariantOracle`) runs after each scenario to verify that total currency is strictly conserved:
+The independent `FinancialInvariantOracle` verifies posted journal structure, per-journal and global debit/credit equality, reconstructed snapshot parity and available-balance consistency. Internal-transfer scenarios also check conservation across the two participating wallets:
 
-$\sum \text{Final Balances} = \sum \text{Opening Balances} + \sum \text{External Inflows} - \sum \text{External Outflows}$
+$$B_{A,final} + B_{B,final} = B_{A,opening} + B_{B,opening}$$
+
+This wallet-scoped equation must not be interpreted as a sum of every account's normal balance: customer and merchant accounts are credit-normal, while clearing and reserve accounts are debit-normal.
 
 ---
 
 ## Concurrency Benchmark Results
 
-In Phase 39, LedgerGuard's transaction throughput and database connection pool contention were empirically benchmarked directly through the service and database tiers (`TransferService.createTransfer()` over HikariCP and PostgreSQL 17):
-- **Workload Scenarios**: Evaluated three canonical workloads—`LOW_CONTENTION` (disjoint accounts), `HOT_ACCOUNT` (single shared destination), and `OPPOSING_TRANSFERS` (cyclic opposing transfers).
-- **Controlled Operation Count**: Completed **8,100 successful measured transfer operations** across concurrency levels scaling from 1 to 50 threads (warmup excluded).
-- **HikariCP Pool Sizing Matrix**: Benchmarked candidate pool sizes **5, 10, 15, and 20** in isolated Testcontainers environments. Under hot-account contention, expanding pool sizes beyond 10 allowed up to `poolSize - 1` lock waiters inside PostgreSQL and elevated p95 tail latency by ~33% without throughput gain.
-- **Production Pool Decision**: Retained **`maximum-pool-size = 10`** as the production default.
-- **Locking Resilience & Financial Invariants**: Observed **0 deadlocks**, 0 transaction errors, and 0 connection timeouts across all repetitions. The `FinancialInvariantOracle` asserted 100% debit/credit balance, snapshot reconstruction parity, and total money conservation after every run.
-- Detailed methodology, metrics, and latency percentiles are documented in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+These Phase 39 measurements exercised `TransferService.createTransfer()` and PostgreSQL 17 directly. They are **service/database benchmarks, not public HTTP throughput measurements**.
+
+| Measurement | Result |
+| --- | --- |
+| Workloads | Disjoint accounts, shared destination and opposing transfers |
+| Successful measured transfers | 8,100; warmup excluded |
+| Concurrency range | 1–50 threads |
+| HikariCP pool sizes compared | 5, 10, 15 and 20 |
+| Hot-account contention | Pools above 10 increased p95 latency by approximately 33% without a throughput gain in the measured workload |
+| Retained default pool size | 10 |
+| Observed deadlocks / transaction errors / connection timeouts | 0 / 0 / 0 |
+
+The financial oracle checked journal balance, snapshot parity and participating-wallet conservation after each run. These results describe the tested environment, not a general capacity guarantee. See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for methodology and detailed results.
 
 ---
 
@@ -439,40 +400,18 @@ LedgerGuard exposes **31 authoritative REST operations** across 9 controllers, d
 - **Authoritative Repository Specification Export**: [`docs/openapi.json`](docs/openapi.json)
 - **Comprehensive Markdown API Specification**: [`docs/API.md`](docs/API.md)
 
-### Endpoint Summary by Domain:
-| Domain | Method | Route | Authorization / Access |
-| :--- | :--- | :--- | :--- |
-| **Authentication** | `POST` | `/api/auth/register` | Public (Registers `CUSTOMER` or `MERCHANT`) |
-| **Authentication** | `POST` | `/api/auth/login` | Public (Issues JWT + HttpOnly session refresh cookie) |
-| **Authentication** | `POST` | `/api/auth/refresh` | Public (HttpOnly `ledgerguard_refresh_token` session cookie rotation) |
-| **Authentication** | `POST` | `/api/auth/logout` | Public (Revokes refresh token in DB + clears cookie) |
-| **Authentication** | `GET` | `/api/auth/me` | Authenticated Bearer JWT |
-| **Wallets** | `GET` | `/api/wallets/me` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` |
-| **Transfers** | `POST` | `/api/transfers` | `ROLE_CUSTOMER` (Idempotent transfer to another Customer wallet) |
-| **Transfers** | `GET` | `/api/transfers` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Paginated history) |
-| **Transfers** | `GET` | `/api/transfers/{transferId}` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Transfer detail) |
-| **Payments** | `POST` | `/api/payments` | `ROLE_CUSTOMER` (100 bps platform fee checkout) |
-| **Payments** | `GET` | `/api/payments` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Participant-scoped paginated history) |
-| **Payments** | `GET` | `/api/payments/summary` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Role-scoped payment totals) |
-| **Payments** | `GET` | `/api/payments/{paymentId}` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Participant-scoped detail and refund history) |
-| **Refunds** | `POST` | `/api/payments/{paymentId}/refund` | `ROLE_MERCHANT` (Full or partial pro-rata fee refund) |
-| **Funding** | `POST` | `/api/funding` | `ROLE_CUSTOMER` (Inbound top-up via PSP simulator) |
-| **Funding** | `GET` | `/api/funding` | `ROLE_CUSTOMER` (Owner-scoped paginated history) |
-| **Funding** | `GET` | `/api/funding/{fundingId}` | `ROLE_CUSTOMER` (Owner-scoped status and detail) |
-| **Payouts** | `POST` | `/api/payouts` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Pre-reserve hold withdrawal) |
-| **Payouts** | `GET` | `/api/payouts` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Owner-scoped paginated history) |
-| **Payouts** | `GET` | `/api/payouts/{payoutId}` | `ROLE_CUSTOMER`, `ROLE_MERCHANT` (Owner-scoped status and detail) |
-| **Webhooks** | `POST` | `/api/provider/webhooks` | Public (Verified via HMAC-SHA256 signature headers) |
-| **Reconciliation** | `GET` | `/api/reconciliation/runs` | `ROLE_OPS` (Paginated automated reconciliation runs) |
-| **Reconciliation** | `POST` | `/api/reconciliation/runs` | `ROLE_OPS` (Starts an on-demand reconciliation run) |
-| **Reconciliation** | `GET` | `/api/reconciliation/summary` | `ROLE_OPS` (Authoritative dashboard totals and latest run) |
-| **Reconciliation** | `GET` | `/api/reconciliation/runs/{runId}` | `ROLE_OPS` (Run details and summary metrics) |
-| **Reconciliation** | `GET` | `/api/reconciliation/runs/{runId}/items` | `ROLE_OPS` (Detected discrepancy items) |
-| **Reconciliation** | `GET` | `/api/reconciliation/cases` | `ROLE_OPS` (Operational review queue) |
-| **Reconciliation** | `GET` | `/api/reconciliation/cases/{caseId}` | `ROLE_OPS` (Case investigation detail) |
-| **Reconciliation** | `POST` | `/api/reconciliation/cases/{caseId}/claim` | `ROLE_OPS` (Atomic operator claim assignment) |
-| **Reconciliation** | `POST` | `/api/reconciliation/cases/{caseId}/repair-snapshot` | `ROLE_OPS` (Repairs case snapshot from posted journals) |
-| **Reconciliation** | `POST` | `/api/reconciliation/cases/{caseId}/resolve` | `ROLE_OPS` (Manual resolution with audit notes) |
+### API domains
+
+| Domain | Capabilities | Access |
+| --- | --- | --- |
+| Authentication | Register, login, rotate refresh tokens, logout and identity | Public auth routes; authenticated identity |
+| Wallets and transfers | Own wallet, customer peer transfers and participant history | Customer / Merchant, with operation-specific restrictions |
+| Payments and refunds | Merchant payments, role-scoped totals, details and refunds | Customers pay; authorized merchants refund |
+| Funding and payouts | Simulated provider operations and owner-scoped status | Customer funding; Customer / Merchant payouts |
+| Provider webhooks | Receive validated provider outcomes | HMAC-authenticated provider messages |
+| Reconciliation | Runs, discrepancy investigation and case-scoped repair | OPS only |
+
+The complete method/path inventory, request examples and error contracts are in [docs/API.md](docs/API.md). Swagger URLs above are local development access points, not a claim that public Swagger is exposed.
 
 ---
 
@@ -671,24 +610,16 @@ LedgerGuard is a portfolio and educational financial-infrastructure system. It o
 
 ## Current Project Status
 
-- **Current State:** Live portfolio deployment with complete Customer, Merchant, and OPS workspaces, including post-v1.1.0 system-account and Kafka startup fixes.
-- **Current Verification (2026-10-03):**
-  - Backend: 951 tests across 5 modules; 0 failures, errors or skips.
-  - Module totals: API 807, PSP simulator 18, notification worker 73, failure lab 34, E2E 19.
-  - Frontend: 99 passing tests, successful lint and production build.
-  - Combined baseline: 1,050 automated tests.
-  - Frontend tests emitted React act(...) warnings in merchant refund and withdrawal tests; these remain test-maintenance work.
-  - CI and CodeQL passed for commit `5ba057c2461617ec29b827552c100903b39f7149`.
-- **Historical v1.1.0 Release Baseline (2026-09-30):**
-  - Full release verification completed on 2026-09-30.
-  - Runtime and repository OpenAPI 3.1 specifications contain 31 operations.
-  - Authoritative backend baseline: 942 passing tests across 5 modules with no failures, errors, or skips.
-  - Authoritative frontend baseline: 99 passing tests, clean lint, and successful production build.
-  - Combined test suite: 1,041 automated tests total.
-  - GitHub Actions validates backend, frontend tests/lint/build, financial failure scenarios, production images, and CodeQL analysis for Java and TypeScript.
-- **Operational Status:** The portfolio application is live at [ledgerguard.duckdns.org](https://ledgerguard.duckdns.org) on an Oracle Cloud ARM virtual machine.
-  - Deployment smoke checks completed on 2026-10-03 for HTTPS, role-based login, simulated merchant payments, reconciliation and email notification delivery.
-  - Deployed API and notification-worker fix: `5ba057c2461617ec29b827552c100903b39f7149`, newer than the preserved `v1.1.0` release.
-  - Certificate renewal and daily database backups are configured. Backup restoration was tested in an isolated PostgreSQL container, and a verified backup copy was downloaded off-server.
-  - The deployment uses a single VM; ongoing monitoring and regular off-server backup copies remain operator responsibilities.
-  - All financial workflows are simulated. No real money is processed.
+| Item | Verified snapshot |
+| --- | --- |
+| Public demo | https://ledgerguard.duckdns.org; simulated money only |
+| Deployed API and notification worker | `5ba057c2461617ec29b827552c100903b39f7149` |
+| Latest E2E infrastructure fix | `4d911cc`: prevent Kafka topic provisioning startup race; no application redeployment required |
+| Verification | Full local clean backend verification passed on 2026-10-04; CI and CodeQL passed for `4d911cc` |
+| Test-count baseline | 2026-10-03: 951 backend + 99 frontend = 1,050 tests; detailed totals above |
+| Published release | `v1.1.0` remains the preserved 2026-09-30 release baseline |
+| Deployment checks | HTTPS, role-based login, simulated merchant payment, reconciliation and email delivery checked on 2026-10-03 |
+| Operational safeguards | Certificate renewal and daily backups configured; isolated restoration and one off-server backup copy verified |
+| Limitations | Single VM; ongoing monitoring and regular off-server copies remain operator responsibilities |
+
+Current repository verification and deployed application revisions are deliberately recorded separately. Historical release metrics are preserved in [docs/STATUS.md](docs/STATUS.md) and [docs/TESTING.md](docs/TESTING.md). Frontend refund/withdrawal test `act(...)` warnings remain maintenance work.

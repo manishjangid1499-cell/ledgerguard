@@ -22,160 +22,128 @@
 
 ## 2. Core Architectural Diagrams
 
-### 2.1 End-to-End System Topology
+### Runtime architecture
+
+The financial core is a **modular monolith**. The web server, PSP simulator and notification worker are separate deployables. The production Compose stack uses one PostgreSQL instance with three logical databases and a single Kafka broker; it is not a high-availability deployment.
 
 ```mermaid
 flowchart TD
-    subgraph Production_Runtime["Production / Deployable Runtime Topology"]
-        subgraph Client_Ingress["Client & Ingress Boundary"]
-            Browser["React SPA (ledgerguard-web)\n(TypeScript / Vite / Material UI)"]
-            Nginx["Nginx Reverse Proxy & Gateway (nginx-edge)\n(TLSv1.2/1.3, Rate Limiting, Static Cache)"]
-        end
-
-        subgraph Core_Monolith["Core Modular Monolith (ledgerguard-api:8080)"]
-            API_GW["REST Controllers & Security\n(Spring MVC / JWT / RBAC / RateLimitFilter)"]
-            Modules["Core Modules\nIdentity | Wallets & Holds | Transfers\nPayments & Refunds | Funding & Payouts\nTransactional Outbox | Reconciliation"]
-        end
-
-        subgraph Datastore_Spine["Persistence & Asynchronous Spine"]
-            Postgres[("Authoritative PostgreSQL 17\n- ledgerguard (Owner: ledgerguard_app)\n- psp_simulator (Owner: psp_simulator_app)\n- notification_worker (Owner: notification_worker_app)")]
-            Kafka{{"Apache Kafka 4.3.1 (KRaft)\n(Topic: ledgerguard.domain-events.v1)"}}
-        end
-
-        subgraph Async_Workers["Dedicated Background Services"]
-            NotifWorker["Notification Worker (notification-worker)\n(Idempotent Consumer Inbox)"]
-            PspSim["PSP Simulator (psp-simulator:8081)\n(External Banking Simulator / HMAC Webhooks)"]
-        end
-
-        subgraph Observability_Stack["Telemetry & Observability"]
-            Prometheus["Prometheus 3.2.1\n(Scrapes /actuator/prometheus @ 15s)"]
-            Grafana["Grafana 11.5.2\n(Dashboards: Financial Integrity & API Ops)"]
-        end
+    Browser["Browser: React application"]
+    Edge["Edge Nginx: TLS and routing"]
+    Web["Web container: SPA files"]
+    API["LedgerGuard API: financial core"]
+    PSP["PSP simulator"]
+    Kafka["Kafka: domain events"]
+    Worker["Notification worker"]
+    SMTP["Configured SMTP provider"]
+    subgraph PostgreSQL["One PostgreSQL instance; separate databases"]
+        LedgerDB[("ledgerguard")]
+        PSPDB[("psp_simulator")]
+        NotificationDB[("notification_worker")]
     end
-
-    subgraph Testing_Harness["Testing & Verification Harness (Non-Production)"]
-        FailureLab["Money Integrity Failure Lab (failure-lab:8083)\n(Chaos Scenarios & Financial Invariant Oracle)\n[Ephemeral Testcontainers PostgreSQL]"]
-    end
-
-    Browser -->|HTTPS :443| Nginx
-    Nginx -->|HTTP Reverse Proxy /api/*| API_GW
-    Nginx -->|Static Assets /| Browser
-    API_GW --> Modules
-    Modules -->|ACID DB Transactions| Postgres
-    Modules -->|Skip Locked Outbox Publisher| Kafka
-    Modules -->|Outbound REST (Resilience4j)| PspSim
-    PspSim -->|HMAC-SHA256 Webhook /api/provider/webhooks| API_GW
-    Kafka -->|Async Events| NotifWorker
-    NotifWorker -->|Inbox Deduplication| Postgres
-    Prometheus -->|Scrape| API_GW
-    Grafana -->|Query Datasource| Prometheus
-    FailureLab -.->|Independent Adversarial Verification| Postgres
+    Browser -->|HTTPS requests| Edge
+    Edge -->|SPA and assets| Web
+    Edge -->|API requests| API
+    API -->|Financial transactions and outbox| LedgerDB
+    API -->|Provider HTTP calls| PSP
+    PSP -->|Signed webhooks| API
+    PSP -->|Provider records| PSPDB
+    API -->|Outbox publication| Kafka
+    Kafka -->|Domain events| Worker
+    Worker -->|Inbox and delivery records| NotificationDB
+    Worker -->|Email dispatch when enabled| SMTP
 ```
 
-### 2.2 Financial Atomic Posting Flow
+Prometheus scrapes the API over the internal network; Grafana queries Prometheus. Their host ports bind to loopback by default. The Failure Lab runs separately against ephemeral test targets, not the live deployment database. The component inventory below describes these boundaries in more detail.
+
+### Atomic transfer and payment posting
+
+This sequence describes synchronous internal transfers and merchant payments. External funding and payouts use separate submission and settlement transactions around provider calls.
 
 ```mermaid
 sequenceDiagram
-    autonumber
-    actor Client as Client (Customer / Merchant)
-    participant API as Financial Service (Transfer / Payment)
-    participant Idemp as Idempotency Table
-    participant Lock as Account Row Locks
-    participant Ledger as Journal & Entries Table
-    participant TrgBal as Trigger: trg_fn_enforce_journal_transaction_balance
-    participant TrgSnap as Trigger: trg_fn_update_balance_snapshots_on_posting
-    participant Outbox as Outbox Events Table
-    participant DB as PostgreSQL Transaction Boundary
-    participant Kafka as Apache Kafka
-    participant Worker as Notification Worker
-
-    Client->>API: Financial Request (Payload + Idempotency-Key)
-    activate API
-    API->>Idemp: Check fingerprint / acquire atomic lock
-    alt Idempotency conflict / in-progress
-        API-->>Client: 409 Conflict / cached idempotent replay
-    end
-
-    rect rgb(240, 245, 255)
-        note over Lock,DB: Single ACID Database Transaction Boundary (@Transactional)
-        API->>Lock: Deterministic Row Locks (SELECT ... FOR UPDATE ORDER BY ledger_account_id ASC)
-        note over Lock: Serializes concurrent access to affected rows;<br/>prevents lost updates and concurrent overspending;<br/>deterministic lock ordering reduces deadlock risk.
-        API->>Ledger: INSERT journal_transactions (status: DRAFT)
-        API->>Ledger: INSERT journal_entries (DEBITS and CREDITS)
-        note over Ledger: Immutable journal is authoritative source of truth.<br/>Enforces sum(DEBITS) == sum(CREDITS).
-        API->>Ledger: UPDATE journal_transactions SET status = 'POSTED'
-        activate TrgBal
-        TrgBal-->>Ledger: Enforce >=2 legs, 1 debit, 1 credit, zero-sum balance
-        deactivate TrgBal
-        activate TrgSnap
-        TrgSnap-->>Ledger: Synchronously update derived balance snapshot table under normal-balance rules
-        deactivate TrgSnap
-        API->>Outbox: INSERT outbox_events (status: PENDING, with W3C traceparent)
-        API->>DB: COMMIT TRANSACTION
-    end
-
-    API-->>Client: HTTP success / idempotent replay response after commit
-    deactivate API
-
-    rect rgb(255, 250, 240)
-        note over Outbox,Worker: Asynchronous Event Dispatch (Post-Commit Background Poller)
-        Outbox->>Kafka: Poller scans outbox (FOR UPDATE SKIP LOCKED) & publishes to Kafka topic
-        Kafka->>Worker: Consume domain event with idempotent inbox deduplication
+    actor Client
+    participant API as Financial service
+    participant DB as PostgreSQL
+    Client->>API: Request with Idempotency-Key
+    API->>DB: Begin transaction and claim actor-scoped key
+    alt Completed key with matching fingerprint
+        DB-->>API: Existing result reference
+        API-->>Client: Successful replay without a new posting
+    else Conflicting fingerprint or in-progress record
+        API-->>Client: 409 Conflict without a new posting
+    else New request
+        API->>DB: Lock affected snapshots in stable order
+        API->>DB: Validate ownership, status and available funds
+        API->>DB: Create DRAFT journal and debit/credit entries
+        API->>DB: Post journal
+        Note over DB: Triggers validate balance and update snapshots
+        API->>DB: Save business result, outbox event and completed key
+        API->>DB: Commit
+        DB-->>API: Commit succeeds
+        API-->>Client: Successful result
     end
 ```
 
-### 2.3 External PSP State Machine & Ambiguous Outcome Recovery (`UNKNOWN != FAILED`)
+Any validation or posting failure rolls back the new financial transaction. The journal, derived snapshot update, business record and outbox event commit together. Kafka and email delivery are outside this financial commit.
+
+### From committed event to email
+
+```mermaid
+sequenceDiagram
+    participant Publisher as API outbox publisher
+    participant DB as PostgreSQL databases
+    participant Kafka
+    participant Worker as Notification worker
+    participant SMTP as SMTP provider
+    Publisher->>DB: Claim PENDING outbox rows with SKIP LOCKED
+    Publisher->>Kafka: Publish event keyed by aggregate ID
+    Kafka-->>Publisher: Broker acknowledgment
+    Publisher->>DB: Mark PUBLISHED and commit publisher transaction
+    Kafka->>Worker: Deliver domain event
+    Worker->>DB: Atomically claim event ID and create delivery records
+    DB-->>Worker: Notification transaction committed
+    Worker-->>Kafka: Commit consumed offset after processing
+    Worker->>DB: Dispatcher claims eligible delivery
+    Worker->>SMTP: Send email when enabled
+    SMTP-->>Worker: Accepted or error
+    Worker->>DB: Record delivery result or schedule retry
+```
+
+The ledger and notification records live in different databases; the shared PostgreSQL participant above is shorthand, not a cross-database transaction. A crash after Kafka acknowledgment but before the publisher database commit can cause an event to be published again. The worker deduplicates event IDs and creates delivery records in one local transaction.
+
+**`PUBLISHED` means Kafka publication, not email delivery.** SMTP acceptance also does not prove arrival in a recipient's inbox. Email delivery uses its own dispatcher, retries and status records; inbox deduplication does not guarantee exactly-once SMTP delivery. The worker provisions the dead-letter topic for events that exhaust listener recovery. Local development uses Mailpit; public email requires a configured SMTP provider.
+
+### Provider outcomes and recovery
+
+The diagram shows the principal recovery paths using actual persisted operation statuses. Validated webhooks and polling can settle in-flight operations; reconciliation case resolution itself does not settle money.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> CREATED: Initialize Operation Record
-
-    state Operation_Semantics {
-        [*] --> Note_Semantics
-        note right of Note_Semantics
-            Payout: Pre-reserves balance hold (ACTIVE) from available balance.
-            Funding: Inbound top-up; no wallet reservation; credited only upon SUCCEEDED.
-        end note
-    }
-
-    CREATED --> PROCESSING: Atomic Submission Claim (Pessimistic Lock)
-    CREATED --> FAILED: Pre-submission Local Validation Rejection (Payout Hold Released)
-
-    state PROCESSING {
-        [*] --> Dispatched
-        Dispatched --> Definite_Success: Provider HTTP 200 (SUCCESS)
-        Dispatched --> Definite_Failure: Provider HTTP 4xx / Terminal Rejection
-        Dispatched --> Ambiguous_Outcome: Network Timeout / 5xx / Connection Drop
-    }
-
-    Definite_Success --> SUCCEEDED: Authoritative Settlement (Payout: Hold Consumed; Funding: Wallet Credited)
-    Definite_Failure --> FAILED: Authoritative Failure (Payout: Hold Released; Funding: No Credit)
-
-    Ambiguous_Outcome --> UNKNOWN: Ambiguity Dominance Rule
-    note right of UNKNOWN
-        UNKNOWN != FAILED
-        Payout balance hold remains ACTIVE.
-        Funding wallet is NOT credited prematurely.
-        Funds are strictly protected pending resolution.
-    end note
-
-    UNKNOWN --> SUCCEEDED: Background Poller receives Provider Success
-    UNKNOWN --> FAILED: Background Poller receives Provider Terminal Failure
-    UNKNOWN --> RECONCILIATION_REQUIRED: Polling attempts exhausted (configured threshold reached)
-
-    state RECONCILIATION_REQUIRED {
-        [*] --> Flagged_For_Investigation
-        Flagged_For_Investigation --> Level3_Detection: Level 3 Recon Scan (Detection Only)
-        Level3_Detection --> Case_Opened: Logs discrepancy item & triggers ops case (No balance mutation)
-        Case_Opened --> Ops_Audit: Operator audits bank records & notes resolution in case
-    }
-
-    RECONCILIATION_REQUIRED --> SUCCEEDED: Late Webhook Confirms Success (Settles Journal & Consumes Hold)
-    RECONCILIATION_REQUIRED --> FAILED: Late Webhook Confirms Failure (Releases Hold)
-
+    [*] --> CREATED
+    CREATED --> PROCESSING: Claim provider submission
+    CREATED --> FAILED: Definite local failure before submission
+    PROCESSING --> SUCCEEDED: Verified provider success and local settlement
+    PROCESSING --> FAILED: Definite provider failure
+    PROCESSING --> UNKNOWN: Timeout or ambiguous response
+    PROCESSING --> RECONCILIATION_REQUIRED: Recovery exhausted or identity conflict
+    UNKNOWN --> SUCCEEDED: Verified success through recovery
+    UNKNOWN --> FAILED: Verified failure through recovery
+    UNKNOWN --> RECONCILIATION_REQUIRED: Recovery exhausted or identity conflict
+    RECONCILIATION_REQUIRED --> SUCCEEDED: Validated late success webhook
+    RECONCILIATION_REQUIRED --> FAILED: Validated late failure webhook
     SUCCEEDED --> [*]
     FAILED --> [*]
 ```
+
+| Outcome | Funding | Payout |
+| --- | --- | --- |
+| Created or processing | No wallet credit until verified success | Funds reserved by an active hold |
+| Unknown or reconciliation required | No premature wallet credit | Hold remains active |
+| Succeeded | Balanced journal credits the customer | Balanced journal debits the wallet; hold is consumed |
+| Failed | No success credit is posted | Hold is released, or was already expired before submission |
+
+HTTP status alone is not sufficient evidence of provider settlement. Responses must satisfy the implemented identity, amount, currency and outcome validation. See [failure and recovery behavior](FAILURE_MODEL.md).
 
 ---
 
