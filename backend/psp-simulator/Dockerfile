@@ -1,5 +1,5 @@
 # Stage 1: Build stage
-FROM eclipse-temurin:21-jdk-jammy AS builder
+FROM eclipse-temurin:22-jdk-jammy AS builder
 WORKDIR /workspace
 
 COPY .mvn/ .mvn/
@@ -20,7 +20,7 @@ RUN sed -i 's/\r$//' mvnw && chmod +x mvnw && \
     cp "$FOUND" /workspace/app.jar
 
 # Stage 2: Runtime stage
-FROM eclipse-temurin:21-jre-jammy AS runtime
+FROM eclipse-temurin:22-jre-jammy AS runtime
 WORKDIR /app
 
 RUN groupadd --system --gid 1001 ledgerguard && \
