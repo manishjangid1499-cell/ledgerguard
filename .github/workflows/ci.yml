@@ -38,6 +38,9 @@ jobs:
       - name: Grant execute permission for Maven wrapper
         run: chmod +x mvnw
 
+      - name: Build and install bundled Feature Flag Java SDK
+        run: ./mvnw -B -ntp -f vendor/feature-flag-java-sdk/pom.xml clean install
+
       - name: Build and verify backend reactor
         run: ./mvnw -B -ntp clean verify
 
@@ -95,6 +98,9 @@ jobs:
 
       - name: Grant execute permission for Maven wrapper
         run: chmod +x mvnw
+
+      - name: Build and install bundled Feature Flag Java SDK
+        run: ./mvnw -B -ntp -f vendor/feature-flag-java-sdk/pom.xml clean install
 
       - name: Prepare LedgerGuard API dependency
         run: ./mvnw -B -ntp -pl backend/ledgerguard-api -am install -DskipTests
