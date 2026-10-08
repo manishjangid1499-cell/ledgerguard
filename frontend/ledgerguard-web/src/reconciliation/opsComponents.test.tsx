@@ -1,9 +1,11 @@
+import '@testing-library/jest-dom/vitest';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '../test/test-utils';
 import { UserSummary } from '../shared/types/user.types';
 import { AppLayout } from '../shared/layout/AppLayout';
+import { ThemeContext } from '../app/providers/themeContext';
 import { ResolveCaseDialog } from './components/ResolveCaseDialog';
 import { SnapshotRepairDialog } from './components/SnapshotRepairDialog';
 import { CasesView } from './components/CasesView';
@@ -64,10 +66,21 @@ describe('Operations Workspace & Reconciliation UI', () => {
     it('excludes Failure Lab from navigation in production mode', () => {
       vi.spyOn(environmentModule, 'isFailureLabEnabled').mockReturnValue(false);
 
-      renderWithProviders(<AppLayout />, {
-        user: mockOpsUser,
-        initialEntries: ['/app'],
-      });
+      renderWithProviders(
+          <ThemeContext.Provider
+              value={{
+                darkModeAvailable: false,
+                isDarkMode: false,
+                toggleTheme: vi.fn(),
+              }}
+          >
+            <AppLayout />
+          </ThemeContext.Provider>,
+          {
+            user: mockOpsUser,
+            initialEntries: ['/app'],
+          },
+      );
 
       // Production OPS navigation links must include Dashboard, Reconciliation, Profile
       const reconLinks = screen.getAllByRole('link', { name: /reconciliation/i });
@@ -84,10 +97,21 @@ describe('Operations Workspace & Reconciliation UI', () => {
     it('includes Failure Lab in navigation when explicitly enabled in development or testbeds', () => {
       vi.spyOn(environmentModule, 'isFailureLabEnabled').mockReturnValue(true);
 
-      renderWithProviders(<AppLayout />, {
-        user: mockOpsUser,
-        initialEntries: ['/app'],
-      });
+      renderWithProviders(
+          <ThemeContext.Provider
+              value={{
+                darkModeAvailable: false,
+                isDarkMode: false,
+                toggleTheme: vi.fn(),
+              }}
+          >
+            <AppLayout />
+          </ThemeContext.Provider>,
+          {
+            user: mockOpsUser,
+            initialEntries: ['/app'],
+          },
+      );
 
       const failureLabLinks = screen.getAllByRole('link', { name: /failure lab/i });
       expect(failureLabLinks.length).toBeGreaterThan(0);
@@ -143,8 +167,8 @@ describe('Operations Workspace & Reconciliation UI', () => {
       const onClose = vi.fn();
 
       renderWithProviders(
-        <ResolveCaseDialog caseItem={sampleCase} open={true} onClose={onClose} />,
-        { user: mockOpsUser }
+          <ResolveCaseDialog caseItem={sampleCase} open={true} onClose={onClose} />,
+          { user: mockOpsUser }
       );
 
       const submitButton = screen.getByRole('button', { name: /confirm resolution/i });
@@ -160,8 +184,8 @@ describe('Operations Workspace & Reconciliation UI', () => {
       const onClose = vi.fn();
 
       renderWithProviders(
-        <ResolveCaseDialog caseItem={sampleCase} open={true} onClose={onClose} />,
-        { user: mockOpsUser }
+          <ResolveCaseDialog caseItem={sampleCase} open={true} onClose={onClose} />,
+          { user: mockOpsUser }
       );
 
       const noteInput = screen.getByLabelText(/resolution note/i);
@@ -183,8 +207,8 @@ describe('Operations Workspace & Reconciliation UI', () => {
       });
 
       renderWithProviders(
-        <ResolveCaseDialog caseItem={sampleCase} open={true} onClose={onClose} />,
-        { user: mockOpsUser }
+          <ResolveCaseDialog caseItem={sampleCase} open={true} onClose={onClose} />,
+          { user: mockOpsUser }
       );
 
       const noteInput = screen.getByLabelText(/resolution note/i);
@@ -196,10 +220,10 @@ describe('Operations Workspace & Reconciliation UI', () => {
 
       await waitFor(() => {
         expect(resolveSpy).toHaveBeenCalledWith(
-          sampleCase.id,
-          expect.objectContaining({
-            resolutionNote: 'Root cause identified as ledger cache timing issue. Verified journal.',
-          })
+            sampleCase.id,
+            expect.objectContaining({
+              resolutionNote: 'Root cause identified as ledger cache timing issue. Verified journal.',
+            })
         );
         expect(onClose).toHaveBeenCalled();
       }, { timeout: 15000 });
@@ -211,8 +235,8 @@ describe('Operations Workspace & Reconciliation UI', () => {
       const onClose = vi.fn();
 
       renderWithProviders(
-        <SnapshotRepairDialog caseItem={sampleCase} open={true} onClose={onClose} />,
-        { user: mockOpsUser }
+          <SnapshotRepairDialog caseItem={sampleCase} open={true} onClose={onClose} />,
+          { user: mockOpsUser }
       );
 
       // Verifies clear explanation of re-synchronization to immutable journal entries
@@ -232,6 +256,11 @@ describe('Operations Workspace & Reconciliation UI', () => {
       const onClose = vi.fn();
       vi.spyOn(reconciliationApi, 'repairSnapshot').mockResolvedValue({
         caseId: sampleCase.id,
+        ledgerAccountId: 'acc-999-wallet-balance',
+        previousBalanceMinor: '40000',
+        repairedBalanceMinor: '50000',
+        resolutionAction: 'SNAPSHOT_REPAIRED',
+        snapshotUpdatedAt: '2026-09-27T10:00:00Z',
         accountId: 'acc-999-wallet-balance',
         repaired: true,
         oldBalanceMinor: 40000,
@@ -241,8 +270,8 @@ describe('Operations Workspace & Reconciliation UI', () => {
       });
 
       renderWithProviders(
-        <SnapshotRepairDialog caseItem={sampleCase} open={true} onClose={onClose} />,
-        { user: mockOpsUser }
+          <SnapshotRepairDialog caseItem={sampleCase} open={true} onClose={onClose} />,
+          { user: mockOpsUser }
       );
 
       const executeButton = screen.getByRole('button', { name: /execute repair/i });
@@ -311,7 +340,7 @@ describe('Operations Workspace & Reconciliation UI', () => {
         assignedToUserId: null,
         item: {
           ...sampleCase.item,
-          problemType: 'JOURNAL_DEBIT_CREDIT_IMBALANCE',
+          problemType: 'UNBALANCED_JOURNAL',
         },
       };
 
@@ -375,12 +404,12 @@ describe('Operations Workspace & Reconciliation UI', () => {
     it('disables start button and renders uncertainty alert on client timeout or network failure', async () => {
       const user = userEvent.setup();
       vi.spyOn(reconciliationApi, 'triggerRun').mockRejectedValue(
-        new Error('Network request timed out after 30000ms')
+          new Error('Network request timed out after 30000ms')
       );
 
       renderWithProviders(
-        <RunTriggerDialog open={true} onClose={vi.fn()} />,
-        { user: mockOpsUser }
+          <RunTriggerDialog open={true} onClose={vi.fn()} />,
+          { user: mockOpsUser }
       );
 
       const startButton = screen.getByRole('button', { name: /start reconciliation/i });
@@ -390,7 +419,7 @@ describe('Operations Workspace & Reconciliation UI', () => {
 
       await waitFor(() => {
         expect(
-          screen.getByText(/Request timed out or encountered network uncertainty/i)
+            screen.getByText(/Request timed out or encountered network uncertainty/i)
         ).toBeInTheDocument();
         // Button must be disabled to prevent repeated submission
         expect(startButton).toBeDisabled();
@@ -401,12 +430,12 @@ describe('Operations Workspace & Reconciliation UI', () => {
       const user = userEvent.setup();
       const onClose = vi.fn();
       vi.spyOn(reconciliationApi, 'triggerRun').mockRejectedValue(
-        new Error('Network request timed out after 30000ms')
+          new Error('Network request timed out after 30000ms')
       );
 
       renderWithProviders(
-        <RunTriggerDialog open={true} onClose={onClose} />,
-        { user: mockOpsUser }
+          <RunTriggerDialog open={true} onClose={onClose} />,
+          { user: mockOpsUser }
       );
 
       const startButton = screen.getByRole('button', { name: /start reconciliation/i });
@@ -425,6 +454,7 @@ describe('Operations Workspace & Reconciliation UI', () => {
         openCases: 0,
         inReviewCases: 0,
         resolvedCases: 0,
+        totalCases: 0,
         totalRuns: 1,
         latestRun: {
           id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
@@ -437,6 +467,7 @@ describe('Operations Workspace & Reconciliation UI', () => {
           journalsChecked: 50,
           accountsChecked: 10,
           operationsChecked: 4,
+          failureReason: null,
         },
       });
 
@@ -445,7 +476,7 @@ describe('Operations Workspace & Reconciliation UI', () => {
       await waitFor(() => {
         expect(getSummarySpy).toHaveBeenCalled();
         expect(
-          screen.getByText(/Latest run a1b2c3d4... is COMPLETED. Server confirms no active run in progress./i)
+            screen.getByText(/Latest run a1b2c3d4... is COMPLETED. Server confirms no active run in progress./i)
         ).toBeInTheDocument();
         expect(screen.getByText('Discovered Server Run')).toBeInTheDocument();
         expect(screen.getByText('a1b2c3d4...')).toBeInTheDocument();
@@ -462,12 +493,12 @@ describe('Operations Workspace & Reconciliation UI', () => {
     it('retains Start button disabled when authoritative status check reveals a run is still RUNNING', async () => {
       const user = userEvent.setup();
       vi.spyOn(reconciliationApi, 'triggerRun').mockRejectedValue(
-        new Error('Network request timed out after 30000ms')
+          new Error('Network request timed out after 30000ms')
       );
 
       renderWithProviders(
-        <RunTriggerDialog open={true} onClose={vi.fn()} />,
-        { user: mockOpsUser }
+          <RunTriggerDialog open={true} onClose={vi.fn()} />,
+          { user: mockOpsUser }
       );
 
       const startButton = screen.getByRole('button', { name: /start reconciliation/i });
@@ -481,6 +512,7 @@ describe('Operations Workspace & Reconciliation UI', () => {
         openCases: 1,
         inReviewCases: 0,
         resolvedCases: 0,
+        totalCases: 1,
         totalRuns: 1,
         latestRun: {
           id: 'b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e',
@@ -493,6 +525,7 @@ describe('Operations Workspace & Reconciliation UI', () => {
           journalsChecked: 10,
           accountsChecked: 2,
           operationsChecked: 0,
+          failureReason: null,
         },
       });
 
@@ -501,7 +534,7 @@ describe('Operations Workspace & Reconciliation UI', () => {
 
       await waitFor(() => {
         expect(
-          screen.getByText(/Run b2c3d4e5... is currently RUNNING on the server. Please wait for completion./i)
+            screen.getByText(/Run b2c3d4e5... is currently RUNNING on the server. Please wait for completion./i)
         ).toBeInTheDocument();
         // Crucial safety check: Start button must remain disabled while run is active!
         expect(startButton).toBeDisabled();
@@ -512,12 +545,12 @@ describe('Operations Workspace & Reconciliation UI', () => {
       const user = userEvent.setup();
       const onClose = vi.fn();
       vi.spyOn(reconciliationApi, 'triggerRun').mockRejectedValue(
-        new Error('Another reconciliation run is already in progress')
+          new Error('Another reconciliation run is already in progress')
       );
 
       renderWithProviders(
-        <RunTriggerDialog open={true} onClose={onClose} />,
-        { user: mockOpsUser }
+          <RunTriggerDialog open={true} onClose={onClose} />,
+          { user: mockOpsUser }
       );
 
       const startButton = screen.getByRole('button', { name: /start reconciliation/i });
@@ -525,7 +558,7 @@ describe('Operations Workspace & Reconciliation UI', () => {
 
       await waitFor(() => {
         expect(
-          screen.getByText('Another reconciliation run is already in progress')
+            screen.getByText('Another reconciliation run is already in progress')
         ).toBeInTheDocument();
         // Since this is not a timeout/uncertainty error, no "Refresh run status" button is shown
         expect(screen.queryByRole('button', { name: /refresh run status/i })).not.toBeInTheDocument();
@@ -560,6 +593,7 @@ describe('Operations Workspace & Reconciliation UI', () => {
           openCases: 3,
           inReviewCases: 1,
           resolvedCases: 4,
+          totalCases: 8,
           totalRuns: 2,
           latestRun: null,
         });
@@ -586,6 +620,7 @@ describe('Operations Workspace & Reconciliation UI', () => {
         openCases: 0,
         inReviewCases: 0,
         resolvedCases: 0,
+        totalCases: 0,
         totalRuns: 0,
         latestRun: null,
       });
@@ -595,7 +630,7 @@ describe('Operations Workspace & Reconciliation UI', () => {
       await waitFor(() => {
         expect(screen.getByText('Operations Command Center')).toBeInTheDocument();
         expect(
-          screen.getByText('No reconciliation runs recorded. Trigger a run to verify ledger invariants.')
+            screen.getByText('No reconciliation runs recorded. Trigger a run to verify ledger invariants.')
         ).toBeInTheDocument();
         const zeroElements = screen.getAllByText('0');
         expect(zeroElements.length).toBeGreaterThanOrEqual(4);
@@ -608,6 +643,7 @@ describe('Operations Workspace & Reconciliation UI', () => {
         openCases: 2,
         inReviewCases: 1,
         resolvedCases: 10,
+        totalCases: 13,
         totalRuns: 5,
         latestRun: {
           id: '12345678-abcd-ef01-2345-6789abcdef01',
@@ -620,6 +656,7 @@ describe('Operations Workspace & Reconciliation UI', () => {
           journalsChecked: 120,
           accountsChecked: 45,
           operationsChecked: 15,
+          failureReason: null,
         },
       });
 
@@ -645,6 +682,7 @@ describe('Operations Workspace & Reconciliation UI', () => {
         openCases: 5,
         inReviewCases: 2,
         resolvedCases: 15,
+        totalCases: 22,
         totalRuns: 8,
         latestRun: null,
       });
@@ -759,9 +797,9 @@ describe('Operations Workspace & Reconciliation UI', () => {
 
     it('sanitizes operator-facing error descriptions', () => {
       expect(
-        sanitizeOperatorDescription(
-          'com.ledgerguard.reconciliation.domain.ReconciliationConflictException: Balance drift detected\n\tat com.ledgerguard.Engine.reconcile'
-        )
+          sanitizeOperatorDescription(
+              'com.ledgerguard.reconciliation.domain.ReconciliationConflictException: Balance drift detected\n\tat com.ledgerguard.Engine.reconcile'
+          )
       ).toBe('Balance drift detected');
 
       expect(sanitizeOperatorDescription('Standard safe description')).toBe('Standard safe description');

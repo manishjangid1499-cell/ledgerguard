@@ -17,7 +17,7 @@ import { transferApi } from '../../transfer/api/transferApi';
 import { financialApi } from '../api';
 import { Payment, PaymentDetail } from '../types';
 import { TransferDetail, TransferSummary } from '../../transfer/types/transfer.types';
-import { Wallet } from '../../wallet/types';
+import type { WalletResponse } from '../../wallet/types/wallet.types';
 import { UserSummary } from '../../shared/types/user.types';
 import { ApiError } from '../../shared/types/api.types';
 
@@ -39,14 +39,14 @@ const mockMerchantUser: UserSummary = {
   fullName: 'Acme Merchant',
 };
 
-const mockWallet: Wallet = {
+const mockWallet: WalletResponse = {
   ledgerAccountId: '00000000-0000-0000-0000-000000000003',
+  accountType: 'CUSTOMER',
   currency: 'INR',
-  balanceMinor: '50000',
-  availableBalanceMinor: '45000',
-  activeHoldAmountMinor: '5000',
-  updatedAt: '2026-09-24T00:00:00Z',
   status: 'ACTIVE',
+  balanceMinor: '50000',
+  activeHoldAmountMinor: '5000',
+  availableBalanceMinor: '45000',
 };
 
 const mockTransfers: TransferSummary[] = [
@@ -57,6 +57,7 @@ const mockTransfers: TransferSummary[] = [
     amountMinor: '2500',
     currency: 'INR',
     direction: 'OUTGOING',
+    journalTransactionId: '33333333-3333-3333-3333-333333333333',
     createdAt: '2026-09-24T12:00:00Z',
   },
   {
@@ -66,6 +67,7 @@ const mockTransfers: TransferSummary[] = [
     amountMinor: '5000',
     currency: 'INR',
     direction: 'INCOMING',
+    journalTransactionId: '66666666-6666-6666-6666-666666666666',
     createdAt: '2026-09-24T11:00:00Z',
   },
 ];
@@ -136,8 +138,8 @@ describe('Customer Experience Frontend Components', () => {
     it('displays API error alert and provides a working Retry action', async () => {
       const user = userEvent.setup();
       const getWalletSpy = vi.spyOn(walletApi, 'getMyWallet')
-        .mockRejectedValueOnce(new Error('Failed to load wallet'))
-        .mockResolvedValueOnce(mockWallet);
+          .mockRejectedValueOnce(new Error('Failed to load wallet'))
+          .mockResolvedValueOnce(mockWallet);
 
       renderWithProviders(<CustomerDashboard />, { user: mockCustomerUser });
 
@@ -149,7 +151,7 @@ describe('Customer Experience Frontend Components', () => {
 
       await waitFor(() => {
         expect(getWalletSpy).toHaveBeenCalledTimes(2);
-        expect(screen.getByText('₹450.00')).toBeInTheDocument();
+        expect(screen.getByText('\u20b9450.00')).toBeInTheDocument();
       });
     });
 
@@ -157,9 +159,9 @@ describe('Customer Experience Frontend Components', () => {
       renderWithProviders(<CustomerDashboard />, { user: mockCustomerUser });
 
       await waitFor(() => {
-        expect(screen.getByText('₹450.00')).toBeInTheDocument();
-        expect(screen.getByText('₹50.00')).toBeInTheDocument();
-        expect(screen.getByText('₹500.00')).toBeInTheDocument();
+        expect(screen.getByText('\u20b9450.00')).toBeInTheDocument();
+        expect(screen.getByText('\u20b950.00')).toBeInTheDocument();
+        expect(screen.getByText('\u20b9500.00')).toBeInTheDocument();
       });
 
       expect(screen.getByText(mockWallet.ledgerAccountId)).toBeInTheDocument();
@@ -187,13 +189,13 @@ describe('Customer Experience Frontend Components', () => {
     it('disables quick actions and warns when wallet status is not ACTIVE', async () => {
       vi.spyOn(walletApi, 'getMyWallet').mockResolvedValue({
         ...mockWallet,
-        status: 'SUSPENDED',
+        status: 'FROZEN',
       });
 
       renderWithProviders(<CustomerDashboard />, { user: mockCustomerUser });
 
       await waitFor(() => {
-        expect(screen.getByText(/Your wallet status is SUSPENDED. Financial actions/i)).toBeInTheDocument();
+        expect(screen.getByText(/Your wallet status is FROZEN. Financial actions/i)).toBeInTheDocument();
       });
 
       expect(screen.queryByRole('link', { name: /add money/i })).not.toBeInTheDocument();
@@ -267,9 +269,9 @@ describe('Customer Experience Frontend Components', () => {
 
       await waitFor(() => {
         expect(
-          screen.getByText(
-            'Move money from your wallet balance through LedgerGuard’s simulated payout provider. The requested amount remains on hold until the provider confirms the result.'
-          )
+            screen.getByText(
+                'Move money from your wallet balance through LedgerGuard\u2019s simulated payout provider. The requested amount remains on hold until the provider confirms the result.'
+            )
         ).toBeInTheDocument();
       });
 
@@ -283,9 +285,9 @@ describe('Customer Experience Frontend Components', () => {
 
       await waitFor(() => {
         expect(
-          screen.getByText(
-            'Move money from your merchant balance through LedgerGuard’s simulated payout provider. The requested amount remains on hold until the provider confirms the result.'
-          )
+            screen.getByText(
+                'Move money from your merchant balance through LedgerGuard\u2019s simulated payout provider. The requested amount remains on hold until the provider confirms the result.'
+            )
         ).toBeInTheDocument();
       });
 
@@ -306,9 +308,9 @@ describe('Customer Experience Frontend Components', () => {
       const initiateButton = screen.getByRole('button', { name: /withdraw funds/i });
       await user.click(initiateButton);
 
-      expect(await screen.findByText('Withdraw ₹100.00?')).toBeInTheDocument();
+      expect(await screen.findByText('Withdraw \u20b9100.00?')).toBeInTheDocument();
       expect(
-        screen.getByText('This amount will be reserved while the simulated payout provider processes the request.')
+          screen.getByText('This amount will be reserved while the simulated payout provider processes the request.')
       ).toBeInTheDocument();
 
       const cancelButton = screen.getByRole('button', { name: /cancel/i });
@@ -320,13 +322,13 @@ describe('Customer Experience Frontend Components', () => {
     it('disables withdrawals when wallet status is not ACTIVE', async () => {
       vi.spyOn(walletApi, 'getMyWallet').mockResolvedValue({
         ...mockWallet,
-        status: 'SUSPENDED',
+        status: 'FROZEN',
       });
 
       renderWithProviders(<WithdrawalSection />, { user: mockCustomerUser });
 
       await waitFor(() => {
-        expect(screen.getByText(/Your wallet status is SUSPENDED. Withdrawals are unavailable/i)).toBeInTheDocument();
+        expect(screen.getByText(/Your wallet status is FROZEN. Withdrawals are unavailable/i)).toBeInTheDocument();
       });
 
       const submitButton = screen.getByRole('button', { name: /withdraw funds/i });
@@ -336,7 +338,7 @@ describe('Customer Experience Frontend Components', () => {
     it('presents uncertain outcome guidance when withdrawal results in network error', async () => {
       const user = userEvent.setup();
       vi.spyOn(financialApi, 'withdraw').mockRejectedValue(
-        new ApiError({ status: 0, title: 'Network Error', detail: 'Connection timeout' })
+          new ApiError({ status: 0, title: 'Network Error', detail: 'Connection timeout' })
       );
 
       renderWithProviders(<WithdrawalSection />, { user: mockCustomerUser });
@@ -348,27 +350,26 @@ describe('Customer Experience Frontend Components', () => {
       await user.click(await screen.findByRole('button', { name: /confirm withdrawal/i }));
 
       expect(
-        await screen.findByText(/The withdrawal outcome could not be confirmed. Check your Activity or refresh your wallet before retrying./i)
+          await screen.findByText(/The withdrawal outcome could not be confirmed. Check your Activity or refresh your wallet before retrying./i)
       ).toBeInTheDocument();
     });
 
     it('reuses the exact same idempotency key when retrying after an uncertain response', async () => {
       const user = userEvent.setup();
       const withdrawSpy = vi.spyOn(financialApi, 'withdraw')
-        .mockRejectedValueOnce(new ApiError({ status: 0, title: 'Network Error', detail: 'Connection timeout' }))
-        .mockResolvedValueOnce({
-          payoutId: '77777777-7777-7777-7777-777777777777',
-          ledgerAccountId: mockWallet.ledgerAccountId,
-          amountMinor: '5000',
-          currency: 'INR',
-          status: 'PENDING',
-          holdJournalTransactionId: '88888888-8888-8888-8888-888888888888',
-          providerOperationId: 'provider-payout-1',
-          createdAt: '2026-09-24T12:00:00Z',
-          completedAt: null,
-          failureReason: null,
-          replayed: false,
-        });
+          .mockRejectedValueOnce(new ApiError({ status: 0, title: 'Network Error', detail: 'Connection timeout' }))
+          .mockResolvedValueOnce({
+            payoutId: '77777777-7777-7777-7777-777777777777',
+            amountMinor: '5000',
+            currency: 'INR',
+            status: 'PROCESSING',
+            balanceHoldId: '88888888-8888-8888-8888-888888888888',
+            providerOperationId: 'provider-payout-1',
+            createdAt: '2026-09-24T12:00:00Z',
+            completedAt: null,
+            journalTransactionId: null,
+            replayed: false,
+          });
 
       renderWithProviders(<WithdrawalSection />, { user: mockCustomerUser });
 
@@ -381,7 +382,7 @@ describe('Customer Experience Frontend Components', () => {
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 
       expect(
-        await screen.findByText(/The withdrawal outcome could not be confirmed/i)
+          await screen.findByText(/The withdrawal outcome could not be confirmed/i)
       ).toBeInTheDocument();
 
       await user.click(screen.getByRole('button', { name: /withdraw funds/i }));
@@ -434,7 +435,7 @@ describe('Customer Experience Frontend Components', () => {
       const sendButton = screen.getByRole('button', { name: /send money/i });
       await user.click(sendButton);
 
-      expect(await screen.findByText(/Send ₹100\.00\?/i)).toBeInTheDocument();
+      expect(await screen.findByText(/Send \u20b9100\.00\?/i)).toBeInTheDocument();
 
       const confirmButton = screen.getByRole('button', { name: /confirm transfer/i });
       await user.click(confirmButton);
@@ -446,13 +447,13 @@ describe('Customer Experience Frontend Components', () => {
     it('disables transfers when wallet status is not ACTIVE', async () => {
       vi.spyOn(walletApi, 'getMyWallet').mockResolvedValue({
         ...mockWallet,
-        status: 'TERMINATED',
+        status: 'CLOSED',
       });
 
       renderWithProviders(<TransferForm />, { user: mockCustomerUser });
 
       await waitFor(() => {
-        expect(screen.getByText(/Your wallet status is TERMINATED. Transfers are unavailable/i)).toBeInTheDocument();
+        expect(screen.getByText(/Your wallet status is CLOSED. Transfers are unavailable/i)).toBeInTheDocument();
       });
 
       const submitButton = screen.getByRole('button', { name: /send money/i });
@@ -462,16 +463,17 @@ describe('Customer Experience Frontend Components', () => {
     it('reuses the exact same idempotency key when retrying after an uncertain response', async () => {
       const user = userEvent.setup();
       const sendTransferSpy = vi.spyOn(transferApi, 'createTransfer')
-        .mockRejectedValueOnce(new ApiError({ status: 0, title: 'Network Error', detail: 'Connection timeout' }))
-        .mockResolvedValueOnce({
-          transferId: '99999999-9999-9999-9999-999999999999',
-          sourceLedgerAccountId: mockWallet.ledgerAccountId,
-          destinationLedgerAccountId: '00000000-0000-0000-0000-000000000004',
-          amountMinor: '10000',
-          currency: 'INR',
-          createdAt: '2026-09-24T12:00:00Z',
-          replayed: false,
-        });
+          .mockRejectedValueOnce(new ApiError({ status: 0, title: 'Network Error', detail: 'Connection timeout' }))
+          .mockResolvedValueOnce({
+            transferId: '99999999-9999-9999-9999-999999999999',
+            sourceLedgerAccountId: mockWallet.ledgerAccountId,
+            destinationLedgerAccountId: '00000000-0000-0000-0000-000000000004',
+            amountMinor: '10000',
+            currency: 'INR',
+            journalTransactionId: '33333333-3333-3333-3333-333333333333',
+            createdAt: '2026-09-24T12:00:00Z',
+            replayed: false,
+          });
 
       renderWithProviders(<TransferForm />, { user: mockCustomerUser });
 
@@ -504,7 +506,7 @@ describe('Customer Experience Frontend Components', () => {
       expect(screen.getByLabelText(/merchant payment id/i)).toBeInTheDocument();
       expect(screen.getByText('Ask the merchant for the payment ID shown on their dashboard.')).toBeInTheDocument();
       expect(await screen.findByText(/Available:/i)).toBeInTheDocument();
-      expect(await screen.findByText('₹450.00')).toBeInTheDocument();
+      expect(await screen.findByText('\u20b9450.00')).toBeInTheDocument();
     });
 
     it('opens confirmation modal before paying merchant and closing does not submit', async () => {
@@ -522,7 +524,7 @@ describe('Customer Experience Frontend Components', () => {
       const submitButton = screen.getByRole('button', { name: /pay merchant/i });
       await user.click(submitButton);
 
-      expect(await screen.findByText(/Pay ₹75\.50 to this merchant\?/i)).toBeInTheDocument();
+      expect(await screen.findByText(/Pay \u20b975\.50 to this merchant\?/i)).toBeInTheDocument();
 
       const cancelButton = screen.getByRole('button', { name: /cancel/i });
       await user.click(cancelButton);
@@ -533,13 +535,13 @@ describe('Customer Experience Frontend Components', () => {
     it('disables payment and displays warning when wallet status is not ACTIVE', async () => {
       vi.spyOn(walletApi, 'getMyWallet').mockResolvedValue({
         ...mockWallet,
-        status: 'SUSPENDED',
+        status: 'FROZEN',
       });
 
       renderWithProviders(<CustomerPaymentForm />, { user: mockCustomerUser });
 
       await waitFor(() => {
-        expect(screen.getByText(/Your wallet status is SUSPENDED. Payments are unavailable/i)).toBeInTheDocument();
+        expect(screen.getByText(/Your wallet status is FROZEN. Payments are unavailable/i)).toBeInTheDocument();
       });
 
       expect(screen.getByRole('button', { name: /pay merchant/i })).toBeDisabled();
@@ -548,7 +550,7 @@ describe('Customer Experience Frontend Components', () => {
     it('shows uncertain outcome messaging on network failure', async () => {
       const user = userEvent.setup();
       vi.spyOn(financialApi, 'payMerchant').mockRejectedValue(
-        new ApiError({ status: 0, title: 'Network Error', detail: 'Connection timeout' })
+          new ApiError({ status: 0, title: 'Network Error', detail: 'Connection timeout' })
       );
 
       renderWithProviders(<CustomerPaymentForm />, { user: mockCustomerUser });
@@ -561,30 +563,30 @@ describe('Customer Experience Frontend Components', () => {
 
       expect(await screen.findByText('Payment outcome unconfirmed')).toBeInTheDocument();
       expect(
-        screen.getByText('The payment outcome could not be confirmed. Check your Activity or refresh your wallet before retrying.')
+          screen.getByText('The payment outcome could not be confirmed. Check your Activity or refresh your wallet before retrying.')
       ).toBeInTheDocument();
     });
 
     it('reuses the exact same idempotency key when retrying after an uncertain response', async () => {
       const user = userEvent.setup();
       const paySpy = vi.spyOn(financialApi, 'payMerchant')
-        .mockRejectedValueOnce(new ApiError({ status: 0, title: 'Network Error', detail: 'Connection timeout' }))
-        .mockResolvedValueOnce({
-          paymentId: '11111111-1111-1111-1111-111111111111',
-          customerLedgerAccountId: mockWallet.ledgerAccountId,
-          merchantLedgerAccountId: '00000000-0000-0000-0000-000000000002',
-          grossAmountMinor: '5000',
-          feeAmountMinor: '50',
-          merchantNetAmountMinor: '4950',
-          currency: 'INR',
-          status: 'SUCCEEDED',
-          journalTransactionId: '22222222-2222-2222-2222-222222222222',
-          createdAt: '2026-09-24T12:00:00Z',
-          completedAt: '2026-09-24T12:00:05Z',
-          refundedAmountMinor: '0',
-          refundStatus: 'NOT_REFUNDED',
-          replayed: false,
-        });
+          .mockRejectedValueOnce(new ApiError({ status: 0, title: 'Network Error', detail: 'Connection timeout' }))
+          .mockResolvedValueOnce({
+            paymentId: '11111111-1111-1111-1111-111111111111',
+            customerLedgerAccountId: mockWallet.ledgerAccountId,
+            merchantLedgerAccountId: '00000000-0000-0000-0000-000000000002',
+            grossAmountMinor: '5000',
+            feeAmountMinor: '50',
+            merchantNetAmountMinor: '4950',
+            currency: 'INR',
+            status: 'SUCCEEDED',
+            journalTransactionId: '22222222-2222-2222-2222-222222222222',
+            createdAt: '2026-09-24T12:00:00Z',
+            completedAt: '2026-09-24T12:00:05Z',
+            refundedAmountMinor: '0',
+            refundStatus: 'NOT_REFUNDED',
+            replayed: false,
+          });
 
       renderWithProviders(<CustomerPaymentForm />, { user: mockCustomerUser });
 
@@ -615,8 +617,8 @@ describe('Customer Experience Frontend Components', () => {
       renderWithProviders(<CustomerFundingForm />, { user: mockCustomerUser });
 
       expect(screen.getByText(/Simulation rail/i)).toBeInTheDocument();
-      expect((await screen.findAllByText('₹450.00')).length).toBeGreaterThan(0);
-      expect(screen.getByText('₹50.00')).toBeInTheDocument();
+      expect((await screen.findAllByText('\u20b9450.00')).length).toBeGreaterThan(0);
+      expect(screen.getByText('\u20b950.00')).toBeInTheDocument();
     });
 
     it('opens confirmation modal and adds money using minor unit conversion', async () => {
@@ -631,7 +633,7 @@ describe('Customer Experience Frontend Components', () => {
       const submitButton = screen.getByRole('button', { name: /add money/i });
       await user.click(submitButton);
 
-      expect(await screen.findByText(/Add ₹200\.00 to your wallet\?/i)).toBeInTheDocument();
+      expect(await screen.findByText(/Add \u20b9200\.00 to your wallet\?/i)).toBeInTheDocument();
 
       const confirmButton = screen.getByRole('button', { name: /confirm funding/i });
       await user.click(confirmButton);
@@ -643,13 +645,13 @@ describe('Customer Experience Frontend Components', () => {
     it('disables funding when wallet status is not ACTIVE', async () => {
       vi.spyOn(walletApi, 'getMyWallet').mockResolvedValue({
         ...mockWallet,
-        status: 'SUSPENDED',
+        status: 'FROZEN',
       });
 
       renderWithProviders(<CustomerFundingForm />, { user: mockCustomerUser });
 
       await waitFor(() => {
-        expect(screen.getByText(/Your wallet status is SUSPENDED. Funding is unavailable/i)).toBeInTheDocument();
+        expect(screen.getByText(/Your wallet status is FROZEN. Funding is unavailable/i)).toBeInTheDocument();
       });
 
       expect(screen.getByRole('button', { name: /add money/i })).toBeDisabled();
@@ -658,7 +660,7 @@ describe('Customer Experience Frontend Components', () => {
     it('shows uncertain outcome messaging on network failure', async () => {
       const user = userEvent.setup();
       vi.spyOn(financialApi, 'addMoney').mockRejectedValue(
-        new ApiError({ status: 0, title: 'Network Error', detail: 'Timeout' })
+          new ApiError({ status: 0, title: 'Network Error', detail: 'Timeout' })
       );
 
       renderWithProviders(<CustomerFundingForm />, { user: mockCustomerUser });
@@ -669,25 +671,25 @@ describe('Customer Experience Frontend Components', () => {
 
       expect(await screen.findByText('Funding outcome unconfirmed')).toBeInTheDocument();
       expect(
-        screen.getByText('The funding outcome could not be confirmed. Check your Activity or refresh your wallet before retrying.')
+          screen.getByText('The funding outcome could not be confirmed. Check your Activity or refresh your wallet before retrying.')
       ).toBeInTheDocument();
     });
 
     it('reuses the exact same idempotency key when retrying after an uncertain response', async () => {
       const user = userEvent.setup();
       const addMoneySpy = vi.spyOn(financialApi, 'addMoney')
-        .mockRejectedValueOnce(new ApiError({ status: 0, title: 'Network Error', detail: 'Timeout' }))
-        .mockResolvedValueOnce({
-          fundingId: '33333333-3333-3333-3333-333333333333',
-          ledgerAccountId: mockWallet.ledgerAccountId,
-          amountMinor: '10000',
-          currency: 'INR',
-          status: 'SETTLED',
-          providerOperationId: 'provider-123',
-          createdAt: '2026-09-24T12:00:00Z',
-          settledAt: '2026-09-24T12:00:05Z',
-          replayed: false,
-        });
+          .mockRejectedValueOnce(new ApiError({ status: 0, title: 'Network Error', detail: 'Timeout' }))
+          .mockResolvedValueOnce({
+            fundingId: '33333333-3333-3333-3333-333333333333',
+            amountMinor: '10000',
+            currency: 'INR',
+            status: 'SUCCEEDED',
+            journalTransactionId: '66666666-6666-6666-6666-666666666666',
+            providerOperationId: 'provider-123',
+            createdAt: '2026-09-24T12:00:00Z',
+            completedAt: '2026-09-24T12:00:05Z',
+            replayed: false,
+          });
 
       renderWithProviders(<CustomerFundingForm />, { user: mockCustomerUser });
 
@@ -744,17 +746,17 @@ describe('Customer Experience Frontend Components', () => {
       vi.spyOn(financialApi, 'paymentDetail').mockResolvedValue(mockDetail);
 
       renderWithProviders(
-        <Routes>
-          <Route path="/app/payments/:paymentId" element={<PaymentDetailPage />} />
-        </Routes>,
-        {
-          initialEntries: [`/app/payments/${mockPayments[0].paymentId}`],
-          user: mockCustomerUser,
-        }
+          <Routes>
+            <Route path="/app/payments/:paymentId" element={<PaymentDetailPage />} />
+          </Routes>,
+          {
+            initialEntries: [`/app/payments/${mockPayments[0].paymentId}`],
+            user: mockCustomerUser,
+          }
       );
 
       await waitFor(() => {
-        expect(screen.getByText('Amount paid · INR')).toBeInTheDocument();
+        expect(screen.getByText('Amount paid \u00b7 INR')).toBeInTheDocument();
       });
 
       expect(screen.getByRole('link', { name: /back to payments/i })).toBeInTheDocument();
@@ -773,17 +775,17 @@ describe('Customer Experience Frontend Components', () => {
       vi.spyOn(financialApi, 'paymentDetail').mockResolvedValue(mockDetail);
 
       renderWithProviders(
-        <Routes>
-          <Route path="/app/payments/:paymentId" element={<PaymentDetailPage />} />
-        </Routes>,
-        {
-          initialEntries: [`/app/payments/${mockPayments[0].paymentId}`],
-          user: mockMerchantUser,
-        }
+          <Routes>
+            <Route path="/app/payments/:paymentId" element={<PaymentDetailPage />} />
+          </Routes>,
+          {
+            initialEntries: [`/app/payments/${mockPayments[0].paymentId}`],
+            user: mockMerchantUser,
+          }
       );
 
       await waitFor(() => {
-        expect(screen.getByText('Gross payment · INR')).toBeInTheDocument();
+        expect(screen.getByText('Gross payment \u00b7 INR')).toBeInTheDocument();
       });
 
       expect(screen.getByRole('link', { name: /back to customer payments/i })).toBeInTheDocument();
@@ -801,26 +803,22 @@ describe('Customer Experience Frontend Components', () => {
         amountMinor: '2500',
         currency: 'INR',
         direction: 'OUTGOING',
+        journalTransactionId: '33333333-3333-3333-3333-333333333333',
         createdAt: '2026-09-24T12:00:00Z',
         journal: {
           journalTransactionId: '33333333-3333-3333-3333-333333333333',
           status: 'POSTED',
+          postedAt: '2026-09-24T12:00:00Z',
           entries: [
             {
-              journalEntryId: '44444444-4444-4444-4444-444444444444',
               ledgerAccountId: mockWallet.ledgerAccountId,
               direction: 'DEBIT',
               amountMinor: '2500',
-              currency: 'INR',
-              sequenceOrder: 1,
             },
             {
-              journalEntryId: '55555555-5555-5555-5555-555555555555',
               ledgerAccountId: '00000000-0000-0000-0000-000000000004',
               direction: 'CREDIT',
               amountMinor: '2500',
-              currency: 'INR',
-              sequenceOrder: 2,
             },
           ],
         },
@@ -828,13 +826,13 @@ describe('Customer Experience Frontend Components', () => {
       vi.spyOn(transferApi, 'getTransferDetail').mockResolvedValue(mockTransferDetail);
 
       renderWithProviders(
-        <Routes>
-          <Route path="/app/transfers/:transferId" element={<TransferDetailPage />} />
-        </Routes>,
-        {
-          initialEntries: [`/app/transfers/${mockTransferDetail.transferId}`],
-          user: mockCustomerUser,
-        }
+          <Routes>
+            <Route path="/app/transfers/:transferId" element={<TransferDetailPage />} />
+          </Routes>,
+          {
+            initialEntries: [`/app/transfers/${mockTransferDetail.transferId}`],
+            user: mockCustomerUser,
+          }
       );
 
       await waitFor(() => {
@@ -866,13 +864,13 @@ describe('Customer Experience Frontend Components', () => {
 
     it('ActivityPage accepts payouts query alias and canonicalizes to withdrawals for CUSTOMER', async () => {
       renderWithProviders(
-        <Routes>
-          <Route path="/app/activity" element={<ActivityPage />} />
-        </Routes>,
-        {
-          initialEntries: ['/app/activity?type=payouts'],
-          user: mockCustomerUser,
-        }
+          <Routes>
+            <Route path="/app/activity" element={<ActivityPage />} />
+          </Routes>,
+          {
+            initialEntries: ['/app/activity?type=payouts'],
+            user: mockCustomerUser,
+          }
       );
 
       const withdrawalsTab = screen.getByRole('tab', { name: 'Withdrawals' });
@@ -881,13 +879,13 @@ describe('Customer Experience Frontend Components', () => {
 
     it('ActivityPage falls back to role default when invalid tab type is provided', () => {
       const { unmount } = renderWithProviders(
-        <Routes>
-          <Route path="/app/activity" element={<ActivityPage />} />
-        </Routes>,
-        {
-          initialEntries: ['/app/activity?type=unknown_tab'],
-          user: mockCustomerUser,
-        }
+          <Routes>
+            <Route path="/app/activity" element={<ActivityPage />} />
+          </Routes>,
+          {
+            initialEntries: ['/app/activity?type=unknown_tab'],
+            user: mockCustomerUser,
+          }
       );
 
       const customerTransfersTab = screen.getByRole('tab', { name: 'Transfers' });
@@ -895,13 +893,13 @@ describe('Customer Experience Frontend Components', () => {
       unmount();
 
       renderWithProviders(
-        <Routes>
-          <Route path="/app/activity" element={<ActivityPage />} />
-        </Routes>,
-        {
-          initialEntries: ['/app/activity?type=unknown_tab'],
-          user: mockMerchantUser,
-        }
+          <Routes>
+            <Route path="/app/activity" element={<ActivityPage />} />
+          </Routes>,
+          {
+            initialEntries: ['/app/activity?type=unknown_tab'],
+            user: mockMerchantUser,
+          }
       );
 
       const merchantPaymentsTab = screen.getByRole('tab', { name: 'Customer payments' });

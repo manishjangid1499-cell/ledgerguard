@@ -12,6 +12,13 @@ COPY backend/e2e-tests/pom.xml backend/e2e-tests/
 
 COPY backend/ledgerguard-api/src backend/ledgerguard-api/src
 
+# Build the bundled SDK inside the image's Maven repository.
+COPY vendor/feature-flag-java-sdk/pom.xml vendor/feature-flag-java-sdk/pom.xml
+COPY vendor/feature-flag-java-sdk/src vendor/feature-flag-java-sdk/src
+
+RUN sed -i 's/\r$//' mvnw && chmod +x mvnw && \
+    ./mvnw -f vendor/feature-flag-java-sdk/pom.xml clean install
+
 RUN sed -i 's/\r$//' mvnw && chmod +x mvnw && \
     ./mvnw -pl backend/ledgerguard-api -am package -DskipTests && \
     FOUND=$(find backend/ledgerguard-api/target -maxdepth 1 -type f -name 'ledgerguard-api-*-exec.jar' ! -name '*.original') && \

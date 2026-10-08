@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Route, Routes } from 'react-router-dom';
 import { renderWithProviders } from '../../test/test-utils';
@@ -11,15 +11,16 @@ import { PaymentDetailPage } from '../pages/PaymentDetailPage';
 import { walletApi } from '../../wallet/api/walletApi';
 import { financialApi } from '../api';
 import { Payment, PaymentDetail, Posted, Refund, Payout } from '../types';
-import { Wallet } from '../../wallet/types';
+import type { WalletResponse } from '../../wallet/types/wallet.types';
 
-const mockWallet: Wallet = {
+const mockWallet: WalletResponse = {
   ledgerAccountId: '00000000-0000-0000-0000-000000000002',
+  accountType: 'MERCHANT',
+  status: 'ACTIVE',
   currency: 'INR',
   balanceMinor: '50000',
   availableBalanceMinor: '45000',
   activeHoldAmountMinor: '5000',
-  updatedAt: '2026-09-24T00:00:00Z',
 };
 
 const mockSummary = {
@@ -81,8 +82,8 @@ describe('Merchant Experience Frontend Components', () => {
     it('displays API error alert and provides a working Retry action', async () => {
       const user = userEvent.setup();
       const getWalletSpy = vi.spyOn(walletApi, 'getMyWallet')
-        .mockRejectedValueOnce(new Error('Failed to load wallet'))
-        .mockResolvedValueOnce(mockWallet);
+          .mockRejectedValueOnce(new Error('Failed to load wallet'))
+          .mockResolvedValueOnce(mockWallet);
 
       renderWithProviders(<MerchantDashboard />);
 
@@ -94,7 +95,7 @@ describe('Merchant Experience Frontend Components', () => {
 
       await waitFor(() => {
         expect(getWalletSpy).toHaveBeenCalledTimes(2);
-        expect(screen.getByText('₹450.00')).toBeInTheDocument();
+        expect(screen.getByText('\u20b9450.00')).toBeInTheDocument();
       });
     });
 
@@ -102,7 +103,7 @@ describe('Merchant Experience Frontend Components', () => {
       renderWithProviders(<MerchantDashboard />);
 
       // Wait for table to render payments
-      const grossCells = await screen.findAllByText('₹100.00');
+      const grossCells = await screen.findAllByText('\u20b9100.00');
       expect(grossCells.length).toBeGreaterThan(0);
 
       const viewAllButton = screen.getByRole('link', { name: /view all payments/i });
@@ -194,7 +195,7 @@ describe('Merchant Experience Frontend Components', () => {
     const mockDetail: PaymentDetail = {
       payment: mockPayments[0],
       refundedAmountMinor: '0',
-      refundableAmountMinor: '10000', // ₹100.00 refundable
+      refundableAmountMinor: '10000', // \u20b9100.00 refundable
       refunds: { items: [], page: 0, size: 10, totalElements: 0, totalPages: 0 },
     };
 
@@ -205,10 +206,10 @@ describe('Merchant Experience Frontend Components', () => {
     it('opens refund confirmation dialog with correct calculated amount', async () => {
       const user = userEvent.setup();
       renderWithProviders(
-        <Routes>
-          <Route path="/app/payments/:paymentId" element={<PaymentDetailPage />} />
-        </Routes>,
-        { initialEntries: [`/app/payments/${mockPayments[0].paymentId}`] }
+          <Routes>
+            <Route path="/app/payments/:paymentId" element={<PaymentDetailPage />} />
+          </Routes>,
+          { initialEntries: [`/app/payments/${mockPayments[0].paymentId}`] }
       );
 
       const issueRefundBtn = await screen.findByRole('button', { name: /issue refund/i });
@@ -222,8 +223,8 @@ describe('Merchant Experience Frontend Components', () => {
 
       const dialog = await screen.findByRole('dialog');
       expect(dialog).toBeInTheDocument();
-      expect(within(dialog).getByText(/confirm refund of ₹25.00/i)).toBeInTheDocument();
-      expect(within(dialog).getByText('₹75.00')).toBeInTheDocument();
+      expect(within(dialog).getByText(/confirm refund of \u20b925.00/i)).toBeInTheDocument();
+      expect(within(dialog).getByText('\u20b975.00')).toBeInTheDocument();
     });
 
     it('prevents repeated submission while refund execution is in flight', async () => {
@@ -233,10 +234,10 @@ describe('Merchant Experience Frontend Components', () => {
       vi.spyOn(financialApi, 'refund').mockReturnValue(refundPromise);
 
       renderWithProviders(
-        <Routes>
-          <Route path="/app/payments/:paymentId" element={<PaymentDetailPage />} />
-        </Routes>,
-        { initialEntries: [`/app/payments/${mockPayments[0].paymentId}`] }
+          <Routes>
+            <Route path="/app/payments/:paymentId" element={<PaymentDetailPage />} />
+          </Routes>,
+          { initialEntries: [`/app/payments/${mockPayments[0].paymentId}`] }
       );
 
       const issueRefundBtn = await screen.findByRole('button', { name: /issue refund/i });
@@ -254,9 +255,22 @@ describe('Merchant Experience Frontend Components', () => {
       await user.click(confirmBtn);
 
       expect(confirmBtn).toBeDisabled();
-      expect(within(dialog).getByText(/posting refund…/i)).toBeInTheDocument();
+      expect(within(dialog).getByText(/posting refund\u2026/i)).toBeInTheDocument();
 
-      resolveRefund!({ refundId: '999', replayed: false, paymentId: mockPayments[0].paymentId });
+      await act(async () => {
+        resolveRefund!({
+          refundId: '999',
+          refundAmountMinor: '2500',
+          merchantDebitAmountMinor: '2475',
+          feeDebitAmountMinor: '25',
+          currency: 'INR',
+          journalTransactionId: '33333333-3333-3333-3333-333333333333',
+          createdAt: '2026-09-24T12:01:00Z',
+          replayed: false,
+          paymentId: mockPayments[0].paymentId,
+        });
+        await refundPromise;
+      });
     });
   });
 
@@ -289,8 +303,8 @@ describe('Merchant Experience Frontend Components', () => {
 
       const dialog = await screen.findByRole('dialog');
       expect(dialog).toBeInTheDocument();
-      expect(within(dialog).getByText('₹300.00')).toBeInTheDocument();
-      expect(within(dialog).getByText('₹150.00')).toBeInTheDocument();
+      expect(within(dialog).getByText('\u20b9300.00')).toBeInTheDocument();
+      expect(within(dialog).getByText('\u20b9150.00')).toBeInTheDocument();
     });
 
     it('prevents repeated submission while withdrawal is in flight', async () => {
@@ -316,9 +330,23 @@ describe('Merchant Experience Frontend Components', () => {
       await user.click(confirmBtn);
 
       expect(confirmBtn).toBeDisabled();
-      expect(within(dialog).getByText(/submitting…/i)).toBeInTheDocument();
+      expect(within(dialog).getByText(/submitting\u2026/i)).toBeInTheDocument();
 
-      resolveWithdraw!({ payoutId: 'payout-123', replayed: false, amountMinor: '10000' });
+      await act(async () => {
+        resolveWithdraw!({
+          payoutId: 'payout-123',
+          balanceHoldId: '44444444-4444-4444-4444-444444444444',
+          amountMinor: '10000',
+          currency: 'INR',
+          status: 'PROCESSING',
+          providerOperationId: 'provider-payout-123',
+          journalTransactionId: null,
+          createdAt: '2026-09-24T12:01:00Z',
+          completedAt: null,
+          replayed: false,
+        });
+        await withdrawPromise;
+      });
     });
   });
 });
