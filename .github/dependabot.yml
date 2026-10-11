@@ -14,6 +14,7 @@ updates:
     open-pull-requests-limit: 5
     groups:
       backend-dependencies:
+        update-types: ["minor", "patch"]
         patterns:
           - "*"
 
@@ -25,6 +26,7 @@ updates:
     open-pull-requests-limit: 5
     groups:
       frontend-dependencies:
+        update-types: ["minor", "patch"]
         patterns:
           - "*"
 
@@ -47,6 +49,10 @@ updates:
     open-pull-requests-limit: 5
 
   # Docker Base Images - PSP Simulator
+    # Runtime major migrations require coordinated CI and deployment changes.
+    ignore:
+      - dependency-name: "eclipse-temurin"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "docker"
     directory: "/backend/psp-simulator"
     schedule:
@@ -54,6 +60,10 @@ updates:
     open-pull-requests-limit: 5
 
   # Docker Base Images - Notification Worker
+    # Runtime major migrations require coordinated CI and deployment changes.
+    ignore:
+      - dependency-name: "eclipse-temurin"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "docker"
     directory: "/backend/notification-worker"
     schedule:
@@ -61,8 +71,16 @@ updates:
     open-pull-requests-limit: 5
 
   # Docker Base Images - Frontend Web
+    # Runtime major migrations require coordinated CI and deployment changes.
+    ignore:
+      - dependency-name: "eclipse-temurin"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "docker"
     directory: "/frontend/ledgerguard-web"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    # Runtime major migrations require coordinated CI and deployment changes.
+    ignore:
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
